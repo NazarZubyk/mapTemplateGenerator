@@ -184,12 +184,17 @@ fn draw_level(painter: &egui::Painter, map_rect: Rect, zoom: f32, level: &Genera
                 clipped.circle_filled(center, r, color);
             }
             _ => {
-                let min = to_screen(map_rect, zoom, o.x_m, o.y_m);
-                let max = to_screen(map_rect, zoom, o.x_m + o.w_m, o.y_m + o.h_m);
-                let rect = Rect::from_min_max(min, max);
-                let color = color32(o.color);
-                clipped.rect_filled(rect, 0.0, color);
-                clipped.rect_stroke(rect, 0.0, Stroke::new(1.0_f32, darker(o.color)), egui::StrokeKind::Inside);
+                // Rotated rect as a convex polygon.
+                let points: Vec<Pos2> = o
+                    .corners()
+                    .iter()
+                    .map(|&(x, y)| to_screen(map_rect, zoom, x, y))
+                    .collect();
+                clipped.add(egui::Shape::convex_polygon(
+                    points,
+                    color32(o.color),
+                    Stroke::new(1.0_f32, darker(o.color)),
+                ));
             }
         }
     }

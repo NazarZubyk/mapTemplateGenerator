@@ -19,6 +19,9 @@
 //! 5. **Gaps** — wall cells on a road, or within `gap_margin_m` of one, are
 //!    removed: every road passes through its own opening, so the regions
 //!    stay connected exactly where the roads cross.
+//! 6. **Seal dead pockets** — two walls can close off a sliver no road
+//!    reaches; such pockets become wall, so the walkable ground stays one
+//!    piece.
 
 use std::collections::{HashMap, VecDeque};
 
@@ -127,6 +130,25 @@ pub(crate) fn build_with_progress(
             }
         }
         gaps = describe_gaps(map, &opened);
+
+        // 6. Seal pockets no road reaches.
+        stage.report("Sealing dead pockets", 0.95);
+        let mut open = CellMask::new(w, h, cell);
+        for ((o, &id), &wl) in open.cells.iter_mut().zip(&map.ids).zip(&wall.cells) {
+            *o = id != 0 && !wl;
+        }
+        let (labels, count) = crate::generator::grid::components(&open);
+        let mut reached = vec![false; count as usize + 1];
+        for (&l, &r) in labels.iter().zip(&net.mask.cells) {
+            if r {
+                reached[l as usize] = true;
+            }
+        }
+        for (cell_wall, &l) in wall.cells.iter_mut().zip(&labels) {
+            if l != 0 && !reached[l as usize] {
+                *cell_wall = true;
+            }
+        }
     }
 
     Some(RegionWalls {
@@ -468,6 +490,11 @@ mod tests {
                 "seed {seed}: a wall blocks a road"
             );
             assert!(!walls.gaps.is_empty(), "seed {seed}: no gaps");
+            // No dead pockets: the open town is one piece.
+            assert!(
+                crate::generator::grid::is_connected(&open_pieces(map, &walls.mask)),
+                "seed {seed}: a pocket is sealed off"
+            );
             // All regions are reachable from each other through the open town.
             let open = open_pieces(map, &walls.mask);
             let (labels, _) = crate::generator::grid::components(&open);

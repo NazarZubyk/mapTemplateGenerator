@@ -9,6 +9,7 @@ use crate::level::{GeneratedLevel, LevelShape};
 use crate::model::LevelConfig;
 
 pub mod grid;
+pub mod houses;
 pub mod noise;
 pub mod region_walls;
 pub mod regions;
@@ -95,7 +96,7 @@ pub fn generate_with_progress(
     // Step 4: the road network — crossroad nodes (≥ 1 per region) and the
     // winding links between them; region crossings become passages.
     let roads = regions.as_ref().and_then(|split| {
-        let built = roads::build_with_progress(config, &mut rng, split, &stage(0.85, 0.93))?;
+        let built = roads::build_with_progress(config, &mut rng, split, &stage(0.85, 0.9))?;
         notes.extend(built.notes);
         Some(built.network)
     });
@@ -104,8 +105,27 @@ pub fn generate_with_progress(
     // cross them.
     // The regions are refit so each one ends exactly at its walls.
     let region_walls = regions.as_mut().and_then(|split| {
-        region_walls::build_with_progress(config, &mut rng, split, roads.as_ref(), &stage(0.93, 0.99))
+        region_walls::build_with_progress(config, &mut rng, split, roads.as_ref(), &stage(0.9, 0.93))
     });
+
+    // Step 6: houses (town maps) — street fronts first, then the yards.
+    let mut objects = Vec::new();
+    let houses = match (config.kind, regions.as_ref()) {
+        (crate::model::MapKind::Town, Some(split)) => {
+            let ground = houses::Ground {
+                regions: &split.map,
+                outer_wall: walls.as_ref().map(|w| &w.mask),
+                region_walls: region_walls.as_ref().map(|w| &w.mask),
+                roads: roads.as_ref(),
+            };
+            houses::build_with_progress(config, &mut rng, &ground, &stage(0.93, 0.99)).map(|built| {
+                notes.extend(built.notes);
+                objects.extend(built.objects);
+                built.layout
+            })
+        }
+        _ => None,
+    };
 
     let total = region_mask.width * region_mask.height;
     let mut stats = built.shape.stats;
@@ -115,7 +135,7 @@ pub fn generate_with_progress(
     GeneratedLevel {
         config: config.clone(),
         seed,
-        objects: Vec::new(),
+        objects,
         shape: Some(LevelShape {
             mask: region_mask,
             stats,
@@ -124,6 +144,7 @@ pub fn generate_with_progress(
         regions,
         roads,
         region_walls,
+        houses,
         noise_preview: Some(built.noise_preview),
         notes,
     }

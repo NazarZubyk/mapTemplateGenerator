@@ -40,8 +40,9 @@ impl Category {
     ];
 }
 
-/// One placed object: an axis-aligned rect in meters. (x, y) is the top-left
-/// corner, origin at the map's top-left, +y pointing down the map.
+/// One placed object: a rect in meters, rotated by `angle_deg` around its
+/// center. (x, y) is the top-left corner of the UNROTATED rect, origin at the
+/// map's top-left, +y pointing down the map.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlacedObject {
     pub category: Category,
@@ -52,6 +53,32 @@ pub struct PlacedObject {
     pub y_m: f32,
     pub w_m: f32,
     pub h_m: f32,
+    /// Clockwise rotation in degrees around the rect center (screen +y down).
+    #[serde(default)]
+    pub angle_deg: f32,
+}
+
+impl PlacedObject {
+    pub fn center(&self) -> (f32, f32) {
+        (self.x_m + self.w_m / 2.0, self.y_m + self.h_m / 2.0)
+    }
+
+    /// Is the point (meters) inside the rotated rect?
+    pub fn contains(&self, x: f32, y: f32) -> bool {
+        let (cx, cy) = self.center();
+        let (s, c) = self.angle_deg.to_radians().sin_cos();
+        let (dx, dy) = (x - cx, y - cy);
+        let (u, v) = (dx * c + dy * s, dy * c - dx * s);
+        u.abs() <= self.w_m / 2.0 && v.abs() <= self.h_m / 2.0
+    }
+
+    /// The four corners of the rotated rect, in meters, clockwise on screen.
+    pub fn corners(&self) -> [(f32, f32); 4] {
+        let (cx, cy) = self.center();
+        let (s, c) = self.angle_deg.to_radians().sin_cos();
+        let (hw, hh) = (self.w_m / 2.0, self.h_m / 2.0);
+        [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)].map(|(u, v)| (cx + u * c - v * s, cy + u * s + v * c))
+    }
 }
 
 /// A boolean grid aligned to the level grid: `cells[y * width + x]`. The
@@ -237,6 +264,20 @@ pub struct RoadNetwork {
     pub width_cells: u32,
 }
 
+/// What the houses node built (the houses themselves are `PlacedObject`s in
+/// `GeneratedLevel::objects`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HouseLayout {
+    /// Cells covered by houses.
+    pub mask: CellMask,
+    /// Houses placed along the roads (facing them) / in the yards behind.
+    pub street_houses: u32,
+    pub yard_houses: u32,
+    /// Share of the buildable ground covered by houses: reached / asked, %.
+    pub coverage_pct: f32,
+    pub target_pct: f32,
+}
+
 /// An opening in a region wall where a road passes through.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct WallGap {
@@ -281,6 +322,9 @@ pub struct GeneratedLevel {
     /// The walls between regions, once the region walls section is built.
     #[serde(default)]
     pub region_walls: Option<RegionWalls>,
+    /// The houses node's footprint and stats (town maps).
+    #[serde(default)]
+    pub houses: Option<HouseLayout>,
     /// Raw noise field behind the region shape, for the bench "noise texture"
     /// view.
     pub noise_preview: Option<NoiseTexture>,

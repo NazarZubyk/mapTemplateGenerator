@@ -34,6 +34,10 @@ fn generation_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_roads(ui, app);
     flow_arrow(ui, "regions + roads");
     node_region_walls(ui, app);
+    if app.config.kind == MapKind::Town {
+        flow_arrow(ui, "free ground between roads and walls");
+        node_houses(ui, app);
+    }
     ui.weak("Next nodes appear here as sections finish; which nodes exist depends on the map kind (docs/workflow.md).");
     ui.add_space(4.0);
     ui.separator();
@@ -701,6 +705,109 @@ exactly the road. Openings exist only where roads cross — set roads in node 5.
                 ui.weak("generated: no region walls (only one region)");
             }
             None => {}
+        }
+    });
+}
+
+/// Node 7: houses (town maps only) — street fronts first, then the yards
+/// (see step 6 notes in docs/workflow.md).
+fn node_houses(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_DENSITY: &str = "Share of the buildable ground (town minus walls and roads) \
+covered by houses. Street fronts fill first: a low density gives houses along the roads \
+only, a high one fills the yards behind them too. The real ceiling is about 25–35% (roads, \
+walls and the spacing around every house take the rest) — when the ask cannot fit, a note \
+tells you how much was reached.";
+    const TIP_SIZE_MIN: &str = "Smallest house side in meters. Width and depth are rolled \
+independently between min and max, so houses come out square and oblong. A house that does \
+not fit a tight spot shrinks toward this size.";
+    const TIP_SIZE_MAX: &str = "Largest house side in meters. If max is smaller than min \
+the two are swapped.";
+    const TIP_SPACING: &str = "Free ground kept around every house — to other houses, walls \
+and the town edge — in meters (at least one cell). It guarantees that houses never seal off \
+a pocket of ground. Smaller: tighter, denser blocks.";
+    const TIP_SETBACK: &str = "Gap between a street-front house and the road edge, in meters. \
+0: houses stand right at the road. NO EFFECT on yard houses.";
+    const TIP_FACE: &str = "Chance that a yard house (one not on a street front) turns to \
+face the nearest road, with a few degrees of jitter. The rest get a random angle — a messy, \
+organic old town. 100%: everything lines up with the streets. Street-front houses always \
+face their road.";
+    const TIP_COLOR: &str = "House color on the map image, the preview and the legend.";
+    node(ui, "7 · Houses", |ui| {
+        ui.weak("input: town minus walls and roads · output: houses (town only)");
+        egui::Grid::new("houses_node_grid")
+            .num_columns(2)
+            .spacing([10.0, 3.0])
+            .show(ui, |ui| {
+                let houses = &mut app.config.houses;
+                param_row(ui, "Density", TIP_DENSITY, |ui| {
+                    ui.add(egui::Slider::new(&mut houses.density_pct, 0.0..=100.0).suffix(" %"))
+                });
+                param_row(ui, "Size min", TIP_SIZE_MIN, |ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut houses.size_min_m)
+                            .range(1.0..=40.0)
+                            .speed(0.1)
+                            .suffix(" m"),
+                    )
+                });
+                param_row(ui, "Size max", TIP_SIZE_MAX, |ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut houses.size_max_m)
+                            .range(1.0..=40.0)
+                            .speed(0.1)
+                            .suffix(" m"),
+                    )
+                });
+                param_row(ui, "Spacing", TIP_SPACING, |ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut houses.spacing_m)
+                            .range(0.0..=10.0)
+                            .speed(0.05)
+                            .suffix(" m"),
+                    )
+                });
+                param_row(ui, "Road setback", TIP_SETBACK, |ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut houses.setback_m)
+                            .range(0.0..=10.0)
+                            .speed(0.05)
+                            .suffix(" m"),
+                    )
+                });
+                param_row(ui, "Face the road", TIP_FACE, |ui| {
+                    ui.add(egui::Slider::new(&mut houses.face_road_pct, 0.0..=100.0).suffix(" %"))
+                });
+                param_row(ui, "Color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut houses.color));
+            });
+        ui.horizontal(|ui| {
+            if ui
+                .button("🎲 Random params")
+                .on_hover_text(
+                    "Rolls every value independently inside its reasonable range — they may \
+                     contradict each other. Keeps the color. Set values only; press Generate.",
+                )
+                .clicked()
+            {
+                let mut rng = rand::rng();
+                let houses = &mut app.config.houses;
+                houses.density_pct = rng.random_range(5.0..=60.0);
+                houses.size_min_m = rng.random_range(2.0..=8.0);
+                houses.size_max_m = rng.random_range(3.0..=14.0);
+                houses.spacing_m = rng.random_range(0.0..=3.0);
+                houses.setback_m = rng.random_range(0.0..=3.0);
+                houses.face_road_pct = rng.random_range(0.0..=100.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(h) = app.generated.as_ref().and_then(|l| l.houses.as_ref()) {
+            ui.weak(format!(
+                "generated: {} houses ({} on streets, {} in yards), {:.0}% of the buildable ground (asked {:.0}%)",
+                h.street_houses + h.yard_houses,
+                h.street_houses,
+                h.yard_houses,
+                h.coverage_pct,
+                h.target_pct
+            ));
         }
     });
 }

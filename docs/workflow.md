@@ -59,6 +59,9 @@ Right now:
 6. **Region walls** — input: region id map + roads · output: walls along
    the borders between regions, opened where roads cross. Every map kind.
    Finished (step 5); built straight into the node.
+7. **Houses** — input: town minus walls and roads · output: rotated house
+   objects (`Category::Structure`) + footprint mask. TOWN ONLY (the node is
+   hidden for other kinds; the generator skips it). Finished (step 6).
 
 - **Action bar** (`src/ui/app.rs`): seed + Generate + Re-roll. Generation
   runs on a background thread (`MapGenApp::job`); the bar shows a progress
@@ -66,8 +69,8 @@ Right now:
   disabled until it finishes. Phases report through
   `generator::generate_with_progress` (`Progress` callback, `Stage` maps a
   phase's 0..1 into its slice of the whole: shape 0–55%, wall 55–65%,
-  regions 65–85%, roads 85–93%, region walls 93–99%). New phases must
-  report too.
+  regions 65–85%, roads 85–90%, region walls 90–93%, houses 93–99%). New
+  phases must report too.
 - **Preview** (`src/ui/preview.rs`): draws the generated level (rect objects,
   circle mob spawns/gates, legend) plus the bench texture layer (noise
   texture or town shape — toggle lives in the bench).
@@ -98,6 +101,7 @@ src/
 ├── generator/
 │   ├── mod.rs         # generate(): fixed phase order, one RNG stream
 │   ├── noise.rs       # general seeded value noise + fBm (utility for everything)
+│   ├── houses.rs      # step 6: street-front + yard houses (town only)
 │   ├── grid.rs        # CellMask algorithms: components, speckle removal,
 │   │                  # bridge closest pair (multi-source BFS), hole fill
 │   ├── shape.rs       # step 1: noise → coverage cut → despeckle → bridges
@@ -188,12 +192,11 @@ Rules that carried over from the old build (keep them in every section):
       walked like the outer wall (random segments, own min/max/thickness),
       opened wherever a road crosses (road width + `gap_margin_m` each side).
       Node 6. (done — see "Step 5 notes")
-- [ ] **Step 6 — occupancy grid & walkable budget**: placement flags on the
-      grid (walkable / road / occupied), walkable-% budget, connectivity
-      checks (reference `generator/grid.rs` helpers).
-- [ ] **Step 7 — structures**: rotated organic placement, road avoidance,
-      fitting into tight spots (reference `structures.rs` + rotated
-      rasterization).
+- [x] **Step 6 — houses** (town only): street-front houses facing the
+      roads, then yard houses; density, size range, spacing, road setback,
+      face-the-road chance, color. Node 7. (done — see "Step 6 notes")
+- [ ] **Step 7 — walkable budget**: `map.walkable_pct` vs what the houses
+      and later objects take (houses already keep the ground connected).
 - [ ] **Step 8 — props & interactives**: scatter phases, props allowed on
       roads, buildings not (reference `props.rs`, `interactives.rs`).
 - [ ] **Step 9 — hidden rooms**: rooms + BFS access paths (reference
@@ -481,6 +484,43 @@ piece is exactly one region after the refit (< 5% cells moved, stats
 recounted), with gaps no road cell is walled and every region is reachable, 1 region → none, determinism.
 Stress-checked: 6 nested regions (100% nesting) and 200 m / 3 sections —
 no region cut off, ≤ 0.8 s total generation in release.
+
+## Step 6 notes — houses
+
+`generator/houses.rs`, TOWN maps only (node 7 hidden otherwise):
+
+1. **Buildable ground** — town cells minus outer wall, region walls and
+   roads. Houses keep `spacing_m` (Chebyshev, ≥ 1 cell) from walls, the town
+   edge and every other house, and street houses `setback_m` from the road.
+   With a ≥ 1-cell ring around convex houses the walkable ground can never
+   be sealed into a pocket (tested at 70% density).
+2. **Street fronts** — each road link is walked on both sides; a slot every
+   house width + spacing; the house is rotated to the road direction
+   (tangent over ±8 path cells — smooths the 8-direction staircase), its
+   width along the road, set back from the edge; if it does not fit it is
+   pushed 0.5 / 1 m deeper, then shrunk toward `size_min_m`. Slots are
+   shuffled: low density = scattered street houses, high = frontages.
+3. **Yards** — random cells from the still-free list (refreshed every 8
+   houses / 8 failures); `face_road_pct` chance to take the nearest road's
+   direction (BFS from centerlines carrying the angle) ± 6°, else random.
+   Shrink-to-fit (1 → 0.5 → 0 toward min) and a 90°-turned try per spot;
+   80 consecutive failed houses = yards full.
+4. **Stop** at `density_pct` of the buildable ground. Real ceiling ≈ 25–35%
+   (roads, walls, spacing); a note reports the reached % when it is < 80% of
+   the ask. Default 25%.
+
+Houses are `PlacedObject`s (Structure, layer id 1, "house", user color)
+with a new `angle_deg` (clockwise, screen +y down; `#[serde(default)]`).
+map.png / layer.png rasterize rotated rects per pixel; the preview draws
+convex polygons; legend and spec.json pick them up from `objects`.
+`HouseLayout` keeps the footprint mask + street/yard counts + coverage.
+Tests: no overlap with roads/walls/each other, walkable ground stays one
+piece, density controls coverage with streets first, sizes in range, only
+towns, determinism.
+
+Also fixed in step 5 while testing this: two region walls could close off a
+1-cell pocket no road reaches — such pockets now become wall, so the open
+town is always one piece (asserted in the region-walls test).
 
 ## Done-ness checklist for every step
 

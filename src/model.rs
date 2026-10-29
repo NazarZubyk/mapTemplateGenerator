@@ -55,6 +55,8 @@ pub struct LevelConfig {
     pub roads: RoadsSettings,
     /// Walls along the borders between regions, open where roads cross (step 5).
     pub region_walls: RegionWallSettings,
+    /// Houses along the streets and in the yards (step 6, town maps).
+    pub houses: HouseSettings,
     pub cell_size_m: f32,
     pub seed: u64,
 }
@@ -69,8 +71,47 @@ impl Default for LevelConfig {
             regions: RegionsSettings::default(),
             roads: RoadsSettings::default(),
             region_walls: RegionWallSettings::default(),
+            houses: HouseSettings::default(),
             cell_size_m: 0.5,
             seed: 0,
+        }
+    }
+}
+
+/// Settings of the houses node (docs/workflow.md, step 6; town maps).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HouseSettings {
+    /// Share of the buildable ground (town minus walls and roads) covered by
+    /// houses, %. Street fronts fill first, the yards behind them after.
+    pub density_pct: f32,
+    /// Smallest house side in meters (width and depth are rolled
+    /// independently between min and max).
+    pub size_min_m: f32,
+    /// Largest house side in meters.
+    pub size_max_m: f32,
+    /// Free ground kept around every house (to other houses, walls and the
+    /// town edge), meters — at least one cell, so no pocket is ever sealed.
+    pub spacing_m: f32,
+    /// Gap between a street-front house and the road edge, meters.
+    pub setback_m: f32,
+    /// Chance, %, that a yard house turns to face the nearest road; the rest
+    /// get a random angle (organic old-town look).
+    pub face_road_pct: f32,
+    /// House color on map.png, the preview and the legend.
+    pub color: [u8; 3],
+}
+
+impl Default for HouseSettings {
+    fn default() -> Self {
+        Self {
+            density_pct: 25.0,
+            size_min_m: 4.0,
+            size_max_m: 9.0,
+            spacing_m: 1.0,
+            setback_m: 0.5,
+            face_road_pct: 80.0,
+            color: [158, 96, 64],
         }
     }
 }

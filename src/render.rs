@@ -109,15 +109,24 @@ pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
         paint_mask(&mut map, &walls.mask, px_per_m, w, h, WALL);
     }
 
-    // Draw in stored order: later objects paint over earlier ones.
+    // Draw in stored order: later objects paint over earlier ones. Objects
+    // may be rotated: every pixel in the bounding box of the corners is
+    // tested against the rotated rect (pixel centers).
     for (idx, o) in level.objects.iter().enumerate() {
         let instance = (idx + 1) as u16;
-        let x0 = (o.x_m * px_per_m).round() as i64;
-        let y0 = (o.y_m * px_per_m).round() as i64;
-        let x1 = ((o.x_m + o.w_m) * px_per_m).round() as i64;
-        let y1 = ((o.y_m + o.h_m) * px_per_m).round() as i64;
+        let corners = o.corners();
+        let fold = |f: fn(f32, f32) -> f32, init: f32, pick: fn(&(f32, f32)) -> f32| {
+            corners.iter().map(pick).fold(init, f)
+        };
+        let x0 = (fold(f32::min, f32::MAX, |c| c.0) * px_per_m).floor() as i64;
+        let y0 = (fold(f32::min, f32::MAX, |c| c.1) * px_per_m).floor() as i64;
+        let x1 = (fold(f32::max, f32::MIN, |c| c.0) * px_per_m).ceil() as i64;
+        let y1 = (fold(f32::max, f32::MIN, |c| c.1) * px_per_m).ceil() as i64;
         for y in y0.max(0)..y1.min(h as i64) {
             for x in x0.max(0)..x1.min(w as i64) {
+                if !o.contains((x as f32 + 0.5) / px_per_m, (y as f32 + 0.5) / px_per_m) {
+                    continue;
+                }
                 let (px, py) = (x as u32, y as u32);
                 map.put_pixel(px, py, Rgb(o.color));
                 layer.put_pixel(
@@ -182,11 +191,13 @@ mod tests {
                 y_m: 4.0,
                 w_m: 3.0,
                 h_m: 2.0,
+                angle_deg: 0.0,
             }],
             shape: None,
             walls: None,
             roads: None,
             region_walls: None,
+            houses: None,
             regions: None,
             noise_preview: None,
             notes: Vec::new(),
@@ -249,6 +260,7 @@ mod tests {
                 y_m: 0.0,
                 w_m: 64.0,
                 h_m: 64.0,
+                angle_deg: 0.0,
             },
         );
         let r = rasterize(&level, 4.0);
