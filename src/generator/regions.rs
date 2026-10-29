@@ -8,8 +8,9 @@
 //! wall (regions slice the town from the wall inward) or deep inside the town
 //! (the regions placed after it grow around it — nested regions).
 //!
-//! Growth is a noise-weighted shortest-path flood from the seed: compact
-//! blobs with smooth, organically wavy borders and no holes. Two clean-up
+//! Growth is a shortest-path flood from the seed whose step cost is stretched
+//! along a random per-region direction and modulated by a strong noise field
+//! (`irregularity_pct`): elongated, lobed, bay-cut shapes without holes. Two clean-up
 //! passes then guarantee every region is ONE 4-connected piece: cells no
 //! growth could reach go to the nearest neighboring region, and stray
 //! fragments merge into the region they share the most border with.
@@ -21,17 +22,31 @@ use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 
 use crate::generator::noise::NoiseField;
+use crate::generator::Stage;
 use crate::level::{CellMask, RegionMap, RegionSplit, RegionStat};
 use crate::model::LevelConfig;
 
-/// How strongly the noise bends region borders: the per-step cost ranges
-/// over 1..=1+WAVINESS, so growth runs faster through "cheap" noise valleys.
-const WAVINESS: f32 = 2.0;
+/// Noise contrast at 100% irregularity: the per-step cost is multiplied by
+/// exp(±CONTRAST·…), so growth races along cheap noise valleys (lobes,
+/// fingers) and stalls on ridges (bays).
+const CONTRAST: f32 = 3.0;
+/// Largest length-to-width stretch of a region at 100% irregularity.
+const MAX_STRETCH: f32 = 3.0;
 
+/// `build_with_progress` without progress reporting.
 pub fn build(
     config: &LevelConfig,
     rng: &mut ChaCha8Rng,
     town: &CellMask,
+) -> Option<RegionSplit> {
+    build_with_progress(config, rng, town, &Stage { progress: &|_, _| {}, from: 0.0, to: 1.0 })
+}
+
+pub(crate) fn build_with_progress(
+    config: &LevelConfig,
+    rng: &mut ChaCha8Rng,
+    town: &CellMask,
+    stage: &Stage,
 ) -> Option<RegionSplit> {
     let total = town.count_true() as u32;
     if total == 0 {
@@ -66,10 +81,10 @@ pub fn build(
     let mut order: Vec<usize> = (0..count).collect();
     order.sort_by_key(|&i| (targets[i], i));
 
-    // Border waviness: one smooth field for all regions, feature size tied to
-    // the average region so every border gets a few gentle bends.
+    // Shape character: one noise field for all regions (each reads its own
+    // offset patch of it), contrast and stretch scaled by irregularity.
     let noise = NoiseField::new(rng.random());
-    let scale = ((total as f32 / count as f32).sqrt() * 0.5).max(4.0);
+    let irregularity = config.regions.irregularity_pct.clamp(0.0, 100.0) / 100.0;
 
     let depth = wall_depth(town);
     let nesting = config.regions.nesting_pct.clamp(0.0, 100.0) / 100.0;
@@ -77,6 +92,7 @@ pub fn build(
     let mut ids = vec![0u8; w * h];
     let mut claimed: u32 = 0;
     for (place_no, &i) in order.iter().enumerate() {
+        stage.report("Growing regions", claimed as f32 / total as f32 * 0.95);
         let last = place_no + 1 == order.len();
         // The largest (last) region takes everything still free.
         let target = if last {
@@ -99,9 +115,18 @@ pub fn build(
             radius,
         };
         let seed = pick_seed(rng, town, &ids, &start);
+        // Every region gets its own direction, stretch and noise patch; the
+        // noise features are sized to the region so it gets a few big lobes.
+        let angle = rng.random::<f32>() * std::f32::consts::PI;
+        let stretch = 1.0 + irregularity * (MAX_STRETCH - 1.0) * rng.random::<f32>();
+        let offset = (rng.random::<f32>() * 1000.0, rng.random::<f32>() * 1000.0);
         let growth = Growth {
             noise: &noise,
-            scale,
+            scale: ((target as f32).sqrt() * 0.35).max(3.0),
+            offset,
+            contrast: irregularity * CONTRAST,
+            stretch,
+            axis: (angle.cos(), angle.sin()),
             keep_free_connected: !last,
             // A nested region stays off the wall so later regions can close
             // around it (falls back to the wall only if it runs out of room).
@@ -112,6 +137,7 @@ pub fn build(
 
     // Pockets the growth could not reach (cut off by other regions) join the
     // nearest region, then every region is made one connected piece.
+    stage.report("Cleaning up regions", 0.95);
     assign_leftovers(town, &mut ids);
     merge_fragments(town, &mut ids);
 
@@ -149,6 +175,18 @@ fn neighbors4(w: usize, h: usize, cell: usize) -> impl Iterator<Item = usize> {
     ]
     .into_iter()
     .flatten()
+}
+
+/// The 8-neighbors of `cell` inside the grid.
+fn neighbors8(w: usize, h: usize, cell: usize) -> impl Iterator<Item = usize> {
+    let (x, y) = ((cell % w) as i64, (cell / w) as i64);
+    [(-1i64, -1i64), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)]
+        .into_iter()
+        .filter_map(move |(dx, dy)| {
+            let (nx, ny) = (x + dx, y + dy);
+            (nx >= 0 && ny >= 0 && nx < w as i64 && ny < h as i64)
+                .then(|| ny as usize * w + nx as usize)
+        })
 }
 
 /// Distance of every town cell from the outside, in 4-steps (1 = touches
@@ -231,10 +269,13 @@ fn pick_seed(rng: &mut ChaCha8Rng, town: &CellMask, ids: &[u8], plan: &SeedPlan)
     candidates[rng.random_range(0..candidates.len())]
 }
 
-/// Grow a region from its seed to `target` cells: a shortest-path flood where
-/// each step costs 1..=1+WAVINESS by a smooth noise field. Cells are claimed
-/// in cost order, so the region stays compact and hole-free while its border
-/// bends with the noise. With `keep_free_connected`, the still-free town area
+/// Grow a region from its seed to `target` cells: a shortest-path flood over
+/// 8 directions (diagonals cost √2, so no diamond bias). A step's cost is its
+/// length measured in the region's stretched frame (cheap along `axis`,
+/// expensive across it → elongated regions) times a noise factor (cheap
+/// valleys → lobes and fingers, ridges → bays). Cells are claimed in cost
+/// order, so the region stays hole-free; a cell is claimed only when it
+/// touches the region orthogonally, keeping it one 4-connected piece. With `keep_free_connected`, the still-free town area
 /// is never split: a claim that would cut off a pocket takes the pocket along
 /// when it fits the remaining budget, otherwise the cell is skipped (and
 /// retried when a later claim reaches it again). With `avoid_wall`, cells on
@@ -250,11 +291,24 @@ fn grow(
     target: u32,
 ) -> u32 {
     let (w, h) = (town.width, town.height);
-    let Growth { noise, scale, keep_free_connected, mut avoid_wall } = *growth;
-    let step_cost = |cell: usize| {
-        let (x, y) = ((cell % w) as f32, (cell / w) as f32);
+    let mut avoid_wall = growth.avoid_wall;
+    let step_cost = |from: usize, to: usize| {
+        let (dx, dy) = (
+            (to % w) as f32 - (from % w) as f32,
+            (to / w) as f32 - (from / w) as f32,
+        );
+        let (c, s) = growth.axis;
+        let (along, across) = (dx * c + dy * s, dy * c - dx * s);
+        let length = (along * along / growth.stretch + across * across * growth.stretch).sqrt();
+        let (x, y) = ((to % w) as f32, (to / w) as f32);
+        let n = growth.noise.fbm(
+            x / growth.scale + growth.offset.0,
+            y / growth.scale + growth.offset.1,
+            3,
+        );
+        let factor = (growth.contrast * (n - 0.5) * 4.0).exp();
         // Fixed point keeps the heap ordering exact and platform-independent.
-        ((1.0 + WAVINESS * noise.fbm(x / scale, y / scale, 2)) * 1024.0) as u32
+        ((length * factor * 1024.0) as u32).max(1)
     };
     let mut held_back: Vec<Reverse<(u32, usize)>> = Vec::new();
     let mut search = PocketSearch::new(w * h);
@@ -276,7 +330,12 @@ fn grow(
         if ids[cell] != 0 || cost > best[cell] {
             continue;
         }
-        if keep_free_connected && cell != seed {
+        if cell != seed && !neighbors4(w, h, cell).any(|n| ids[n] == id) {
+            // Reached only diagonally so far: wait for an orthogonal claim.
+            best[cell] = u32::MAX;
+            continue;
+        }
+        if growth.keep_free_connected && cell != seed {
             match search.claim(town, ids, cell, id, target - grown) {
                 Some(n) => grown += n,
                 None => {
@@ -292,11 +351,11 @@ fn grow(
         if grown >= target {
             break;
         }
-        for n in neighbors4(w, h, cell) {
+        for n in neighbors8(w, h, cell) {
             if !town.cells[n] || ids[n] != 0 {
                 continue;
             }
-            let c = cost + step_cost(n);
+            let c = cost + step_cost(cell, n);
             if c < best[n] {
                 best[n] = c;
                 if avoid_wall.is_some_and(|depth| depth[n] == 1) {
@@ -314,7 +373,14 @@ fn grow(
 #[derive(Clone, Copy)]
 struct Growth<'a> {
     noise: &'a NoiseField,
+    /// Noise feature size in cells, and this region's patch of the field.
     scale: f32,
+    offset: (f32, f32),
+    /// Noise influence on the step cost (0 = none).
+    contrast: f32,
+    /// Length-to-width stretch along `axis` (cos, sin); 1 = round.
+    stretch: f32,
+    axis: (f32, f32),
     keep_free_connected: bool,
     /// Wall depth map; when set, town-edge cells are held back.
     avoid_wall: Option<&'a [u32]>,

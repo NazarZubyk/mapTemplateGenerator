@@ -83,6 +83,10 @@ pub struct RegionsSettings {
     /// nesting it inside them. 0 = every region on the wall, 100 = every
     /// region nested.
     pub nesting_pct: f32,
+    /// How irregular region shapes are, %: 0 = compact round blobs; higher
+    /// stretches each region along a random direction and lets a strong
+    /// noise field carve lobes, bays and fingers into its border.
+    pub irregularity_pct: f32,
 }
 
 impl Default for RegionsSettings {
@@ -91,6 +95,7 @@ impl Default for RegionsSettings {
             count: 3,
             shares: vec![20.0, 30.0, 50.0],
             nesting_pct: 35.0,
+            irregularity_pct: 60.0,
         }
     }
 }
@@ -167,6 +172,29 @@ pub struct ShapeSettings {
     /// Distance the region keeps from the map border, in meters, cut with a
     /// meandering noise line. 0 = the region may touch the border.
     pub border_margin_m: f32,
+    /// Domain warp, %: the noise is sampled at coordinates bent by a second
+    /// noise field — swirling, flowing forms instead of plain noise blobs.
+    pub warp_pct: f32,
+    /// Silhouette pull, %: the field is lowered with distance from a randomly
+    /// placed, stretched and rotated center — the region gathers into one
+    /// tilted organic mass instead of filling the map rectangle.
+    pub silhouette_pct: f32,
+    /// Bridge wander, %: bridges follow the valleys of a noise field instead
+    /// of the straight shortest line.
+    pub bridge_wander_pct: f32,
+    /// Treat feature size, border margin, min blob, bridge width and the
+    /// section gap / bridge widths as values
+    /// for a 64 m map and scale them with the actual map size, so a bigger
+    /// map gets the same shape character, only larger.
+    pub scale_with_map: bool,
+    /// How many sections (islands) the shape is built from. Each section is
+    /// its own organic mass, separated from the others by a channel and
+    /// joined to them by wide bridges. 1 = one mass (no channels).
+    pub sections: u32,
+    /// Width of the channel between sections, in meters.
+    pub section_gap_m: f32,
+    /// Width of the bridges joining sections, in meters.
+    pub section_bridge_m: f32,
 }
 
 impl ShapeSettings {
@@ -180,6 +208,12 @@ impl ShapeSettings {
             MapKind::Forest => (12.0, 5, 50.0, 6, 2, 4.0),
             MapKind::Cave => (16.0, 4, 30.0, 3, 1, 8.0),
         };
+        let (warp, silhouette, wander) = match kind {
+            MapKind::Town => (45.0, 70.0, 60.0),
+            MapKind::Swamp => (60.0, 35.0, 70.0),
+            MapKind::Forest => (40.0, 25.0, 60.0),
+            MapKind::Cave => (70.0, 45.0, 80.0),
+        };
         Self {
             noise_scale_m: scale,
             octaves,
@@ -187,6 +221,13 @@ impl ShapeSettings {
             min_blob_cells: min_blob,
             bridge_width_cells: bridge,
             border_margin_m: margin,
+            warp_pct: warp,
+            silhouette_pct: silhouette,
+            bridge_wander_pct: wander,
+            scale_with_map: true,
+            sections: 1,
+            section_gap_m: 10.0,
+            section_bridge_m: 4.0,
         }
     }
 }

@@ -118,6 +118,12 @@ pub struct ShapeStats {
     pub bridges: u32,
     /// Cells claimed by filling fully enclosed holes.
     pub hole_cells_filled: u32,
+    /// Sections (islands) the shape was built from.
+    #[serde(default)]
+    pub sections: u32,
+    /// Wide bridges carved to join the sections.
+    #[serde(default)]
+    pub section_bridges: u32,
     /// Share of the map covered by the final shape, 0..100.
     pub coverage_pct: f32,
 }

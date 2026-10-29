@@ -43,6 +43,11 @@ the wall, 100% = every region nests inside the next. No visible effect with 1 re
 with a tiny town or very large shares there may be no spot deep enough, and the region \
 starts as deep as it can.";
 
+const TIP_IRREGULARITY: &str = "How irregular region shapes are. 0% = compact round \
+blobs. Higher values stretch each region along its own random direction (up to 3× longer \
+than wide) and let a strong noise field carve lobes, bays and fingers into its border. No \
+visible effect with 1 region (it takes the whole town).";
+
 /// Rebalance the shares after region `i` was changed to a new value: the
 /// others are rescaled to fill the remainder, keeping their proportions.
 fn rebalance(shares: &mut [f32], i: usize) {
@@ -112,6 +117,14 @@ pub fn show_bench(ui: &mut egui::Ui, app: &mut MapGenApp) {
             .on_hover_text(TIP_NESTING);
         ui.add(egui::Slider::new(&mut app.config.regions.nesting_pct, 0.0..=100.0).suffix(" %"))
             .on_hover_text(TIP_NESTING);
+    });
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Irregularity").underline())
+            .on_hover_text(TIP_IRREGULARITY);
+        ui.add(
+            egui::Slider::new(&mut app.config.regions.irregularity_pct, 0.0..=100.0).suffix(" %"),
+        )
+        .on_hover_text(TIP_IRREGULARITY);
     });
     ui.weak("Changes apply on ⚙ Generate");
 

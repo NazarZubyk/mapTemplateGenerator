@@ -36,16 +36,22 @@ pub fn validate(config: &LevelConfig) -> Vec<Warning> {
             blocking: false,
         });
     }
+    let effective_margin = config.shape.border_margin_m
+        * if config.shape.scale_with_map {
+            config.map.width_m.min(config.map.height_m) / crate::generator::shape::REFERENCE_MAP_M
+        } else {
+            1.0
+        };
     if config.map.width_m > 0.0
         && config.map.height_m > 0.0
-        && 2.0 * config.shape.border_margin_m >= config.map.width_m.min(config.map.height_m)
+        && 2.0 * effective_margin >= config.map.width_m.min(config.map.height_m)
     {
         warnings.push(Warning {
             field: Some("shape.border_margin_m".to_owned()),
             message: format!(
-                "Border margin {} m leaves no interior on a {}×{} m map — the region is \
+                "Border margin {:.1} m leaves no interior on a {}×{} m map — the region is \
                  squeezed into a thin strip",
-                config.shape.border_margin_m, config.map.width_m, config.map.height_m
+                effective_margin, config.map.width_m, config.map.height_m
             ),
             blocking: false,
         });

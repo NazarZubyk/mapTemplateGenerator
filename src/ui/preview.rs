@@ -28,6 +28,18 @@ impl Default for PreviewState {
     }
 }
 
+/// Multiply the zoom by `factor`, keeping the world point under `anchor`
+/// fixed (canvas center when `None`).
+fn zoom_by(state: &mut PreviewState, canvas: Rect, anchor: Option<Pos2>, factor: f32) {
+    let old_zoom = state.zoom;
+    let new_zoom = (old_zoom * factor.max(0.05)).clamp(MIN_ZOOM, MAX_ZOOM);
+    let k = new_zoom / old_zoom;
+    let anchor = anchor.unwrap_or(canvas.center()) - canvas.center();
+    state.pan = anchor - (anchor - state.pan) * k;
+    state.zoom = new_zoom;
+    state.user_view = true;
+}
+
 pub fn show(
     ui: &mut egui::Ui,
     state: &mut PreviewState,
@@ -35,11 +47,18 @@ pub fn show(
     level: Option<&GeneratedLevel>,
     bench: Option<&egui::TextureHandle>,
 ) {
+    let mut button_zoom = 1.0f32;
     ui.horizontal(|ui| {
         if ui.small_button("Re-center").clicked() {
             state.user_view = false;
         }
-        ui.weak("Drag to pan, scroll to zoom");
+        if ui.small_button("−").on_hover_text("Zoom out").clicked() {
+            button_zoom = 1.0 / 1.25;
+        }
+        if ui.small_button("+").on_hover_text("Zoom in").clicked() {
+            button_zoom = 1.25;
+        }
+        ui.weak("Swipe (two fingers) or drag to pan · pinch or Ctrl+scroll to zoom");
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.weak(format!("{:.2} px/m", state.zoom));
         });
@@ -59,17 +78,21 @@ pub fn show(
         state.user_view = true;
     }
 
-    let (scroll_y, pinch) = ui.ctx().input(|i| (i.raw_scroll_delta.y, i.zoom_delta()));
-    if response.hovered() && (scroll_y != 0.0 || pinch != 1.0) {
-        let old_zoom = state.zoom;
-        let new_zoom = (old_zoom * (scroll_y * 0.01).exp() * pinch.max(0.05)).clamp(MIN_ZOOM, MAX_ZOOM);
-        let k = new_zoom / old_zoom;
-        // Zoom toward the pointer: keep the world point under it fixed.
-        if let Some(anchor) = response.hover_pos().map(|p| p - canvas.center()) {
-            state.pan = anchor - (anchor - state.pan) * k;
+    // Touchpad-friendly: plain scroll (two-finger swipe, mouse wheel) pans;
+    // pinch and Ctrl+scroll arrive as egui's zoom delta (Ctrl+scroll is
+    // removed from the scroll delta) and zoom toward the pointer.
+    let (scroll, pinch) = ui.ctx().input(|i| (i.smooth_scroll_delta, i.zoom_delta()));
+    if response.hovered() {
+        if scroll != Vec2::ZERO {
+            state.pan += scroll;
+            state.user_view = true;
         }
-        state.zoom = new_zoom;
-        state.user_view = true;
+        if pinch != 1.0 {
+            zoom_by(state, canvas, response.hover_pos(), pinch);
+        }
+    }
+    if button_zoom != 1.0 {
+        zoom_by(state, canvas, None, button_zoom);
     }
 
     let zoom = state.zoom;

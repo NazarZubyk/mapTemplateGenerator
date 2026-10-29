@@ -1,3 +1,7 @@
+use std::sync::mpsc::{self, Receiver};
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
+
 use eframe::egui;
 use rand::Rng;
 
@@ -31,6 +35,16 @@ pub struct MapGenApp {
     /// textures for the bench preview.
     pub bench_noise: Option<egui::TextureHandle>,
     pub bench_shape: Option<egui::TextureHandle>,
+    /// The generation running on a background thread, if any.
+    pub job: Option<GenJob>,
+}
+
+/// A generation running on a background thread.
+pub struct GenJob {
+    /// Latest (stage label, overall fraction) reported by the generator.
+    pub progress: Arc<Mutex<(&'static str, f32)>>,
+    pub result: Receiver<GeneratedLevel>,
+    pub started: Instant,
 }
 
 #[derive(Debug, Clone)]
@@ -57,14 +71,66 @@ impl Default for MapGenApp {
             workflow_view: workflow::BenchView::Shape,
             bench_noise: None,
             bench_shape: None,
+            job: None,
         }
     }
 }
 
 impl MapGenApp {
-    /// Run the generation engine with the current config and seed.
+    /// Start the generation engine with the current config and seed on a
+    /// background thread; the UI keeps running and shows its progress. Does
+    /// nothing while a generation is already running.
     pub fn generate_level(&mut self, ctx: &egui::Context) {
-        let level = crate::generator::generate(&self.config, self.config.seed);
+        if self.job.is_some() {
+            return;
+        }
+        let progress = Arc::new(Mutex::new(("Starting", 0.0f32)));
+        let (tx, rx) = mpsc::channel();
+        let config = self.config.clone();
+        let shared = Arc::clone(&progress);
+        let repaint = ctx.clone();
+        std::thread::spawn(move || {
+            let report = |label: &'static str, fraction: f32| {
+                if let Ok(mut p) = shared.lock() {
+                    *p = (label, fraction);
+                }
+                repaint.request_repaint();
+            };
+            let level = crate::generator::generate_with_progress(&config, config.seed, &report);
+            // The receiver is gone only if the app closed; nothing to do then.
+            let _ = tx.send(level);
+            repaint.request_repaint();
+        });
+        self.job = Some(GenJob {
+            progress,
+            result: rx,
+            started: Instant::now(),
+        });
+    }
+
+    /// Pick up a finished background generation, if there is one.
+    fn poll_job(&mut self, ctx: &egui::Context) {
+        let Some(job) = &self.job else { return };
+        match job.result.try_recv() {
+            Ok(level) => {
+                self.job = None;
+                self.finish_level(ctx, level);
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => {
+                // The worker panicked: report it instead of spinning forever.
+                self.job = None;
+                self.gen_warnings = vec![Warning {
+                    field: None,
+                    message: "Generation crashed — try other settings or another seed".to_owned(),
+                    blocking: false,
+                }];
+            }
+        }
+    }
+
+    /// Show a finished level: notes, bench textures, preview.
+    fn finish_level(&mut self, ctx: &egui::Context, level: GeneratedLevel) {
         self.gen_warnings = level
             .notes
             .iter()
@@ -147,6 +213,7 @@ impl MapGenApp {
 
 impl eframe::App for MapGenApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.poll_job(ctx);
         // The config is small: re-validate every frame so warnings stay current.
         self.warnings = validate(&self.config);
         self.warnings.extend(self.gen_warnings.iter().cloned());
@@ -173,14 +240,17 @@ impl MapGenApp {
         egui::TopBottomPanel::top("action_bar").show(ctx, |ui| {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
+                let running = self.job.is_some();
                 let generate = ui.add_enabled(
-                    blocking == 0,
+                    blocking == 0 && !running,
                     egui::Button::new(
                         egui::RichText::new("⚙  Generate").strong().size(16.0),
                     )
                     .min_size(egui::vec2(110.0, 28.0)),
                 );
-                if blocking == 0 {
+                if running {
+                    generate.on_disabled_hover_text("Generation is running…");
+                } else if blocking == 0 {
                     if generate.clicked() {
                         self.generate_level(ctx);
                     }
@@ -197,7 +267,7 @@ impl MapGenApp {
                     egui::DragValue::new(&mut self.config.seed).speed(1.0),
                 );
                 if ui
-                    .button("🎲 Re-roll")
+                    .add_enabled(!running && blocking == 0, egui::Button::new("🎲 Re-roll"))
                     .on_hover_text("New random seed and regenerate")
                     .clicked()
                 {
@@ -206,7 +276,16 @@ impl MapGenApp {
                 }
                 ui.separator();
 
-                if blocking > 0 {
+                if let Some(job) = &self.job {
+                    let (label, fraction) = job.progress.lock().map(|p| *p).unwrap_or(("…", 0.0));
+                    ui.add(
+                        egui::ProgressBar::new(fraction)
+                            .desired_width(260.0)
+                            .animate(true)
+                            .text(format!("{label} · {:.0}%", fraction * 100.0)),
+                    );
+                    ui.weak(format!("{:.1} s", job.started.elapsed().as_secs_f32()));
+                } else if blocking > 0 {
                     ui.label(
                         egui::RichText::new(format!(
                             "Generation blocked by {blocking} blocking warning(s)"

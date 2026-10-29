@@ -198,6 +198,8 @@ mod tests {
                 speckle_cells_removed: 0,
                 bridges: 0,
                 hole_cells_filled: 0,
+                sections: 1,
+                section_bridges: 0,
                 coverage_pct: 100.0,
             },
         });

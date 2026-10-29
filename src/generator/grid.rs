@@ -2,7 +2,8 @@
 //! bridging separate pieces, filling enclosed holes. Pure deterministic
 //! functions — no RNG, everything is derived from the mask itself.
 
-use std::collections::VecDeque;
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
 
 use crate::level::CellMask;
 
@@ -118,12 +119,24 @@ pub fn fill_holes(mask: &mut CellMask) -> u32 {
     filled
 }
 
-/// Carve the shortest corridor between the two closest components (BFS from
-/// all masked cells at once; the first meeting of two different labels is the
-/// globally closest pair). Returns false when there is nothing to bridge
-/// (0 or 1 components). One call merges one pair — loop it until the mask is
-/// one piece.
+/// `bridge_closest_pair_weighted` with a uniform step cost: the straight
+/// shortest corridor.
 pub fn bridge_closest_pair(mask: &mut CellMask, width_cells: u32) -> bool {
+    bridge_closest_pair_weighted(mask, width_cells, |_| 1)
+}
+
+/// Carve the cheapest corridor between the two closest components (BFS from
+/// all masked cells at once; the first meeting of two different labels is the
+/// globally closest pair). `step_cost(cell)` is the cost of entering a cell
+/// (≥ 1); a noise-shaped cost makes corridors wind along its valleys instead
+/// of running straight. Returns false when there is nothing to bridge (0 or
+/// 1 components). One call merges one pair — loop it until the mask is one
+/// piece. Deterministic: ties by cell index.
+pub fn bridge_closest_pair_weighted(
+    mask: &mut CellMask,
+    width_cells: u32,
+    step_cost: impl Fn(usize) -> u32,
+) -> bool {
     let (w, h) = (mask.width as i64, mask.height as i64);
     // Seed the BFS with one label per COMPONENT (not per cell — two adjacent
     // cells of one blob must share a label, or the meet test fires inside it).
@@ -132,19 +145,23 @@ pub fn bridge_closest_pair(mask: &mut CellMask, width_cells: u32) -> bool {
         return false;
     }
     let mut parent = vec![usize::MAX; mask.cells.len()];
-    let mut queue = VecDeque::new();
-    for y in 0..mask.height {
-        for x in 0..mask.width {
-            if mask.get(x, y) {
-                queue.push_back((x as i64, y as i64));
-            }
+    let mut dist = vec![u64::MAX; mask.cells.len()];
+    let mut heap = BinaryHeap::new();
+    for (i, &on) in mask.cells.iter().enumerate() {
+        if on {
+            dist[i] = 0;
+            heap.push(Reverse((0u64, i)));
         }
     }
 
-    // BFS over ALL cells (masked or not), carrying the label of the nearest
-    // component. First cell reached from two different labels = bridge spot.
-    while let Some((cx, cy)) = queue.pop_front() {
-        let ci = (cy as usize) * mask.width + cx as usize;
+    // Multi-source Dijkstra over ALL cells (masked or not), carrying the label
+    // of the cheapest-reached component. First edge between two different
+    // labels = bridge spot.
+    while let Some(Reverse((d, ci))) = heap.pop() {
+        if d > dist[ci] {
+            continue;
+        }
+        let (cx, cy) = ((ci % mask.width) as i64, (ci / mask.width) as i64);
         let cl = label[ci];
         for (dx, dy) in NEIGHBORS4 {
             let (nx, ny) = (cx + dx, cy + dy);
@@ -153,14 +170,17 @@ pub fn bridge_closest_pair(mask: &mut CellMask, width_cells: u32) -> bool {
             }
             let ni = (ny as usize) * mask.width + nx as usize;
             let nl = label[ni];
-            if nl == 0 {
-                label[ni] = cl;
-                parent[ni] = ci;
-                queue.push_back((nx, ny));
-            } else if nl != cl {
+            if nl != 0 && nl != cl {
                 carve_path(mask, ni, &parent, width_cells);
                 carve_path(mask, ci, &parent, width_cells);
                 return true;
+            }
+            let nd = d + step_cost(ni).max(1) as u64;
+            if nd < dist[ni] {
+                dist[ni] = nd;
+                label[ni] = cl;
+                parent[ni] = ci;
+                heap.push(Reverse((nd, ni)));
             }
         }
     }

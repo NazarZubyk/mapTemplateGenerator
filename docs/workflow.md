@@ -53,7 +53,13 @@ Right now:
 4. **Regions** — input: region inside the wall · output: region id map. In
    development; its test controls are in the bench below.
 
-- **Action bar** (`src/ui/app.rs`): seed + Generate + Re-roll. Untouched.
+- **Action bar** (`src/ui/app.rs`): seed + Generate + Re-roll. Generation
+  runs on a background thread (`MapGenApp::job`); the bar shows a progress
+  bar with the current stage + elapsed time, and Generate / Re-roll are
+  disabled until it finishes. Phases report through
+  `generator::generate_with_progress` (`Progress` callback, `Stage` maps a
+  phase's 0..1 into its slice of the whole: shape 0–55%, wall 55–65%,
+  regions 65–99%). New phases must report too.
 - **Preview** (`src/ui/preview.rs`): draws the generated level (rect objects,
   circle mob spawns/gates, legend) plus the bench texture layer (noise
   texture or town shape — toggle lives in the bench).
@@ -220,6 +226,46 @@ The user's pipeline, implemented literally, now with a **map kind** on top:
    outermost ring is cleared as a hard guarantee — the region can never touch
    the border, even at 99% coverage (unit-tested across seeds).
 
+7. **Domain warp** (`shape.warp_pct`) — step 1 actually samples the noise
+   at coordinates displaced by two more fBm reads (up to ~±3 feature sizes
+   at 100%): flowing, swirled forms instead of plain noise blobs.
+8. **Silhouette pull** (`shape.silhouette_pct`) — the field is lowered by
+   pull·0.8·d², d = elliptical distance from a center picked per seed
+   (±15% off the map center, random axis, stretch 1..1.8; its own small RNG
+   off the seed, the main stream is untouched). The coverage cut then
+   removes the far cells first: one tilted organic mass instead of the map
+   rectangle; islands cluster. The bench noise view shows this final field.
+9. **Winding bridges** (`shape.bridge_wander_pct`) — bridging is a
+   multi-source Dijkstra (`grid::bridge_closest_pair_weighted`); entering a
+   cell costs exp(±contrast) by a separate fine fBm field, so corridors
+   follow its valleys instead of straight L-lines.
+
+10. **Scale with map** (`shape.scale_with_map`, default on) — feature size,
+   border margin and bridge width (×k) and min blob (×k²) are authored for
+   a 64 m map (`shape::REFERENCE_MAP_M`), k = shorter map side / 64. A
+   200 m map gets the same shape as a 64 m one, ~3× larger (unit-tested:
+   a 3× map downsampled agrees on >90% of cells). Without it, big maps got
+   a fringy coastline, hair-thin bridges and many specks. The border-margin
+   warning checks the scaled margin.
+
+11. **Sections** (`shape.sections`, default 1; `section_gap_m` 10,
+   `section_bridge_m` 4 — both ×k) — the shape is built from N islands.
+   Centers are spread by best-of-32 farthest-point sampling (inset 20%),
+   each with its own axis/stretch and a silhouette sized to its share of
+   the map. Every cell belongs to its nearest center (on a gently wobbled
+   position — the full warp squeezed the channels), and cells within
+   gap/2 of the bisector to the runner-up center are a channel: never town,
+   excluded from the coverage percentile. Speck removal is global; bridging
+   (kept inside the section by a ×1000 cost outside it) and hole fill run
+   per section; then sections are joined closest-first by
+   `section_bridge_m`-wide winding bridges (N−1 of them). Lagoons the
+   bridges enclose stay open. 1 section = exactly the previous behavior.
+   Stats: `sections` (non-empty ones), `section_bridges`.
+
+Per-kind defaults (warp / silhouette / wander): Town 45/70/60, Swamp
+60/35/70, Forest 40/25/60, Cave 70/45/80. Old config files load the
+Town values for missing fields.
+
 **The two shape characters** (one pipeline, per-kind defaults from
 `ShapeSettings::for_kind`):
 
@@ -291,12 +337,16 @@ The user's algorithm, implemented literally in `generator/regions.rs`:
      until nothing else is reachable. The regions placed after it (larger)
      grow around it: districts inside districts. With large shares or a
      small town the region may still touch the wall — best effort.
-3. **Growth** — a noise-weighted shortest-path flood from the seed: each
-   step costs 1..3 by a smooth fBm field (feature size ≈ half the average
-   region's diameter), and cells are claimed in cost order. Compact,
-   hole-free blobs with smooth wavy borders (the old random-frontier growth
-   left ragged borders and single-cell enclaves). Deterministic: no RNG in
-   growth, ties by cell index.
+3. **Growth** — a shortest-path flood from the seed over 8 directions
+   (diagonals cost √2 — 4-direction growth made every region a diamond).
+   A step's cost = its length in the region's stretched frame × a noise
+   factor. Per region: a random direction and stretch (1..3× at 100%
+   `regions.irregularity_pct`, default 60%) → elongated, tilted regions;
+   its own patch of a 3-octave fBm field, feature size ≈ 0.35·√target, as
+   exp(±contrast) cost → growth races along noise valleys (lobes, fingers)
+   and stalls on ridges (bays). Cells are claimed in cost order (no holes)
+   and only when they touch the region orthogonally (one 4-connected
+   piece). Deterministic: ties by cell index.
 4. **Never split the free area** — every non-last region checks each claim:
    a fast 3×3 test, then (only if that is inconclusive) two interleaved
    floods from the cell's free neighbors. If the claim would cut off a

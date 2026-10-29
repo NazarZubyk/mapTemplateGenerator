@@ -145,6 +145,35 @@ when the cut produced a single piece.";
     const TIP_BORDER: &str = "Distance the region keeps from the map border — with \
 randomness. The margin line is not straight: it meanders with the noise, cutting deep \
 in some places and barely in others. 0 m: the region may touch the border.";
+    const TIP_WARP: &str = "Bends the noise: it is sampled at coordinates pushed around \
+by a second noise field, so blobs flow and swirl (river bends, curled bays, tendrils) \
+instead of looking like plain noise. 0%: plain noise. 40–70%: natural. 100%: strongly \
+swirled. Always changes the shape on Generate.";
+    const TIP_SILHOUETTE: &str = "Pulls the region toward a randomly placed, stretched \
+and rotated center (a new one every seed): the shape gathers into one tilted organic \
+mass instead of filling the map rectangle, and islands cluster instead of spreading \
+evenly. 0%: no pull — the noise alone decides (town ≈ the map rectangle). 100%: a \
+compact tilted mass. Weaker with a very high coverage (little is cut away).";
+    const TIP_WANDER: &str = "How much the bridges between pieces wind: they follow \
+the valleys of a noise field instead of the straight shortest line. 0%: straight \
+L-shaped corridors. 60–80%: natural winding passages. NO EFFECT when the cut produced a \
+single piece.";
+    const TIP_SCALE_MAP: &str = "When on, Noise feature size, Border margin, Min blob and \
+Bridge width are values for a 64 m map and grow with the map: a 200 m map gets the same \
+shape character as a 64 m one, just bigger (×3.1 sizes, ×9.8 min blob). Off: the values \
+are absolute — a big map then gets a much busier, fringier coastline, thin bridges and \
+many small specks. No effect on a 64 m map.";
+    const TIP_SECTIONS: &str = "How many sections (islands) the shape is built from. \
+Each section is its own organic mass with its own tilt, separated from the others by an \
+open channel (Section gap) and joined to them by wide bridges (Section bridge) — a town \
+on several islands, a cave of several chambers. 1: one mass (default) — Section gap and \
+Section bridge then have NO EFFECT. A section can come out empty with a very low coverage.";
+    const TIP_GAP: &str = "Width of the open channel between sections, in meters (×map \
+size / 64 with Scale with map). Small: sections almost touch. Large: clearly separate \
+islands with long bridges. NO EFFECT with 1 section.";
+    const TIP_SECTION_BRIDGE: &str = "Width of the bridges joining sections, in meters \
+(×map size / 64 with Scale with map). Sections are joined closest-first, so N sections \
+get N−1 bridges; they wind with Bridge wander. NO EFFECT with 1 section.";
     node(
         ui,
         &format!("2 · {} shape", app.config.kind.label()),
@@ -197,6 +226,42 @@ in some places and barely in others. 0 m: the region may touch the border.";
                                 .suffix(" m"),
                         )
                     });
+                    param_row(ui, "Sections", TIP_SECTIONS, |ui| {
+                        ui.add(egui::DragValue::new(&mut shape.sections).range(1..=8).speed(0.1))
+                    });
+                    param_row(ui, "Section gap", TIP_GAP, |ui| {
+                        ui.add(
+                            egui::DragValue::new(&mut shape.section_gap_m)
+                                .range(0.0..=40.0)
+                                .speed(0.2)
+                                .suffix(" m"),
+                        )
+                    });
+                    param_row(ui, "Section bridge", TIP_SECTION_BRIDGE, |ui| {
+                        ui.add(
+                            egui::DragValue::new(&mut shape.section_bridge_m)
+                                .range(0.5..=20.0)
+                                .speed(0.1)
+                                .suffix(" m"),
+                        )
+                    });
+                    param_row(ui, "Scale with map", TIP_SCALE_MAP, |ui| {
+                        ui.checkbox(&mut shape.scale_with_map, "")
+                    });
+                    param_row(ui, "Warp (flow)", TIP_WARP, |ui| {
+                        ui.add(egui::Slider::new(&mut shape.warp_pct, 0.0..=100.0).suffix(" %"))
+                    });
+                    param_row(ui, "Silhouette pull", TIP_SILHOUETTE, |ui| {
+                        ui.add(
+                            egui::Slider::new(&mut shape.silhouette_pct, 0.0..=100.0).suffix(" %"),
+                        )
+                    });
+                    param_row(ui, "Bridge wander", TIP_WANDER, |ui| {
+                        ui.add(
+                            egui::Slider::new(&mut shape.bridge_wander_pct, 0.0..=100.0)
+                                .suffix(" %"),
+                        )
+                    });
                 });
             ui.horizontal(|ui| {
                 if ui
@@ -216,14 +281,22 @@ in some places and barely in others. 0 m: the region may touch the border.";
                     shape.min_blob_cells = rng.random_range(1..=64);
                     shape.bridge_width_cells = rng.random_range(1..=8);
                     shape.border_margin_m = rng.random_range(0.0..=32.0);
+                    shape.warp_pct = rng.random_range(0.0..=100.0);
+                    shape.silhouette_pct = rng.random_range(0.0..=100.0);
+                    shape.bridge_wander_pct = rng.random_range(0.0..=100.0);
+                    shape.sections = rng.random_range(1..=5);
+                    shape.section_gap_m = rng.random_range(2.0..=20.0);
+                    shape.section_bridge_m = rng.random_range(1.0..=10.0);
                 }
                 ui.weak("Changes apply on ⚙ Generate");
             });
             if let Some(shape) = app.generated.as_ref().and_then(|l| l.shape.as_ref()) {
                 ui.weak(format!(
-                    "generated: {:.1}% of the map, {} cells",
+                    "generated: {:.1}% of the map, {} cells, {} section(s), {} wide bridge(s)",
                     shape.stats.coverage_pct,
-                    shape.mask.count_true()
+                    shape.mask.count_true(),
+                    shape.stats.sections,
+                    shape.stats.section_bridges
                 ));
             }
         },
