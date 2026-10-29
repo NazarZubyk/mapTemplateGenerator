@@ -63,8 +63,20 @@ pub struct ExportSpec {
     pub layer_categories: Vec<&'static str>,
     /// What kind of map this is ("town", "swamp", ...).
     pub map_kind: &'static str,
+    /// The region split, once the regions node is built.
+    pub regions: Option<Vec<ExportRegion>>,
     /// Every placed object with position and size in meters.
     pub objects: Vec<crate::level::PlacedObject>,
+}
+
+/// One region of the split, with its color on map.png.
+#[derive(Debug, Serialize)]
+pub struct ExportRegion {
+    pub id: u8,
+    pub color: String,
+    pub target_pct: f32,
+    pub actual_pct: f32,
+    pub cells: u32,
 }
 
 #[derive(Debug, Serialize)]
@@ -77,7 +89,19 @@ pub struct LegendEntry {
 impl ExportSpec {
     pub fn new(level: &GeneratedLevel, px_per_m: f32) -> Self {
         let mut legend: Vec<LegendEntry> = Vec::new();
-        if let Some(shape) = &level.shape
+        if let Some(regions) = &level.regions {
+            // Each region paints in its own color; the plain region entry is
+            // replaced by per-region entries.
+            for s in &regions.stats {
+                if s.cells > 0 {
+                    legend.push(LegendEntry {
+                        color: color_hex(render::region_color(s.id)),
+                        name: format!("region {}", s.id),
+                        category: "ground",
+                    });
+                }
+            }
+        } else if let Some(shape) = &level.shape
             && shape.stats.coverage_pct > 0.0
         {
             legend.push(LegendEntry {
@@ -108,6 +132,18 @@ impl ExportSpec {
                 category: render::category_name(o.category),
             });
         }
+        let regions = level.regions.as_ref().map(|r| {
+            r.stats
+                .iter()
+                .map(|s| ExportRegion {
+                    id: s.id,
+                    color: color_hex(render::region_color(s.id)),
+                    target_pct: s.target_pct,
+                    actual_pct: s.actual_pct,
+                    cells: s.cells,
+                })
+                .collect()
+        });
         Self {
             format_version: 1,
             generator: format!("MapTemplateGenerator {}", env!("CARGO_PKG_VERSION")),
@@ -118,6 +154,7 @@ impl ExportSpec {
             px_per_m,
             legend,
             layer_categories: render::layer_categories(),
+            regions,
             objects: level.objects.clone(),
         }
     }
@@ -159,6 +196,7 @@ mod tests {
             ],
             shape: None,
             walls: None,
+            regions: None,
             noise_preview: None,
             notes: Vec::new(),
         };

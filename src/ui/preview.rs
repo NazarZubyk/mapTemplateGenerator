@@ -180,19 +180,28 @@ fn darker(rgb: [u8; 3]) -> Color32 {
 
 /// Small color -> name legend in the top-right corner of the canvas.
 fn draw_legend(painter: &egui::Painter, canvas: Rect, level: &GeneratedLevel) {
-    let mut entries: Vec<([u8; 3], &str)> = Vec::new();
-    if let Some(shape) = &level.shape
+    let mut entries: Vec<([u8; 3], String)> = Vec::new();
+    if let Some(regions) = &level.regions {
+        for s in &regions.stats {
+            if s.cells > 0 {
+                entries.push((
+                    crate::render::region_color(s.id),
+                    format!("region {}", s.id),
+                ));
+            }
+        }
+    } else if let Some(shape) = &level.shape
         && shape.stats.coverage_pct > 0.0
     {
-        entries.push((crate::render::REGION, level.config.kind.slug()));
+        entries.push((crate::render::REGION, level.config.kind.slug().to_owned()));
     }
     if let Some(walls) = &level.walls
         && walls.stats.wall_cells > 0
     {
-        entries.push((crate::render::WALL, "outer wall"));
+        entries.push((crate::render::WALL, "outer wall".to_owned()));
     }
     for o in &level.objects {
-        let key = (o.color, o.type_name.as_str());
+        let key = (o.color, o.type_name.clone());
         if !entries.iter().any(|(c, n)| *c == key.0 && *n == key.1) {
             entries.push(key);
         }
@@ -220,7 +229,7 @@ fn draw_legend(painter: &egui::Painter, canvas: Rect, level: &GeneratedLevel) {
         painter.text(
             Pos2::new(rect.left() + 24.0, y + 8.5),
             Align2::LEFT_CENTER,
-            *name,
+            name.as_str(),
             FontId::proportional(12.0),
             Color32::from_gray(220),
         );

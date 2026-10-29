@@ -28,6 +28,8 @@ fn generation_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_shape(ui, app);
     flow_arrow(ui, "region mask");
     node_outer_walls(ui, app);
+    flow_arrow(ui, "region inside the wall");
+    node_regions(ui, app);
     ui.weak("Next nodes appear here as sections finish; which nodes exist depends on the map kind (docs/workflow.md).");
     ui.add_space(4.0);
     ui.separator();
@@ -228,17 +230,87 @@ in some places and barely in others. 0 m: the region may touch the border.";
     );
 }
 
-/// Node 3: the outer wall ring around the region. In development: its test
-/// controls live in the bench; once accepted they move into this node body.
+/// Node 3: the outer wall ring (finished — promoted from the bench; see
+/// step 2 notes in docs/workflow.md).
 fn node_outer_walls(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_SEG_MIN: &str = "Shortest wall segment in meters. The wall is built point \
+by point: it starts on the region border, walks the border and places the next point \
+after a random length between min and max. Small values (2–5 m) hug the border closely; \
+large values cut corners and can bridge over small bays.";
+    const TIP_SEG_MAX: &str = "Longest wall segment in meters. With min == max every \
+segment has the same length and the loop closes with a straight chord that can pass \
+through the interior — that is expected. If max is smaller than min the two are swapped \
+at generation time (a warning tells you).";
+    const TIP_THICKNESS: &str = "Wall thickness in meters, rounded to whole grid cells. \
+The wall grows on both sides of the walked line; bigger values swallow more of the \
+region behind the wall into the ring itself.";
     node(ui, "3 · Outer walls", |ui| {
         ui.weak("input: region mask · output: region mask + wall ring");
-        ui.weak("⚙ in development — test controls in the Current workflow bench");
+        egui::Grid::new("wall_node_grid")
+            .num_columns(2)
+            .spacing([10.0, 3.0])
+            .show(ui, |ui| {
+                let wall = &mut app.config.outer_wall;
+                param_row(ui, "Segment min", TIP_SEG_MIN, |ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut wall.segment_min_m)
+                            .range(0.5..=64.0)
+                            .speed(0.2)
+                            .suffix(" m"),
+                    )
+                });
+                param_row(ui, "Segment max", TIP_SEG_MAX, |ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut wall.segment_max_m)
+                            .range(0.5..=64.0)
+                            .speed(0.2)
+                            .suffix(" m"),
+                    )
+                });
+                param_row(ui, "Wall width", TIP_THICKNESS, |ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut wall.thickness_m)
+                            .range(0.1..=16.0)
+                            .speed(0.1)
+                            .suffix(" m"),
+                    )
+                });
+            });
+        ui.horizontal(|ui| {
+            if ui
+                .button("🎲 Random params")
+                .on_hover_text(
+                    "Rolls the segment lengths and thickness independently inside their \
+                     reasonable ranges — they may contradict each other. Set values \
+                     only; press Generate.",
+                )
+                .clicked()
+            {
+                let mut rng = rand::rng();
+                let wall = &mut app.config.outer_wall;
+                wall.segment_min_m = rng.random_range(0.5..=24.0);
+                wall.segment_max_m = rng.random_range(0.5..=24.0);
+                wall.thickness_m = rng.random_range(0.1..=8.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
         if let Some(wall) = app.generated.as_ref().and_then(|l| l.walls.as_ref()) {
             ui.weak(format!(
                 "generated: {} points, {} wall cells",
                 wall.stats.points, wall.stats.wall_cells
             ));
+        }
+    });
+}
+
+/// Node 4: the region split of the town area. In development: its test
+/// controls live in the bench; once accepted they move into this node body.
+fn node_regions(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    node(ui, "4 · Regions", |ui| {
+        ui.weak("input: region inside the wall · output: region id map");
+        ui.weak("⚙ in development — test controls in the Current workflow bench");
+        if let Some(regions) = app.generated.as_ref().and_then(|l| l.regions.as_ref()) {
+            ui.weak(format!("generated: {} regions", regions.stats.len()));
         }
     });
 }

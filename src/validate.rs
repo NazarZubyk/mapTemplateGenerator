@@ -75,6 +75,25 @@ pub fn validate(config: &LevelConfig) -> Vec<Warning> {
             blocking: false,
         });
     }
+    if config.regions.count == 0 {
+        warnings.push(Warning {
+            field: Some("regions.count".to_owned()),
+            message: "Region count must be at least 1".to_owned(),
+            blocking: false,
+        });
+    }
+    if config.regions.count as usize != config.regions.shares.len() {
+        warnings.push(Warning {
+            field: Some("regions.shares".to_owned()),
+            message: format!(
+                "Region share count ({}) does not match the region count ({}) — equal \
+                 shares are used instead",
+                config.regions.shares.len(),
+                config.regions.count
+            ),
+            blocking: false,
+        });
+    }
     warnings
 }
 

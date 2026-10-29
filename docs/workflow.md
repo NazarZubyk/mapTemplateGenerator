@@ -49,7 +49,9 @@ Right now:
 2. **Region shape** (title follows the kind) — input: template field ·
    output: region mask. Finished (step 1); its controls live in the node.
 3. **Outer walls** — input: region mask · output: region mask + wall ring.
-   In development; its test controls are in the bench below.
+   Finished (step 2); its controls live in the node.
+4. **Regions** — input: region inside the wall · output: region id map. In
+   development; its test controls are in the bench below.
 
 - **Action bar** (`src/ui/app.rs`): seed + Generate + Re-roll. Untouched.
 - **Preview** (`src/ui/preview.rs`): draws the generated level (rect objects,
@@ -86,8 +88,9 @@ src/
 │   │                  # bridge closest pair (multi-source BFS), hole fill
 │   ├── shape.rs       # step 1: noise → coverage cut → despeckle → bridges
 │   │                  # → hole fill → wavy border margin
-│   └── walls.rs       # step 2: border walk (random segment lengths) → wall
+│   ├── walls.rs       # step 2: border walk (random segment lengths) → wall
 │                      # polygon → interior fill / outside cut
+│   └── regions.rs     # step 3: smallest-first region growth, % shares
 ├── render.rs          # map.png / layer.png rasterizer (region + wall under objects)
 ├── export.rs          # export bundle: map.png + layer.png + spec.json (format v1)
 ├── validate.rs        # config validation (grows per section)
@@ -142,31 +145,40 @@ Rules that carried over from the old build (keep them in every section):
       defaults — Town = "cut the rest" (keeps ~85%), island kinds scatter
       blobs and bridge them. Controls promoted into node 2. (done — see
       "Step 1 notes")
-- [~] **Step 2 — outer walls (IN DEVELOPMENT, in the bench)**: walk the
-      region border point by point, each segment a random length between
-      `outer_wall.segment_min_m` and `segment_max_m`, until the wall closes
-      on itself; built from the inside, lagoons wrapped not skipped; then
-      the region is redefined as the wall's interior (cut outside, fill
-      inside). See "Step 2 notes" below.
-- [ ] **Step 2 — occupancy grid & walkable budget**: turn the town shape into
-      the placement grid, walkable-% budget, connectivity checks
-      (reference `generator/grid.rs`).
-- [ ] **Step 3 — perimeter wall**: outside wall following the town edge with
-      gate openings (cell-based successor of the old polygon wall,
-      reference `walls.rs`).
-- [ ] **Step 4 — sections**: partition the town interior + section walls with
-      gaps, shrinking areas (reference `sections.rs`).
-- [ ] **Step 5 — roads**: node web + curvy roads through all sections
-      (reference `roads.rs` + grid `road` flag).
-- [ ] **Step 6 — structures**: rotated organic placement, road avoidance
-      (reference `structures.rs` + rotated rasterization).
-- [ ] **Step 7 — props & interactives**: scatter phases, props allowed on
+- [x] **Step 2 — outer walls**: walk the region border point by point, each
+      segment a random length between `outer_wall.segment_min_m` and
+      `segment_max_m`, until the wall closes on itself; built from the
+      inside, lagoons wrapped not skipped; then the region is redefined as
+      the wall's interior (cut outside, fill inside). Width via
+      `outer_wall.thickness_m`. Controls promoted into node 3. (done — see
+      "Step 2 notes")
+- [~] **Step 3 — regions (IN DEVELOPMENT, in the bench)**: split the town
+      area into `regions.count` regions with per-region % shares (the UI
+      auto-balances: raising one lowers the rest). Placement runs SMALLEST
+      first — the smallest seeds on the wall or deep inside (`nesting_pct`
+      chance per region → nested regions) and grows to its target; every
+      next region seeds beside the already-placed ones and grows the same
+      way; the largest is placed last and absorbs everything left.
+      See "Step 3 notes" below.
+- [ ] **Step 4 — section walls (inside walls)**: walls between the regions
+      with gaps/passage points (cell-based successor of the old
+      `reference/sections.rs`).
+- [ ] **Step 5 — occupancy grid & walkable budget**: placement flags on the
+      grid (walkable / road / occupied), walkable-% budget, connectivity
+      checks (reference `generator/grid.rs` helpers).
+- [ ] **Step 6 — roads**: crossroad-node web + curvy roads through all
+      regions, roads vs buildings rules (reference `roads.rs` + grid
+      `road` flag).
+- [ ] **Step 7 — structures**: rotated organic placement, road avoidance,
+      fitting into tight spots (reference `structures.rs` + rotated
+      rasterization).
+- [ ] **Step 8 — props & interactives**: scatter phases, props allowed on
       roads, buildings not (reference `props.rs`, `interactives.rs`).
-- [ ] **Step 8 — hidden rooms**: rooms + BFS access paths (reference
+- [ ] **Step 9 — hidden rooms**: rooms + BFS access paths (reference
       `hidden_rooms.rs`).
-- [ ] **Step 9 — mobs**: budget/combos/balance packs (reference `mobs.rs`).
-- [ ] **Step 10 — gates**: gate markers on wall openings (reference `gates.rs`).
-- [ ] **Step 11 — validation & export polish**: feasibility pre-check,
+- [ ] **Step 10 — mobs**: budget/combos/balance packs (reference `mobs.rs`).
+- [ ] **Step 11 — gates**: gate markers on wall openings (reference `gates.rs`).
+- [ ] **Step 12 — validation & export polish**: feasibility pre-check,
       duplicate colors, full spec.json details (reference `validate.rs`,
       `export.rs`).
 - [ ] **Cleanup**: delete `reference/` and this file's history notes.
@@ -256,8 +268,56 @@ The user's algorithm, implemented literally in `generator/walls.rs`:
 
 Stats (points, wall cells, closed, filled/cut) show under the bench controls;
 the wall paints dark brown over the region in map.png, the preview, and the
-legend/spec ("outer wall"). Wall thickness is one cell for now; wall layer
-ids in layer.png come when walls become placed objects (gates step).
+legend/spec ("outer wall"). Wall thickness is one cell by default
+(`outer_wall.thickness_m`); wall layer ids in layer.png come when walls
+become placed objects (gates step).
+
+## Step 3 notes — regions
+
+The user's algorithm, implemented literally in `generator/regions.rs`:
+
+1. **Shares** — `regions.count` + per-region % shares. The UI auto-balances
+   (raising one slider rescales the others to keep 100); the generator
+   normalizes whatever it gets, self-heals mismatched share lists with equal
+   shares, and computes each target in cells.
+2. **Smallest first** — regions are placed in ascending target order (ties
+   by id). The FIRST region seeds anywhere in town; every later one seeds on
+   the frontier of the already-claimed cells — "beside". Each region rolls
+   `regions.nesting_pct` (default 35%) for WHERE it starts:
+   - **wall** — on a town-edge cell: regions slice the town from the wall
+     inward, side by side;
+   - **nested** — at least the region's rough radius away from the wall (or
+     the deepest spot available), and its growth holds back town-edge cells
+     until nothing else is reachable. The regions placed after it (larger)
+     grow around it: districts inside districts. With large shares or a
+     small town the region may still touch the wall — best effort.
+3. **Growth** — a noise-weighted shortest-path flood from the seed: each
+   step costs 1..3 by a smooth fBm field (feature size ≈ half the average
+   region's diameter), and cells are claimed in cost order. Compact,
+   hole-free blobs with smooth wavy borders (the old random-frontier growth
+   left ragged borders and single-cell enclaves). Deterministic: no RNG in
+   growth, ties by cell index.
+4. **Never split the free area** — every non-last region checks each claim:
+   a fast 3×3 test, then (only if that is inconclusive) two interleaved
+   floods from the cell's free neighbors. If the claim would cut off a
+   pocket, the region takes the pocket along when it fits the remaining
+   budget, otherwise skips the cell for now. This is what keeps every later
+   region — above all the last one — a single piece.
+5. **Fill the rest** — the largest region is placed last and grows over
+   everything still free. Safety passes: unreached cells join the nearest
+   region (through the town, then across the grid for town slivers the
+   outer wall's chords cut off), and any stray fragment merges into the
+   neighbor it shares the most border with.
+
+Measured over 20 seeds at the defaults (old → new): extra disconnected
+fragments 274 → 0 (apart from the detached wall slivers, which are separate
+pieces of town), region border length −40%, mean |actual − target| share
+1.0% → ~0.1%.
+
+Results: a `RegionMap` (one id per cell, 0 = outside/wall) plus per-region
+stats (target vs actual %). Each region paints in its own palette color
+(`render::region_color`) in map.png, the preview, and the legend/spec;
+spec.json gains a `regions` array (id, color, target/actual %, cells).
 
 Result: one connected organic blob (or empty → generation note) — the raw
 possible form of the town. Stats (`raw_blobs`, bridges, speckle/hole cells,

@@ -154,6 +154,36 @@ pub struct OuterWall {
     pub stats: OuterWallStats,
 }
 
+/// One id per cell of the town area: 0 = outside the town / wall, 1..=count
+/// = region id. Same grid as the region shape.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RegionMap {
+    pub width: usize,
+    pub height: usize,
+    pub cell_size_m: f32,
+    pub ids: Vec<u8>,
+}
+
+/// Per-region result of the split; shown in the workflow bench.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct RegionStat {
+    /// Region id, 1-based.
+    pub id: u8,
+    /// Configured share of the town area, %.
+    pub target_pct: f32,
+    /// Actually claimed share after the split, %.
+    pub actual_pct: f32,
+    pub cells: u32,
+}
+
+/// The region split of the town area.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RegionSplit {
+    pub map: RegionMap,
+    /// Stats ordered by region id.
+    pub stats: Vec<RegionStat>,
+}
+
 /// A generated level: the config snapshot it came from plus everything placed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GeneratedLevel {
@@ -164,6 +194,8 @@ pub struct GeneratedLevel {
     pub shape: Option<LevelShape>,
     /// The outer wall ring, once the outer-walls section is built.
     pub walls: Option<OuterWall>,
+    /// The region split of the town area, once the regions section is built.
+    pub regions: Option<RegionSplit>,
     /// Raw noise field behind the region shape, for the bench "noise texture"
     /// view.
     pub noise_preview: Option<NoiseTexture>,

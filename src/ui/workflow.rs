@@ -1,15 +1,13 @@
 use eframe::egui;
-use rand::Rng;
 
 use crate::ui::app::MapGenApp;
-use crate::ui::widgets::param_row;
 
 /// Which layer the preview shows while a section is under development.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BenchView {
     /// The raw normalized noise field, before the threshold cut.
     Noise,
-    /// The region shape (with the wall ring once the walls step is in).
+    /// The region shape (wall ring, then region colors as they land).
     Shape,
 }
 
@@ -25,23 +23,58 @@ impl BenchView {
 /// Which section is being built right now; update as steps start and finish
 /// (step list in docs/workflow.md).
 pub fn current_step_label() -> &'static str {
-    "step 2: outer walls (in development)"
+    "step 3: regions (in development)"
 }
 
-const TIP_SEG_MIN: &str = "Shortest wall segment in meters. The wall is built point by \
-point: it starts on the region border, walks the border and places the next point after \
-a random length between min and max. Small values (2–5 m) hug the border closely — more \
-points, more wall cells; large values cut corners and can bridge over small bays.";
+const TIP_COUNT: &str = "How many regions the town area is split into. Changing the \
+count resets the shares to equal parts.";
 
-const TIP_SEG_MAX: &str = "Longest wall segment in meters. With min == max every segment \
-has the same length and the loop closes with a straight chord that can pass through the \
-interior — that is expected. If max is smaller than min the two are swapped at \
-generation time (a warning tells you).";
+const TIP_SHARE: &str = "This region's share of the town area, in %. Raising it shrinks \
+all the others automatically so the total stays 100. Placement runs SMALLEST region \
+first: it starts on the wall or deep inside (see Nested chance) and grows to its target; \
+every next one starts beside the already-placed ones and grows the same way; the largest is \
+placed last and fills everything left, so the town always ends fully split. Every \
+region comes out as one connected piece with smooth, wavy borders.";
 
-const TIP_THICKNESS: &str = "Wall thickness in meters, rounded to whole grid cells \
-(0.5 m = one cell at the default cell size; 1–2 m = a proper fortress wall). The wall \
-grows on both sides of the walked line. Bigger values also swallow more of the region \
-behind the wall into the ring itself.";
+const TIP_NESTING: &str = "Chance, per region, that it starts deep inside the town \
+instead of against the wall. A nested region gets surrounded by the regions placed after \
+it (the larger ones), so you get districts inside districts. 0% = every region sits on \
+the wall, 100% = every region nests inside the next. No visible effect with 1 region; \
+with a tiny town or very large shares there may be no spot deep enough, and the region \
+starts as deep as it can.";
+
+/// Rebalance the shares after region `i` was changed to a new value: the
+/// others are rescaled to fill the remainder, keeping their proportions.
+fn rebalance(shares: &mut [f32], i: usize) {
+    let n = shares.len();
+    if n <= 1 {
+        if n == 1 {
+            shares[0] = 100.0;
+        }
+        return;
+    }
+    let rest_target = (100.0 - shares[i]).max(0.0);
+    let rest_sum: f32 = shares
+        .iter()
+        .enumerate()
+        .filter(|(j, _)| *j != i)
+        .map(|(_, v)| v)
+        .sum();
+    if rest_sum > 0.0 {
+        for (j, s) in shares.iter_mut().enumerate() {
+            if j != i {
+                *s = *s / rest_sum * rest_target;
+            }
+        }
+    } else {
+        let each = rest_target / (n - 1) as f32;
+        for (j, s) in shares.iter_mut().enumerate() {
+            if j != i {
+                *s = each;
+            }
+        }
+    }
+}
 
 /// The test-bench area, rendered inside the "Current workflow" panel below its
 /// header. Experimental controls for the section under development go here and
@@ -50,65 +83,57 @@ behind the wall into the ring itself.";
 /// bench is cleared for the next step (docs/workflow.md).
 pub fn show_bench(ui: &mut egui::Ui, app: &mut MapGenApp) {
     ui.label(
-        "Pipeline: walk the region border point by point — every segment takes a random \
-         length between min and max — until the wall closes on itself. The wall is built \
-         from the INSIDE of the region; deep bays and lagoons are wrapped, never skipped \
-         by a shortcut; the closing chord may cut through the interior. Afterwards the \
-         region becomes exactly the wall's interior: town outside the wall is cut away, \
-         empty space inside is filled.",
+        "Pipeline: the town area (inside the outer wall) is split into regions, placed \
+         SMALLEST first — the smallest starts on the wall or deep inside (Nested chance) \
+         and grows to its target share; every next region starts beside the \
+         already-placed ones and grows the same way; the largest is placed last and absorbs \
+         everything left. Growth never cuts the free area apart, so every region is \
+         one connected piece.",
     );
     ui.weak("Hover an underlined setting to see what it does.");
 
-    egui::Grid::new("step2_wall_controls")
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Regions count").underline())
+            .on_hover_text(TIP_COUNT);
+        let before = app.config.regions.count;
+        ui.add(
+            egui::DragValue::new(&mut app.config.regions.count)
+                .range(1..=8)
+                .speed(0.2),
+        )
+        .on_hover_text(TIP_COUNT);
+        if app.config.regions.count != before {
+            let count = app.config.regions.count as usize;
+            app.config.regions.shares = vec![100.0 / count as f32; count];
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Nested chance").underline())
+            .on_hover_text(TIP_NESTING);
+        ui.add(egui::Slider::new(&mut app.config.regions.nesting_pct, 0.0..=100.0).suffix(" %"))
+            .on_hover_text(TIP_NESTING);
+    });
+    ui.weak("Changes apply on ⚙ Generate");
+
+    egui::Grid::new("step3_region_shares")
         .num_columns(2)
         .spacing([10.0, 3.0])
         .show(ui, |ui| {
-            let wall = &mut app.config.outer_wall;
-            param_row(ui, "Segment min", TIP_SEG_MIN, |ui| {
+            for i in 0..app.config.regions.shares.len() {
+                let label = format!("Region {}", i + 1);
+                ui.label(egui::RichText::new(&label).underline()).on_hover_text(TIP_SHARE);
+                let before = app.config.regions.shares[i];
                 ui.add(
-                    egui::DragValue::new(&mut wall.segment_min_m)
-                        .range(0.5..=64.0)
-                        .speed(0.2)
-                        .suffix(" m"),
+                    egui::Slider::new(&mut app.config.regions.shares[i], 1.0..=98.0)
+                        .suffix(" %"),
                 )
-            });
-            param_row(ui, "Segment max", TIP_SEG_MAX, |ui| {
-                ui.add(
-                    egui::DragValue::new(&mut wall.segment_max_m)
-                        .range(0.5..=64.0)
-                        .speed(0.2)
-                        .suffix(" m"),
-                )
-            });
-            param_row(ui, "Wall width", TIP_THICKNESS, |ui| {
-                ui.add(
-                    egui::DragValue::new(&mut wall.thickness_m)
-                        .range(0.1..=16.0)
-                        .speed(0.1)
-                        .suffix(" m"),
-                )
-            });
+                .on_hover_text(TIP_SHARE);
+                if app.config.regions.shares[i] != before {
+                    rebalance(&mut app.config.regions.shares, i);
+                }
+                ui.end_row();
+            }
         });
-    ui.weak("Changes apply on ⚙ Generate");
-
-    ui.horizontal(|ui| {
-        if ui
-            .button("🎲 Random params")
-            .on_hover_text(
-                "Rolls the two segment lengths independently inside their reasonable \
-                 range — they may contradict each other (max below min); the generator \
-                 then swaps them. Set values only; press Generate.",
-            )
-            .clicked()
-        {
-            let mut rng = rand::rng();
-            let wall = &mut app.config.outer_wall;
-            wall.segment_min_m = rng.random_range(0.5..=24.0);
-            wall.segment_max_m = rng.random_range(0.5..=24.0);
-            wall.thickness_m = rng.random_range(0.1..=8.0);
-        }
-        ui.weak("reasonable values, possibly contradicting combination");
-    });
 
     ui.horizontal(|ui| {
         ui.label("Preview:");
@@ -116,26 +141,17 @@ pub fn show_bench(ui: &mut egui::Ui, app: &mut MapGenApp) {
         ui.radio_value(&mut app.workflow_view, BenchView::Shape, BenchView::Shape.label());
         match app.workflow_view {
             BenchView::Noise => ui.weak("(dark = deleted by the cut, light = kept)"),
-            BenchView::Shape => ui.weak("(beige = region, brown = wall, dark = outside)"),
+            BenchView::Shape => ui.weak("(one color per region, brown = wall)"),
         }
     });
 
-    if let Some(wall) = app.generated.as_ref().and_then(|l| l.walls.as_ref()) {
-        let s = wall.stats;
-        ui.weak(format!(
-            "wall: {} points · {} cells · closed {} · filled inside {}, cut outside {}",
-            s.points, s.wall_cells, s.closed, s.area_filled_cells, s.area_cut_cells,
-        ));
-    }
-    if let Some(shape) = app.generated.as_ref().and_then(|l| l.shape.as_ref()) {
-        let s = shape.stats;
-        ui.weak(format!(
-            "region: {}×{} cells · coverage {:.1}% (bridges {}, hole cells filled {})",
-            shape.mask.width,
-            shape.mask.height,
-            s.coverage_pct,
-            s.bridges,
-            s.hole_cells_filled,
-        ));
+    if let Some(regions) = app.generated.as_ref().and_then(|l| l.regions.as_ref()) {
+        let line = regions
+            .stats
+            .iter()
+            .map(|s| format!("#{} {:.1}% (target {:.1}%)", s.id, s.actual_pct, s.target_pct))
+            .collect::<Vec<_>>()
+            .join(" · ");
+        ui.weak(format!("split: {line}"));
     }
 }

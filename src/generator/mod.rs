@@ -10,13 +10,14 @@ use crate::model::LevelConfig;
 
 pub mod grid;
 pub mod noise;
+pub mod regions;
 pub mod shape;
 pub mod walls;
 
 /// Generate a level deterministically: same (config, seed) always yields the
 /// same result. Currently implemented: step 1 (the noise-derived region
-/// shape) and step 2 (the outer wall ring); phases run in fixed order and
-/// share the one RNG stream (docs/workflow.md).
+/// shape), step 2 (the outer wall ring) and step 3 (the region split);
+/// phases run in fixed order and share the one RNG stream (docs/workflow.md).
 pub fn generate(config: &LevelConfig, seed: u64) -> GeneratedLevel {
     let built = shape::build(config, seed);
     let mut notes = Vec::new();
@@ -27,11 +28,13 @@ pub fn generate(config: &LevelConfig, seed: u64) -> GeneratedLevel {
         ));
     }
 
+    // One RNG stream for every placement phase, in fixed order.
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+
     // Step 2: outer wall. Redefines the region as the wall's interior.
     let mut region_mask = built.shape.mask;
     let mut walls = None;
     if region_mask.count_true() > 0 {
-        let mut rng = ChaCha8Rng::seed_from_u64(seed);
         match walls::build(config, &mut rng, &region_mask) {
             Some(w) => {
                 if w.wall.stats.extra_loops > 0 {
@@ -51,6 +54,13 @@ pub fn generate(config: &LevelConfig, seed: u64) -> GeneratedLevel {
         }
     }
 
+    // Step 3: split the town area into regions (smallest placed first).
+    let regions = if region_mask.count_true() > 0 {
+        regions::build(config, &mut rng, &region_mask)
+    } else {
+        None
+    };
+
     let total = region_mask.width * region_mask.height;
     let mut stats = built.shape.stats;
     stats.coverage_pct = region_mask.count_true() as f32 / total.max(1) as f32 * 100.0;
@@ -64,6 +74,7 @@ pub fn generate(config: &LevelConfig, seed: u64) -> GeneratedLevel {
             stats,
         }),
         walls,
+        regions,
         noise_preview: Some(built.noise_preview),
         notes,
     }

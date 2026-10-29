@@ -49,6 +49,8 @@ pub struct LevelConfig {
     pub shape: ShapeSettings,
     /// The outer wall ring around the region (step 2).
     pub outer_wall: OuterWallSettings,
+    /// The region split of the town area (step 3).
+    pub regions: RegionsSettings,
     pub cell_size_m: f32,
     pub seed: u64,
 }
@@ -60,8 +62,35 @@ impl Default for LevelConfig {
             kind: MapKind::Town,
             shape: ShapeSettings::for_kind(MapKind::Town),
             outer_wall: OuterWallSettings::default(),
+            regions: RegionsSettings::default(),
             cell_size_m: 0.5,
             seed: 0,
+        }
+    }
+}
+
+/// Settings of the regions node (docs/workflow.md, step 3).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RegionsSettings {
+    /// How many regions the town area is split into.
+    pub count: u32,
+    /// Each region's share of the town area, %. The UI keeps the sum at 100
+    /// (raising one lowers the rest); the generator normalizes anyway.
+    pub shares: Vec<f32>,
+    /// Chance, %, that a region starts deep inside the town instead of
+    /// against the wall — the regions placed after it then grow around it,
+    /// nesting it inside them. 0 = every region on the wall, 100 = every
+    /// region nested.
+    pub nesting_pct: f32,
+}
+
+impl Default for RegionsSettings {
+    fn default() -> Self {
+        Self {
+            count: 3,
+            shares: vec![20.0, 30.0, 50.0],
+            nesting_pct: 35.0,
         }
     }
 }

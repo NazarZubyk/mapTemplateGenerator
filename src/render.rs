@@ -19,6 +19,24 @@ pub const REGION: [u8; 3] = [204, 186, 158];
 /// The outer wall ring, painted over the region.
 pub const WALL: [u8; 3] = [97, 82, 70];
 
+/// Colors for the region split (cycled when there are more regions than
+/// colors) — earthy tones distinct from the wall and ground.
+const REGION_PALETTE: [[u8; 3]; 8] = [
+    [196, 130, 115], // terracotta
+    [150, 170, 120], // moss
+    [165, 145, 185], // lilac
+    [195, 170, 115], // sand
+    [125, 160, 170], // teal
+    [200, 150, 95],  // ochre
+    [145, 125, 110], // umber
+    [175, 175, 175], // stone gray
+];
+
+/// The color of region `id` (1-based).
+pub fn region_color(id: u8) -> [u8; 3] {
+    REGION_PALETTE[(id.max(1) as usize - 1) % REGION_PALETTE.len()]
+}
+
 /// Paint a cell mask onto the map image, one color per cell.
 fn paint_mask(map: &mut image::ImageBuffer<image::Rgb<u8>, Vec<u8>>, m: &crate::level::CellMask, px_per_m: f32, w: u32, h: u32, color: [u8; 3]) {
     let cs = m.cell_size_m * px_per_m;
@@ -50,8 +68,31 @@ pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
     let mut map = ImageBuffer::from_pixel(w, h, Rgb(GROUND));
     let mut layer = ImageBuffer::from_pixel(w, h, Rgba([0, 0, 0, 0]));
 
-    // The region mask is the base layer; the wall ring paints over it.
-    if let Some(shape) = &level.shape {
+    // The region mask is the base layer; with a region split each region
+    // gets its own color. The wall ring paints over it.
+    if let Some(regions) = &level.regions {
+        let m = &regions.map;
+        let cs = m.cell_size_m * px_per_m;
+        if cs > 0.0 {
+            for cy in 0..m.height {
+                let y0 = (cy as f32 * cs).round() as i64;
+                let y1 = ((cy + 1) as f32 * cs).round() as i64;
+                for cx in 0..m.width {
+                    let id = m.ids[cy * m.width + cx];
+                    if id == 0 {
+                        continue;
+                    }
+                    let x0 = (cx as f32 * cs).round() as i64;
+                    let x1 = ((cx + 1) as f32 * cs).round() as i64;
+                    for py in y0.max(0)..y1.min(h as i64) {
+                        for px in x0.max(0)..x1.min(w as i64) {
+                            map.put_pixel(px as u32, py as u32, Rgb(region_color(id)));
+                        }
+                    }
+                }
+            }
+        }
+    } else if let Some(shape) = &level.shape {
         paint_mask(&mut map, &shape.mask, px_per_m, w, h, REGION);
     }
     if let Some(walls) = &level.walls {
@@ -134,6 +175,7 @@ mod tests {
             }],
             shape: None,
             walls: None,
+            regions: None,
             noise_preview: None,
             notes: Vec::new(),
         }

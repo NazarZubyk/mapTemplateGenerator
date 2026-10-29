@@ -117,6 +117,15 @@ impl MapGenApp {
                 .iter()
                 .map(|cell| if *cell { filled } else { empty })
                 .collect();
+            if let Some(regions) = &level.regions {
+                // Each region paints in its palette color over the beige base.
+                for (px, id) in pixels.iter_mut().zip(&regions.map.ids) {
+                    if *id > 0 {
+                        let c = crate::render::region_color(*id);
+                        *px = egui::Color32::from_rgb(c[0], c[1], c[2]);
+                    }
+                }
+            }
             if let Some(walls) = &level.walls {
                 for (px, is_wall) in pixels.iter_mut().zip(&walls.mask.cells) {
                     if *is_wall {
