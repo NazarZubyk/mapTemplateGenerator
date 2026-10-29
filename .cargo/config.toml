@@ -1,0 +1,3 @@
+[build]
+# Dev builds must be incremental: only changed crates recompile.
+incremental = true
