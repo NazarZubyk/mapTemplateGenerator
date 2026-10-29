@@ -6,17 +6,29 @@
 use crate::level::GeneratedLevel;
 use crate::model::LevelConfig;
 
+pub mod grid;
+pub mod noise;
+pub mod shape;
+
 /// Generate a level deterministically: same (config, seed) always yields the
-/// same result. Stub until the first workflow section lands.
+/// same result. Currently implemented: step 1, the noise-derived region shape
+/// (docs/workflow.md).
 pub fn generate(config: &LevelConfig, seed: u64) -> GeneratedLevel {
+    let built = shape::build(config, seed);
+    let mut notes = Vec::new();
+    if built.shape.mask.count_true() == 0 {
+        notes.push(format!(
+            "{} shape came out empty — lower the coverage target or the min blob size",
+            config.kind.label()
+        ));
+    }
     GeneratedLevel {
         config: config.clone(),
         seed,
         objects: Vec::new(),
-        notes: vec![
-            "Generator is being rebuilt — no sections implemented yet (docs/workflow.md)"
-                .to_owned(),
-        ],
+        shape: Some(built.shape),
+        noise_preview: Some(built.noise_preview),
+        notes,
     }
 }
 

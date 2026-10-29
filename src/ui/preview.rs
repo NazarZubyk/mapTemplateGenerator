@@ -33,6 +33,7 @@ pub fn show(
     state: &mut PreviewState,
     config: &LevelConfig,
     level: Option<&GeneratedLevel>,
+    bench: Option<&egui::TextureHandle>,
 ) {
     ui.horizontal(|ui| {
         if ui.small_button("Re-center").clicked() {
@@ -85,6 +86,17 @@ pub fn show(
 
     painter.rect_filled(map_rect, 0.0, Color32::from_gray(46));
     draw_grid(&painter, map_rect, zoom, map_w, map_h);
+
+    // Bench layer of the section under development (noise texture or region
+    // shape), one texture pixel per grid cell. egui UVs are normalized 0..1.
+    if let Some(texture) = bench {
+        painter.image(
+            texture.id(),
+            map_rect,
+            Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
+            Color32::WHITE,
+        );
+    }
 
     if let Some(level) = level {
         draw_level(&painter, map_rect, zoom, level);
@@ -169,6 +181,11 @@ fn darker(rgb: [u8; 3]) -> Color32 {
 /// Small color -> name legend in the top-right corner of the canvas.
 fn draw_legend(painter: &egui::Painter, canvas: Rect, level: &GeneratedLevel) {
     let mut entries: Vec<([u8; 3], &str)> = Vec::new();
+    if let Some(shape) = &level.shape
+        && shape.stats.coverage_pct > 0.0
+    {
+        entries.push((crate::render::REGION, level.config.kind.slug()));
+    }
     for o in &level.objects {
         let key = (o.color, o.type_name.as_str());
         if !entries.iter().any(|(c, n)| *c == key.0 && *n == key.1) {

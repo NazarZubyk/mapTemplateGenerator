@@ -61,6 +61,8 @@ pub struct ExportSpec {
     pub legend: Vec<LegendEntry>,
     /// Category names indexed by the layer.png R-channel value (index 0 = ground).
     pub layer_categories: Vec<&'static str>,
+    /// What kind of map this is ("town", "swamp", ...).
+    pub map_kind: &'static str,
     /// Every placed object with position and size in meters.
     pub objects: Vec<crate::level::PlacedObject>,
 }
@@ -75,6 +77,15 @@ pub struct LegendEntry {
 impl ExportSpec {
     pub fn new(level: &GeneratedLevel, px_per_m: f32) -> Self {
         let mut legend: Vec<LegendEntry> = Vec::new();
+        if let Some(shape) = &level.shape
+            && shape.stats.coverage_pct > 0.0
+        {
+            legend.push(LegendEntry {
+                color: color_hex(render::REGION),
+                name: level.config.kind.slug().to_owned(),
+                category: "ground",
+            });
+        }
         for o in &level.objects {
             if legend
                 .iter()
@@ -93,6 +104,7 @@ impl ExportSpec {
             generator: format!("MapTemplateGenerator {}", env!("CARGO_PKG_VERSION")),
             seed: level.seed,
             map_size_m: [level.config.map.width_m, level.config.map.height_m],
+            map_kind: level.config.kind.slug(),
             cell_size_m: level.config.cell_size_m,
             px_per_m,
             legend,
@@ -136,6 +148,8 @@ mod tests {
                     h_m: 3.0,
                 },
             ],
+            shape: None,
+            noise_preview: None,
             notes: Vec::new(),
         };
         let dir = std::env::temp_dir().join(format!("mtg_export_test_{}", std::process::id()));

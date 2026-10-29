@@ -19,6 +19,37 @@ pub fn validate(config: &LevelConfig) -> Vec<Warning> {
     if config.cell_size_m <= 0.0 {
         warnings.push(Warning::new("Cell size must be positive"));
     }
+    if !(1.0..=99.0).contains(&config.shape.coverage_target_pct) {
+        warnings.push(Warning {
+            field: Some("town.coverage_target_pct".to_owned()),
+            message: format!(
+                "Town coverage must be in 1..=99 % (is {})",
+                config.shape.coverage_target_pct
+            ),
+            blocking: false,
+        });
+    }
+    if config.shape.border_margin_m < 0.0 {
+        warnings.push(Warning {
+            field: Some("town.border_margin_m".to_owned()),
+            message: "Border margin cannot be negative".to_owned(),
+            blocking: false,
+        });
+    }
+    if config.map.width_m > 0.0
+        && config.map.height_m > 0.0
+        && 2.0 * config.shape.border_margin_m >= config.map.width_m.min(config.map.height_m)
+    {
+        warnings.push(Warning {
+            field: Some("town.border_margin_m".to_owned()),
+            message: format!(
+                "Border margin {} m leaves no interior on a {}×{} m map — the town is \
+                 squeezed into a thin strip",
+                config.shape.border_margin_m, config.map.width_m, config.map.height_m
+            ),
+            blocking: false,
+        });
+    }
     warnings
 }
 
@@ -39,5 +70,18 @@ mod tests {
         config.cell_size_m = 0.0;
         let warnings = validate(&config);
         assert_eq!(warnings.len(), 3);
+    }
+
+    #[test]
+    fn bad_town_coverage_warns_non_blocking() {
+        let mut config = LevelConfig::default();
+        config.shape.coverage_target_pct = 150.0;
+        let warnings = validate(&config);
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(
+            warnings[0].field.as_deref(),
+            Some("town.coverage_target_pct")
+        );
+        assert!(!warnings[0].blocking);
     }
 }

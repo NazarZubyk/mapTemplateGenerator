@@ -13,6 +13,9 @@ pub struct Rasterized {
 }
 
 pub const GROUND: [u8; 3] = [225, 220, 205];
+/// The region footprint from the shape node (town, swamp, forest, cave),
+/// painted under every object.
+pub const REGION: [u8; 3] = [204, 186, 158];
 
 pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
     let px_per_m = px_per_m.max(0.1);
@@ -20,6 +23,30 @@ pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
     let h = ((level.config.map.height_m * px_per_m).round() as u32).max(1);
     let mut map = ImageBuffer::from_pixel(w, h, Rgb(GROUND));
     let mut layer = ImageBuffer::from_pixel(w, h, Rgba([0, 0, 0, 0]));
+
+    // The region mask is the base layer of the map.
+    if let Some(shape) = &level.shape {
+        let m = &shape.mask;
+        let cs = m.cell_size_m * px_per_m;
+        if cs > 0.0 {
+            for cy in 0..m.height {
+                let y0 = (cy as f32 * cs).round() as i64;
+                let y1 = ((cy + 1) as f32 * cs).round() as i64;
+                for cx in 0..m.width {
+                    if !m.get(cx, cy) {
+                        continue;
+                    }
+                    let x0 = (cx as f32 * cs).round() as i64;
+                    let x1 = ((cx + 1) as f32 * cs).round() as i64;
+                    for py in y0.max(0)..y1.min(h as i64) {
+                        for px in x0.max(0)..x1.min(w as i64) {
+                            map.put_pixel(px as u32, py as u32, Rgb(REGION));
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // Draw in stored order: later objects paint over earlier ones.
     for (idx, o) in level.objects.iter().enumerate() {
@@ -95,8 +122,36 @@ mod tests {
                 w_m: 3.0,
                 h_m: 2.0,
             }],
+            shape: None,
+            noise_preview: None,
             notes: Vec::new(),
         }
+    }
+
+    #[test]
+    fn region_mask_paints_under_objects() {
+        let mut level = level_with_one_object();
+        // Two 32 m cells cover the whole 64 m map.
+        let mut mask = crate::level::CellMask::new(2, 2, 32.0);
+        for y in 0..2 {
+            for x in 0..2 {
+                mask.set(x, y, true);
+            }
+        }
+        level.shape = Some(crate::level::LevelShape {
+            mask,
+            stats: crate::level::ShapeStats {
+                raw_blobs: 1,
+                speckle_cells_removed: 0,
+                bridges: 0,
+                hole_cells_filled: 0,
+                coverage_pct: 100.0,
+            },
+        });
+        let r = rasterize(&level, 2.0);
+        // The house occupies pixels 8..15 × 8..12; everything else is town.
+        assert_eq!(r.map.get_pixel(10, 10).0, [10, 20, 30]);
+        assert_eq!(r.map.get_pixel(60, 60).0, REGION);
     }
 
     #[test]

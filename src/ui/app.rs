@@ -25,6 +25,12 @@ pub struct MapGenApp {
     pub warnings_open: bool,
     /// Whether the workflow bottom panel is expanded.
     pub workflow_open: bool,
+    /// What the preview shows for the section under development.
+    pub workflow_view: workflow::BenchView,
+    /// Grayscale noise field / region shape from the last generation, as GPU
+    /// textures for the bench preview.
+    pub bench_noise: Option<egui::TextureHandle>,
+    pub bench_shape: Option<egui::TextureHandle>,
 }
 
 #[derive(Debug, Clone)]
@@ -48,13 +54,16 @@ impl Default for MapGenApp {
             preview: preview::PreviewState::default(),
             warnings_open: false,
             workflow_open: true,
+            workflow_view: workflow::BenchView::Shape,
+            bench_noise: None,
+            bench_shape: None,
         }
     }
 }
 
 impl MapGenApp {
     /// Run the generation engine with the current config and seed.
-    pub fn generate_level(&mut self) {
+    pub fn generate_level(&mut self, ctx: &egui::Context) {
         let level = crate::generator::generate(&self.config, self.config.seed);
         self.gen_warnings = level
             .notes
@@ -65,6 +74,51 @@ impl MapGenApp {
                 blocking: false,
             })
             .collect();
+
+        // Bench textures: one pixel per grid cell, drawn crisp (NEAREST).
+        let upload = |name: &str, pixels: Vec<egui::Color32>, w: usize, h: usize| {
+            ctx.load_texture(
+                name,
+                egui::ColorImage::new([w, h], pixels),
+                egui::TextureOptions::NEAREST,
+            )
+        };
+        if let Some(noise) = &level.noise_preview {
+            let pixels = noise
+                .values
+                .iter()
+                .map(|v| egui::Color32::from_gray(*v))
+                .collect();
+            self.bench_noise = Some(upload(
+                "bench_noise",
+                pixels,
+                noise.width,
+                noise.height,
+            ));
+        }
+        if let Some(shape) = &level.shape {
+            // Preview-only colors: dark background so the region
+            // silhouette pops. (The exported map.png keeps its paper colors.)
+            let empty = egui::Color32::from_gray(38);
+            let filled = egui::Color32::from_rgb(
+                crate::render::REGION[0],
+                crate::render::REGION[1],
+                crate::render::REGION[2],
+            );
+            let pixels = shape
+                .mask
+                .cells
+                .iter()
+                .map(|cell| if *cell { filled } else { empty })
+                .collect();
+            self.bench_shape = Some(upload(
+                "bench_shape",
+                pixels,
+                shape.mask.width,
+                shape.mask.height,
+            ));
+        }
+
         self.generated = Some(level);
     }
 }
@@ -106,7 +160,7 @@ impl MapGenApp {
                 );
                 if blocking == 0 {
                     if generate.clicked() {
-                        self.generate_level();
+                        self.generate_level(ctx);
                     }
                 } else {
                     generate.on_disabled_hover_text(format!(
@@ -126,7 +180,7 @@ impl MapGenApp {
                     .clicked()
                 {
                     self.config.seed = rand::rng().random();
-                    self.generate_level();
+                    self.generate_level(ctx);
                 }
                 ui.separator();
 
@@ -219,8 +273,18 @@ impl MapGenApp {
     }
 
     fn show_preview_panel(&mut self, ctx: &egui::Context) {
+        let bench = match self.workflow_view {
+            workflow::BenchView::Noise => self.bench_noise.as_ref(),
+            workflow::BenchView::Shape => self.bench_shape.as_ref(),
+        };
         egui::CentralPanel::default().show(ctx, |ui| {
-            preview::show(ui, &mut self.preview, &self.config, self.generated.as_ref());
+            preview::show(
+                ui,
+                &mut self.preview,
+                &self.config,
+                self.generated.as_ref(),
+                bench,
+            );
         });
     }
 }

@@ -1,18 +1,136 @@
 use eframe::egui;
 
-use crate::model::LevelConfig;
+use crate::model::{LevelConfig, MapKind, ShapeSettings};
 use crate::ui::app::{ConfigStatus, MapGenApp};
 
-/// The settings panel. Intentionally almost empty while the generator is rebuilt:
-/// each finished workflow section adds its controls here (docs/workflow.md).
+/// The settings panel: the generation pipeline as a vertical chain of nodes.
+/// Node 1 is the empty template (the map); every next node's input is the
+/// output of the node above it. A section under development is tested in the
+/// "Current workflow" bench first, then becomes a node here (docs/workflow.md).
 /// Config save/load and export are app features and stay permanently.
 pub fn show(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    generation_node_chain(ui, app);
     export_section(ui, app);
     config_file_section(
         ui,
         &mut app.config,
         &mut app.config_path,
         &mut app.config_status,
+    );
+}
+
+/// The pipeline: one card per generation node, top to bottom.
+fn generation_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    node_template(ui, app);
+    flow_arrow(ui, "empty field (the map)");
+    node_shape(ui, app);
+    ui.weak("Next nodes appear here as sections finish; which nodes exist depends on the map kind (docs/workflow.md).");
+    ui.add_space(4.0);
+    ui.separator();
+}
+
+fn node<R>(ui: &mut egui::Ui, title: &str, body: impl FnOnce(&mut egui::Ui) -> R) {
+    egui::CollapsingHeader::new(egui::RichText::new(title).strong())
+        .default_open(true)
+        .show(ui, body);
+}
+
+/// Small "data flows down" marker between two nodes, naming what flows.
+fn flow_arrow(ui: &mut egui::Ui, what: &str) {
+    ui.horizontal(|ui| {
+        ui.label("↓");
+        ui.weak(what);
+    });
+}
+
+/// Node 1: the empty template — a sized field plus WHAT the map is. The kind
+/// decides the shape character and, later, which nodes the pipeline gets.
+fn node_template(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_SIZE: &str = "Map size in meters — the empty field the Template node \
+outputs and every other node works on. The preview keeps the old picture until you \
+press ⚙ Generate.";
+    const TIP_CELL: &str = "Grid resolution in meters per cell; everything the generator \
+builds is quantized to this grid. 0.5 m: fine, crisp edges, but 4× more cells than 1 m \
+(and slower). 1–2 m: chunkier edges, faster. Changing it re-samples the noise, so the \
+region shape can shift.";
+    const TIP_KIND: &str = "What this map is. It picks the shape defaults (a TOWN keeps \
+most of the map and cuts the rest away; swamp / forest / cave scatter islands and \
+bridge them) and decides which nodes the pipeline gets — a forest has no buildings \
+node, for example. Switching the kind loads that kind's shape defaults.";
+    node(ui, "1 · Template", |ui| {
+        ui.weak("input: nothing · output: empty field + map kind");
+        egui::Grid::new("template_node_grid")
+            .num_columns(2)
+            .spacing([10.0, 3.0])
+            .show(ui, |ui| {
+                ui.label(egui::RichText::new("Kind").underline())
+                    .on_hover_text(TIP_KIND);
+                let before = app.config.kind;
+                egui::ComboBox::from_id_salt("map_kind_combo")
+                    .selected_text(app.config.kind.label())
+                    .show_ui(ui, |ui| {
+                        for kind in MapKind::ALL {
+                            ui.selectable_value(&mut app.config.kind, kind, kind.label());
+                        }
+                    })
+                    .response
+                    .on_hover_text(TIP_KIND);
+                if app.config.kind != before {
+                    app.config.shape = ShapeSettings::for_kind(app.config.kind);
+                }
+                ui.end_row();
+                ui.label(egui::RichText::new("Width").underline())
+                    .on_hover_text(TIP_SIZE);
+                ui.add(
+                    egui::DragValue::new(&mut app.config.map.width_m)
+                        .range(4.0..=512.0)
+                        .speed(1.0)
+                        .suffix(" m"),
+                )
+                .on_hover_text(TIP_SIZE);
+                ui.end_row();
+                ui.label(egui::RichText::new("Height").underline())
+                    .on_hover_text(TIP_SIZE);
+                ui.add(
+                    egui::DragValue::new(&mut app.config.map.height_m)
+                        .range(4.0..=512.0)
+                        .speed(1.0)
+                        .suffix(" m"),
+                )
+                .on_hover_text(TIP_SIZE);
+                ui.end_row();
+                ui.label(egui::RichText::new("Cell size").underline())
+                    .on_hover_text(TIP_CELL);
+                ui.add(
+                    egui::DragValue::new(&mut app.config.cell_size_m)
+                        .range(0.1..=4.0)
+                        .speed(0.05)
+                        .suffix(" m"),
+                )
+                .on_hover_text(TIP_CELL);
+                ui.end_row();
+            });
+        ui.weak("Changes apply on ⚙ Generate");
+    });
+}
+
+/// Node 2: the noise-derived region shape. In development: its test controls
+/// live in the bench; once accepted they move into this node body.
+fn node_shape(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    node(
+        ui,
+        &format!("2 · {} shape", app.config.kind.label()),
+        |ui| {
+            ui.weak("input: template field · output: region mask (one connected blob)");
+            ui.weak("⚙ in development — test controls in the Current workflow bench");
+            if let Some(shape) = app.generated.as_ref().and_then(|l| l.shape.as_ref()) {
+                ui.weak(format!(
+                    "generated: {:.1}% of the map, {} cells",
+                    shape.stats.coverage_pct,
+                    shape.mask.count_true()
+                ));
+            }
+        },
     );
 }
 

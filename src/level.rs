@@ -54,12 +54,93 @@ pub struct PlacedObject {
     pub h_m: f32,
 }
 
+/// A boolean grid aligned to the level grid: `cells[y * width + x]`. The
+/// region shape lives in one of these; placement flags will reuse the same
+/// type.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CellMask {
+    pub width: usize,
+    pub height: usize,
+    pub cell_size_m: f32,
+    pub cells: Vec<bool>,
+}
+
+impl CellMask {
+    pub fn new(width: usize, height: usize, cell_size_m: f32) -> Self {
+        Self {
+            width,
+            height,
+            cell_size_m,
+            cells: vec![false; width * height],
+        }
+    }
+
+    pub fn get(&self, x: usize, y: usize) -> bool {
+        self.cells[y * self.width + x]
+    }
+
+    pub fn set(&mut self, x: usize, y: usize, value: bool) {
+        self.cells[y * self.width + x] = value;
+    }
+
+    pub fn set_if_in_bounds(&mut self, x: i64, y: i64, value: bool) {
+        if x >= 0 && y >= 0 {
+            let (x, y) = (x as usize, y as usize);
+            if x < self.width && y < self.height {
+                self.set(x, y, value);
+            }
+        }
+    }
+
+    pub fn count_true(&self) -> usize {
+        self.cells.iter().filter(|c| **c).count()
+    }
+}
+
+/// Grayscale snapshot of a noise field, one value per cell (0 = black,
+/// 255 = white). Bench preview data, not part of the exported bundle.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NoiseTexture {
+    pub width: usize,
+    pub height: usize,
+    pub cell_size_m: f32,
+    pub values: Vec<u8>,
+}
+
+/// What the shape phase did; shown in the workflow bench.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ShapeStats {
+    /// Connected pieces right after the threshold cut.
+    pub raw_blobs: u32,
+    /// Cells dropped by the minimum-blob-size filter.
+    pub speckle_cells_removed: u32,
+    /// Bridges carved to join the pieces into one shape.
+    pub bridges: u32,
+    /// Cells claimed by filling fully enclosed holes.
+    pub hole_cells_filled: u32,
+    /// Share of the map covered by the final shape, 0..100.
+    pub coverage_pct: f32,
+}
+
+/// The generated region footprint (town/swamp/forest/cave): one connected
+/// blob of cells (or empty).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LevelShape {
+    pub mask: CellMask,
+    pub stats: ShapeStats,
+}
+
 /// A generated level: the config snapshot it came from plus everything placed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GeneratedLevel {
     pub config: LevelConfig,
     pub seed: u64,
     pub objects: Vec<PlacedObject>,
+    /// The noise-derived region footprint, once the shape section is built.
+    pub shape: Option<LevelShape>,
+    /// Raw noise field behind the region shape, for the bench "noise texture"
+    /// view.
+    pub noise_preview: Option<NoiseTexture>,
     /// Non-blocking notes from generation (early stops, budget exhaustion, ...).
     /// Shown in the warnings panel with no field marker.
     pub notes: Vec<String>,
