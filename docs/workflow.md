@@ -68,6 +68,10 @@ Right now:
    list of object types (herbs, chests...) placed in groups
    (`Category::Interactive`) + groups + footprint mask. Every map kind.
    Finished (step 9).
+10. **Hidden rooms** — input: everything placed so far · output: walled
+   rooms (`Category::HiddenRoom` floors, own wall mask) each with ONE narrow
+   access path (`Category::HiddenRoomPath` pieces), outside the outer wall
+   or inside. Every map kind. Finished (step 10).
 
 - **Action bar** (`src/ui/app.rs`): seed + Generate + Re-roll. Generation
   runs on a background thread (`MapGenApp::job`); the bar shows a progress
@@ -76,7 +80,8 @@ Right now:
   `generator::generate_with_progress` (`Progress` callback, `Stage` maps a
   phase's 0..1 into its slice of the whole: shape 0–55%, wall 55–65%,
   regions 65–85%, roads 85–90%, region walls 90–93%, houses 93–96%,
-  props 96–98%, interactive 98–99%). New phases must report too.
+  props 96–98%, interactive 98–98.5%,
+  hidden rooms 98.5–99.5%). New phases must report too.
 - **Preview** (`src/ui/preview.rs`): draws the generated level (rect objects,
   circle mob spawns/gates, legend) plus the bench texture layer (noise
   texture or town shape — toggle lives in the bench).
@@ -111,6 +116,7 @@ src/
 │   ├── placement.rs   # shared: rotated footprints, dilation, road tangents
 │   ├── props.rs       # step 8: props near houses / roadside / scattered
 │   ├── interactive.rs # step 9: interactive object types in groups
+│   ├── hidden_rooms.rs # step 10: walled rooms + one access path each
 │   ├── grid.rs        # CellMask algorithms: components, speckle removal,
 │   │                  # bridge closest pair (multi-source BFS), hole fill
 │   ├── shape.rs       # step 1: noise → coverage cut → despeckle → bridges
@@ -213,8 +219,10 @@ Rules that carried over from the old build (keep them in every section):
       with name, size range, quantity, group size range, group spread, spot
       (anywhere / along walls / open ground) and color. Node 9. (done — see
       "Step 9 notes")
-- [ ] **Step 10 — hidden rooms**: rooms + BFS access paths (reference
-      `hidden_rooms.rs`).
+- [x] **Step 10 — hidden rooms** (every kind): count, size range, own wall
+      thickness, path width / max length, place (outside the wall / inside /
+      either), mob-passable chance, colors. Node 10. (done — see "Step 10
+      notes")
 - [ ] **Step 11 — mobs**: budget/combos/balance packs (reference `mobs.rs`).
 - [ ] **Step 12 — gates**: gate markers on wall openings (reference `gates.rs`).
 - [ ] **Step 13 — validation & export polish**: feasibility pre-check,
@@ -626,6 +634,46 @@ per-type requested / placed / groups. spec.json gets `interactive_groups`.
 Tests: quantity in allowed groups, spread respected, no overlap with
 roads/walls/houses/props/each other, walkable ground one piece, along-walls
 groups start by an obstacle, overflow note, non-town maps, determinism.
+
+## Step 10 notes — hidden rooms
+
+`generator/hidden_rooms.rs`, every map kind (node 10). Settings:
+`config.hidden_rooms: HiddenRoomSettings` (default 2 rooms, 3–6 m floor,
+0.5 m wall, 1 m path, 12 m max path, place Either, 0% mob-passable, purple
+floor / light purple path).
+
+1. **Spots** — the block (floor + own wall ring) must lie wholly on "ok"
+   cells and off earlier rooms/paths and their 1-cell ring. *Outside*: empty
+   ground (not town, not outer wall) a cell clear of everything else.
+   *Inside*: walkable ground, no road, a cell clear of every obstacle (like
+   props) — the free ring around a rectangle keeps the ground one piece.
+   Every fitting top-left is enumerated exactly (summed-area table) and up
+   to 300 are tried at random; *Either* tries outside first, then inside.
+2. **Path** — 4-neighbour BFS from the floor (sources shuffled and the
+   neighbour order rotated per room, so doors face any side) to the first
+   walkable cell outside the block (roads count). Every path cell's
+   `path_width_m` square brush must avoid houses, props, interactives,
+   region walls and other rooms/paths (+ ring); it may dig empty ground,
+   the outer wall and its own room wall. Longer than `path_max_m` (counted
+   from the floor) → try another spot. The brush digs every non-open cell
+   (an inside room's own wall stands on walkable ground, so wall cells are
+   dug explicitly).
+3. **Output** — `HiddenRoomLayout { wall_mask, floor_mask (floors + dug
+   path), rooms, requested }`; each `HiddenRoom` has id, floor rect, outside
+   flag, path centerline (m), path width, `mob_passable` (rolled per room
+   from `mob_passable_pct`) and its object indices (floor, then one rect per
+   horizontal run of dug path cells), shifted in `generate`. `generate` also
+   clears the outer wall where a path dug through it. Room walls paint in
+   the outer wall color (render.rs + preview texture in app.rs). spec.json
+   gets `hidden_rooms`.
+
+Notes: "no free ground for a W×H m room" or "no spot with a path of at
+most X m". A packed small town (default 64 m map with houses, props and
+herbs) often has no clear spot for an inside room — Either then digs
+outside. Tests: rooms placed and reachable (floors + paths + map one piece),
+outside rooms beyond the town with the wall opened, inside rooms keep the
+ground one piece, paths never dig through objects/region walls, width + mob
+flag follow settings, impossible-size note, non-town maps, determinism.
 
 ## Done-ness checklist for every step
 

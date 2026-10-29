@@ -10,8 +10,8 @@ See [docs/goals.md](docs/goals.md) for the main goals and feature requirements, 
 The first full generator grew too complex in one shot, so it was moved to
 [`reference/`](reference/README.md) (dead code, kept for reuse) and the
 generator is being rebuilt **one step at a time**. Each finished step is a
-node in the left panel. Steps 1–6, 8 and 9 are done; next up are the walkable
-budget, hidden rooms, mobs, gates and validation.
+node in the left panel. Steps 1–6 and 8–10 are done; next up are the walkable
+budget, mobs, gates and validation.
 
 Generation is **deterministic**: the same config + seed always gives the same map.
 
@@ -48,6 +48,11 @@ body, every control has a tooltip, and changes apply on **⚙ Generate**.
    with its own size, quantity, group size, group spread, spot (anywhere,
    along walls, or open ground) and color. Objects are placed in groups,
    and spec.json lists each group's members.
+10. **Hidden rooms**: small walled rooms, each reached by ONE narrow path
+    (always wide enough for the player; a per-room roll decides whether
+    mobs can use it). Rooms sit outside the outer wall, with the path
+    tunnelling through it, or inside on free ground. Options: count, size,
+    wall thickness, path width, max path length, place and colors.
 
 Plus app features: **Export** (map.png + layer.png + spec.json) and
 **Config file** (save/load JSON; older configs keep loading).
@@ -90,6 +95,7 @@ src/
 │   ├── houses.rs        # node 7: houses
 │   ├── props.rs         # node 8: props
 │   ├── interactive.rs   # node 9: interactive objects
+│   ├── hidden_rooms.rs  # node 10: hidden rooms + access paths
 │   └── placement.rs     # shared object footprint / road-angle helpers
 ├── render.rs            # map.png / layer.png rasterizers
 ├── export.rs            # export bundle writer + spec.json

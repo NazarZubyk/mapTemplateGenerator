@@ -359,6 +359,38 @@ pub struct InteractiveTypeStats {
     pub groups: u32,
 }
 
+/// The hidden rooms node's output.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HiddenRoomLayout {
+    /// The rooms' own walls (painted like the outer wall).
+    pub wall_mask: CellMask,
+    /// Room floors + access paths: walkable, but only through the path.
+    pub floor_mask: CellMask,
+    pub rooms: Vec<HiddenRoom>,
+    /// Rooms asked for.
+    pub requested: u32,
+}
+
+/// One hidden room and its access path.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HiddenRoom {
+    /// 1-based room id.
+    pub id: u32,
+    /// Floor rect in meters (inside the room's walls): x, y, w, h.
+    pub rect_m: [f32; 4],
+    /// Dug beyond the outer wall (else inside the area).
+    pub outside: bool,
+    /// Path centerline from the room to walkable ground, meters (cell
+    /// centers, room end first).
+    pub path_m: Vec<[f32; 2]>,
+    pub path_width_m: f32,
+    /// The player always fits; this says whether mobs may use the path.
+    pub mob_passable: bool,
+    /// Indices of the room's objects (floor first, then path pieces) in
+    /// `GeneratedLevel::objects`.
+    pub objects: Vec<usize>,
+}
+
 /// An opening in a region wall where a road passes through.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct WallGap {
@@ -412,6 +444,9 @@ pub struct GeneratedLevel {
     /// The interactive node's groups and stats.
     #[serde(default)]
     pub interactive: Option<InteractiveLayout>,
+    /// The hidden rooms node's rooms, walls and paths.
+    #[serde(default)]
+    pub hidden_rooms: Option<HiddenRoomLayout>,
     /// Raw noise field behind the region shape, for the bench "noise texture"
     /// view.
     pub noise_preview: Option<NoiseTexture>,

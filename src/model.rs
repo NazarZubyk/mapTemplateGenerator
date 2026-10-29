@@ -62,6 +62,8 @@ pub struct LevelConfig {
     /// Interactive object types (step 9, every map kind) — herbs to gather,
     /// chests to open... each type placed in groups.
     pub interactive: Vec<InteractiveType>,
+    /// Hidden rooms with one small access path each (step 10, every map kind).
+    pub hidden_rooms: HiddenRoomSettings,
     pub cell_size_m: f32,
     pub seed: u64,
 }
@@ -79,6 +81,7 @@ impl Default for LevelConfig {
             houses: HouseSettings::default(),
             props: PropSettings::default(),
             interactive: vec![InteractiveType::default()],
+            hidden_rooms: HiddenRoomSettings::default(),
             cell_size_m: 0.5,
             seed: 0,
         }
@@ -171,6 +174,77 @@ impl Default for PropSettings {
             near_houses_pct: 50.0,
             roadside_pct: 25.0,
             color: [92, 110, 140],
+        }
+    }
+}
+
+/// Where hidden rooms are dug.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HiddenRoomPlace {
+    /// Beyond the outer wall, in the unused ground around the map's area;
+    /// the access path tunnels through the wall.
+    OutsideWall,
+    /// On free ground inside the area, walled in, the path a short doorway.
+    Inside,
+    /// Outside where it fits, inside otherwise.
+    Either,
+}
+
+impl HiddenRoomPlace {
+    pub const ALL: [HiddenRoomPlace; 3] = [HiddenRoomPlace::OutsideWall, HiddenRoomPlace::Inside, HiddenRoomPlace::Either];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            HiddenRoomPlace::OutsideWall => "Outside the wall",
+            HiddenRoomPlace::Inside => "Inside",
+            HiddenRoomPlace::Either => "Either",
+        }
+    }
+}
+
+/// Settings of the hidden rooms node (docs/workflow.md, step 10).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HiddenRoomSettings {
+    /// How many hidden rooms to place.
+    pub count: u32,
+    /// Room side in meters (inside its walls), width and depth rolled
+    /// independently between min and max.
+    pub size_min_m: f32,
+    pub size_max_m: f32,
+    /// Thickness of the room's own wall, meters (at least one cell).
+    pub wall_thickness_m: f32,
+    /// Width of the access path, meters — at least one cell, so the player
+    /// always fits.
+    pub path_width_m: f32,
+    /// Longest access path, meters: a room farther from walkable ground is
+    /// not placed there.
+    pub path_max_m: f32,
+    /// Where rooms are dug.
+    pub place: HiddenRoomPlace,
+    /// Chance, %, that a room's path is passable for mobs too (0 = player
+    /// only everywhere, 100 = everyone everywhere).
+    pub mob_passable_pct: f32,
+    /// Room floor color on map.png, the preview and the legend.
+    pub color_room: [u8; 3],
+    /// Access path color.
+    pub color_path: [u8; 3],
+}
+
+impl Default for HiddenRoomSettings {
+    fn default() -> Self {
+        Self {
+            count: 2,
+            size_min_m: 3.0,
+            size_max_m: 6.0,
+            wall_thickness_m: 0.5,
+            path_width_m: 1.0,
+            path_max_m: 12.0,
+            place: HiddenRoomPlace::Either,
+            mob_passable_pct: 0.0,
+            color_room: [150, 90, 190],
+            color_path: [190, 140, 220],
         }
     }
 }

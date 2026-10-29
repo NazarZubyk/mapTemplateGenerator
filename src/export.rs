@@ -72,6 +72,9 @@ pub struct ExportSpec {
     /// Groups of interactive objects: type, center and member indices into
     /// `objects`.
     pub interactive_groups: Option<Vec<crate::level::InteractiveGroup>>,
+    /// Hidden rooms: floor rect, access path centerline + width, whether
+    /// mobs may use the path, and their object indices in `objects`.
+    pub hidden_rooms: Option<Vec<crate::level::HiddenRoom>>,
     /// Every placed object with position and size in meters.
     pub objects: Vec<crate::level::PlacedObject>,
 }
@@ -276,6 +279,7 @@ impl ExportSpec {
                 }
             }),
             interactive_groups: level.interactive.as_ref().map(|l| l.groups.clone()),
+            hidden_rooms: level.hidden_rooms.as_ref().map(|l| l.rooms.clone()),
             objects: level.objects.clone(),
         }
     }
@@ -326,6 +330,7 @@ mod tests {
             houses: None,
             props: None,
             interactive: None,
+            hidden_rooms: None,
             regions: None,
             noise_preview: None,
             notes: Vec::new(),

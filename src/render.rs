@@ -108,6 +108,9 @@ pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
     if let Some(walls) = &level.walls {
         paint_mask(&mut map, &walls.mask, px_per_m, w, h, WALL);
     }
+    if let Some(rooms) = &level.hidden_rooms {
+        paint_mask(&mut map, &rooms.wall_mask, px_per_m, w, h, WALL);
+    }
 
     // Draw in stored order: later objects paint over earlier ones. Objects
     // may be rotated and compound: every pixel in the bounding box of all
@@ -203,6 +206,7 @@ mod tests {
             houses: None,
             props: None,
             interactive: None,
+            hidden_rooms: None,
             regions: None,
             noise_preview: None,
             notes: Vec::new(),

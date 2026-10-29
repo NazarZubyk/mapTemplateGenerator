@@ -215,6 +215,13 @@ impl MapGenApp {
                     }
                 }
             }
+            if let Some(rooms) = &level.hidden_rooms {
+                for (px, on) in pixels.iter_mut().zip(&rooms.wall_mask.cells) {
+                    if *on {
+                        *px = wall;
+                    }
+                }
+            }
             self.bench_shape = Some(upload(
                 "bench_shape",
                 pixels,

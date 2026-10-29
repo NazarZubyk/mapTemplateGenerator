@@ -1,7 +1,7 @@
 use eframe::egui;
 use rand::Rng;
 
-use crate::model::{InteractiveSpot, InteractiveType, LevelConfig, MapKind, NodeAmount, ShapeSettings};
+use crate::model::{HiddenRoomPlace, InteractiveSpot, InteractiveType, LevelConfig, MapKind, NodeAmount, ShapeSettings};
 use crate::ui::app::{ConfigStatus, MapGenApp};
 use crate::ui::widgets::param_row;
 
@@ -42,6 +42,8 @@ fn generation_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_props(ui, app);
     flow_arrow(ui, "free ground after props");
     node_interactive(ui, app);
+    flow_arrow(ui, "everything placed so far");
+    node_hidden_rooms(ui, app);
     ui.weak("Next nodes appear here as sections finish; which nodes exist depends on the map kind (docs/workflow.md).");
     ui.add_space(4.0);
     ui.separator();
@@ -1089,6 +1091,113 @@ of that kind is left, the rest go anywhere (with a note).";
             for t in &l.types {
                 ui.weak(format!("generated: {} — {} of {} in {} groups", t.name, t.placed, t.requested, t.groups));
             }
+        }
+    });
+}
+
+/// Node 10: hidden rooms, every map kind (see step 10 notes in
+/// docs/workflow.md).
+fn node_hidden_rooms(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_COUNT: &str = "How many hidden rooms to dig. A room that finds no spot with a \
+short enough path is skipped with a note.";
+    const TIP_SIZE_MIN: &str = "Smallest room side in meters (floor, inside its walls). Width \
+and depth are rolled independently between min and max.";
+    const TIP_SIZE_MAX: &str = "Largest room side in meters. If max is smaller than min the two \
+are swapped.";
+    const TIP_WALL: &str = "Thickness of the room's own wall in meters (at least one cell), \
+drawn like the outer wall.";
+    const TIP_PATH_W: &str = "Width of the ONE access path in meters — at least one cell, so \
+the player always fits.";
+    const TIP_PATH_MAX: &str = "Longest access path in meters, counted from the room floor \
+(through its wall). Spots farther from walkable ground are skipped.";
+    const TIP_PLACE: &str = "Outside the wall: in the empty ground beyond the outer wall; the \
+path tunnels through the wall, which opens there. Inside: on free ground, walled in, the path \
+a short doorway. Either: outside where it fits, inside otherwise. Paths never dig through \
+houses, props, interactive objects, region walls or other rooms.";
+    const TIP_MOB: &str = "Chance that a room's path is passable for mobs too. 0% = player \
+only everywhere, 100% = everyone everywhere; in between each path rolls on its own \
+(spec.json says which).";
+    const TIP_COLOR_ROOM: &str = "Room floor color on the map image, the preview and the legend.";
+    const TIP_COLOR_PATH: &str = "Access path color.";
+    node(ui, "10 · Hidden rooms", |ui| {
+        ui.weak("input: everything placed so far · output: walled rooms + one access path each (every map kind)");
+        egui::Grid::new("hidden_rooms_node_grid")
+            .num_columns(2)
+            .spacing([10.0, 3.0])
+            .show(ui, |ui| {
+                let r = &mut app.config.hidden_rooms;
+                param_row(ui, "Count", TIP_COUNT, |ui| {
+                    ui.add(egui::DragValue::new(&mut r.count).range(0..=50).speed(0.1))
+                });
+                param_row(ui, "Size min", TIP_SIZE_MIN, |ui| {
+                    ui.add(egui::DragValue::new(&mut r.size_min_m).range(0.5..=30.0).speed(0.05).suffix(" m"))
+                });
+                param_row(ui, "Size max", TIP_SIZE_MAX, |ui| {
+                    ui.add(egui::DragValue::new(&mut r.size_max_m).range(0.5..=30.0).speed(0.05).suffix(" m"))
+                });
+                param_row(ui, "Wall thickness", TIP_WALL, |ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut r.wall_thickness_m)
+                            .range(0.1..=5.0)
+                            .speed(0.05)
+                            .suffix(" m"),
+                    )
+                });
+                param_row(ui, "Path width", TIP_PATH_W, |ui| {
+                    ui.add(egui::DragValue::new(&mut r.path_width_m).range(0.1..=5.0).speed(0.05).suffix(" m"))
+                });
+                param_row(ui, "Path max length", TIP_PATH_MAX, |ui| {
+                    ui.add(egui::DragValue::new(&mut r.path_max_m).range(1.0..=100.0).speed(0.1).suffix(" m"))
+                });
+                param_row(ui, "Place", TIP_PLACE, |ui| {
+                    egui::ComboBox::from_id_salt("hidden_room_place")
+                        .selected_text(r.place.label())
+                        .show_ui(ui, |ui| {
+                            for place in HiddenRoomPlace::ALL {
+                                ui.selectable_value(&mut r.place, place, place.label());
+                            }
+                        })
+                        .response
+                });
+                param_row(ui, "Mob passable", TIP_MOB, |ui| {
+                    ui.add(egui::Slider::new(&mut r.mob_passable_pct, 0.0..=100.0).suffix(" %"))
+                });
+                param_row(ui, "Room color", TIP_COLOR_ROOM, |ui| ui.color_edit_button_srgb(&mut r.color_room));
+                param_row(ui, "Path color", TIP_COLOR_PATH, |ui| ui.color_edit_button_srgb(&mut r.color_path));
+            });
+        ui.horizontal(|ui| {
+            if ui
+                .button("🎲 Random params")
+                .on_hover_text(
+                    "Rolls every value independently inside its reasonable range — they may \
+                     contradict each other. Keeps the colors. Set values only; press Generate.",
+                )
+                .clicked()
+            {
+                let mut rng = rand::rng();
+                let r = &mut app.config.hidden_rooms;
+                r.count = rng.random_range(0..=6);
+                r.size_min_m = rng.random_range(2.0..=5.0);
+                r.size_max_m = rng.random_range(3.0..=9.0);
+                r.wall_thickness_m = rng.random_range(0.5..=1.5);
+                r.path_width_m = rng.random_range(0.5..=2.0);
+                r.path_max_m = rng.random_range(4.0..=30.0);
+                r.place = HiddenRoomPlace::ALL[rng.random_range(0..HiddenRoomPlace::ALL.len())];
+                r.mob_passable_pct = rng.random_range(0.0..=100.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(l) = app.generated.as_ref().and_then(|l| l.hidden_rooms.as_ref()) {
+            let outside = l.rooms.iter().filter(|r| r.outside).count();
+            let mobs = l.rooms.iter().filter(|r| r.mob_passable).count();
+            ui.weak(format!(
+                "generated: {} of {} rooms ({} outside, {} inside) · {} mob-passable paths",
+                l.rooms.len(),
+                l.requested,
+                outside,
+                l.rooms.len() - outside,
+                mobs
+            ));
         }
     });
 }

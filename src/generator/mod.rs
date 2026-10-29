@@ -5,10 +5,11 @@
 
 use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 
-use crate::level::{GeneratedLevel, LevelShape};
+use crate::level::{CellMask, GeneratedLevel, LevelShape};
 use crate::model::LevelConfig;
 
 pub mod grid;
+pub mod hidden_rooms;
 pub mod houses;
 pub mod interactive;
 pub mod noise;
@@ -160,7 +161,7 @@ pub fn generate_with_progress(
             house_mask: houses.as_ref().map(|h| &h.mask),
             prop_mask: props.as_ref().map(|p| &p.mask),
         };
-        interactive::build_with_progress(config, &mut rng, &ground, &stage(0.98, 0.99))
+        interactive::build_with_progress(config, &mut rng, &ground, &stage(0.98, 0.985))
     });
     let interactive = interactive.map(|mut built| {
         notes.extend(built.notes);
@@ -172,6 +173,44 @@ pub fn generate_with_progress(
             }
         }
         objects.extend(built.objects);
+        built.layout
+    });
+
+    // Step 10: hidden rooms (every map kind) — walled rooms outside the wall
+    // or inside, each with one narrow access path.
+    let hidden_rooms = regions.as_ref().and_then(|split| {
+        let object_masks: Vec<&CellMask> = [
+            houses.as_ref().map(|l| &l.mask),
+            props.as_ref().map(|l| &l.mask),
+            interactive.as_ref().map(|l| &l.mask),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let ground = hidden_rooms::Ground {
+            regions: &split.map,
+            outer_wall: walls.as_ref().map(|w| &w.mask),
+            region_walls: region_walls.as_ref().map(|w| &w.mask),
+            roads: roads.as_ref(),
+            objects: &object_masks,
+        };
+        hidden_rooms::build_with_progress(config, &mut rng, &ground, &stage(0.985, 0.995))
+    });
+    let hidden_rooms = hidden_rooms.map(|mut built| {
+        notes.extend(built.notes);
+        let offset = objects.len();
+        for r in &mut built.layout.rooms {
+            for m in &mut r.objects {
+                *m += offset;
+            }
+        }
+        objects.extend(built.objects);
+        // Paths tunnel through the outer wall: open it there.
+        if let Some(w) = walls.as_mut() {
+            for (cell, &dug) in w.mask.cells.iter_mut().zip(&built.layout.floor_mask.cells) {
+                *cell &= !dug;
+            }
+        }
         built.layout
     });
 
@@ -195,6 +234,7 @@ pub fn generate_with_progress(
         houses,
         props,
         interactive,
+        hidden_rooms,
         noise_preview: Some(built.noise_preview),
         notes,
     }
