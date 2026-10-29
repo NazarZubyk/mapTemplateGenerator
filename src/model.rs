@@ -57,6 +57,8 @@ pub struct LevelConfig {
     pub region_walls: RegionWallSettings,
     /// Houses along the streets and in the yards (step 6, town maps).
     pub houses: HouseSettings,
+    /// Decorative, non-interactive props (step 8, every map kind).
+    pub props: PropSettings,
     pub cell_size_m: f32,
     pub seed: u64,
 }
@@ -72,6 +74,7 @@ impl Default for LevelConfig {
             roads: RoadsSettings::default(),
             region_walls: RegionWallSettings::default(),
             houses: HouseSettings::default(),
+            props: PropSettings::default(),
             cell_size_m: 0.5,
             seed: 0,
         }
@@ -125,6 +128,45 @@ impl Default for HouseSettings {
             wing_min_pct: 40.0,
             wing_max_pct: 75.0,
             color: [158, 96, 64],
+        }
+    }
+}
+
+/// Settings of the props node (docs/workflow.md, step 8; every map kind):
+/// decorative, non-interactive objects (crates, barrels, rocks, logs, …).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PropSettings {
+    /// How many props to place.
+    pub quantity: u32,
+    /// Coverage cap, %: props never cover more than this share of the free
+    /// ground (town minus walls, roads and houses). Whichever of quantity and
+    /// density is lower wins.
+    pub density_pct: f32,
+    /// Smallest prop side in meters (width and depth rolled independently).
+    pub size_min_m: f32,
+    /// Largest prop side in meters.
+    pub size_max_m: f32,
+    /// Share of props, %, set against house walls (town maps; elsewhere they
+    /// are scattered instead).
+    pub near_houses_pct: f32,
+    /// Share of props, %, set at the road edges. What is left over from the
+    /// two shares is scattered over open ground.
+    pub roadside_pct: f32,
+    /// Prop color on map.png, the preview and the legend.
+    pub color: [u8; 3],
+}
+
+impl Default for PropSettings {
+    fn default() -> Self {
+        Self {
+            quantity: 40,
+            density_pct: 5.0,
+            size_min_m: 0.5,
+            size_max_m: 1.5,
+            near_houses_pct: 50.0,
+            roadside_pct: 25.0,
+            color: [92, 110, 140],
         }
     }
 }

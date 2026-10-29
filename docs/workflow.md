@@ -62,6 +62,8 @@ Right now:
 7. **Houses** — input: town minus walls and roads · output: rotated house
    objects (`Category::Structure`) + footprint mask. TOWN ONLY (the node is
    hidden for other kinds; the generator skips it). Finished (step 6).
+8. **Props** — input: free ground left over · output: prop objects
+   (`Category::Prop`) + footprint mask. Every map kind. Finished (step 8).
 
 - **Action bar** (`src/ui/app.rs`): seed + Generate + Re-roll. Generation
   runs on a background thread (`MapGenApp::job`); the bar shows a progress
@@ -69,8 +71,8 @@ Right now:
   disabled until it finishes. Phases report through
   `generator::generate_with_progress` (`Progress` callback, `Stage` maps a
   phase's 0..1 into its slice of the whole: shape 0–55%, wall 55–65%,
-  regions 65–85%, roads 85–90%, region walls 90–93%, houses 93–99%). New
-  phases must report too.
+  regions 65–85%, roads 85–90%, region walls 90–93%, houses 93–97%,
+  props 97–99%). New phases must report too.
 - **Preview** (`src/ui/preview.rs`): draws the generated level (rect objects,
   circle mob spawns/gates, legend) plus the bench texture layer (noise
   texture or town shape — toggle lives in the bench).
@@ -102,6 +104,8 @@ src/
 │   ├── mod.rs         # generate(): fixed phase order, one RNG stream
 │   ├── noise.rs       # general seeded value noise + fBm (utility for everything)
 │   ├── houses.rs      # step 6: street-front + yard houses (town only)
+│   ├── placement.rs   # shared: rotated footprints, dilation, road tangents
+│   ├── props.rs       # step 8: props near houses / roadside / scattered
 │   ├── grid.rs        # CellMask algorithms: components, speckle removal,
 │   │                  # bridge closest pair (multi-source BFS), hole fill
 │   ├── shape.rs       # step 1: noise → coverage cut → despeckle → bridges
@@ -197,13 +201,16 @@ Rules that carried over from the old build (keep them in every section):
       face-the-road chance, color. Node 7. (done — see "Step 6 notes")
 - [ ] **Step 7 — walkable budget**: `map.walkable_pct` vs what the houses
       and later objects take (houses already keep the ground connected).
-- [ ] **Step 8 — props & interactives**: scatter phases, props allowed on
-      roads, buildings not (reference `props.rs`, `interactives.rs`).
-- [ ] **Step 9 — hidden rooms**: rooms + BFS access paths (reference
+- [x] **Step 8 — props** (every kind): quantity + density cap + size range,
+      placed against houses / at road edges / scattered. Node 8. (done —
+      see "Step 8 notes")
+- [ ] **Step 9 — interactive objects**: types with size, quantity and group
+      size (reference `interactives.rs`).
+- [ ] **Step 10 — hidden rooms**: rooms + BFS access paths (reference
       `hidden_rooms.rs`).
-- [ ] **Step 10 — mobs**: budget/combos/balance packs (reference `mobs.rs`).
-- [ ] **Step 11 — gates**: gate markers on wall openings (reference `gates.rs`).
-- [ ] **Step 12 — validation & export polish**: feasibility pre-check,
+- [ ] **Step 11 — mobs**: budget/combos/balance packs (reference `mobs.rs`).
+- [ ] **Step 12 — gates**: gate markers on wall openings (reference `gates.rs`).
+- [ ] **Step 13 — validation & export polish**: feasibility pre-check,
       duplicate colors, full spec.json details (reference `validate.rs`,
       `export.rs`).
 - [ ] **Cleanup**: delete `reference/` and this file's history notes.
@@ -548,6 +555,37 @@ block, 0% → none, max 2 → one wing), flat street fronts, courtyard check.
 Also fixed in step 5 while testing this: two region walls could close off a
 1-cell pocket no road reaches — such pockets now become wall, so the open
 town is always one piece (asserted in the region-walls test).
+
+## Step 8 notes — props
+
+`generator/props.rs`, every map kind (node 8; "Near houses" row shown for
+towns only). Goals: density, allowed size range, quantity.
+
+1. **Free ground** — town minus walls, roads and houses. Props never stand
+   on a road; they keep one free cell (Chebyshev) from walls, houses, the
+   town edge and each other — obstacles never touch, so the walkable ground
+   stays one piece (tested at 300 props / 40%).
+2. **Count** — `quantity` (default 40), capped by `density_pct` (default
+   5%): at most that share of the free ground at the average prop size
+   (`density_cap`). A note says when the cap or the space stopped it.
+3. **Modes** — `near_houses_pct` (default 50%, towns only) /
+   `roadside_pct` (default 25%) / rest scattered (shares > 100% are scaled
+   down). Near house: random house, random rect (main or wing), random side,
+   one cell + half the prop depth off the wall, turned along that side
+   (corners run clockwise on screen, so the outward normal is (ey, −ex)).
+   Roadside: random link cell, random side, half its width + ¾ cell off the
+   centerline, turned along the road. Scattered: random still-free cell,
+   random angle. 30 tries per mode; a near-house / roadside prop that finds
+   nothing is retried as scattered.
+
+Props are `PlacedObject`s (`Category::Prop`, layer id 2, "prop", user
+color, size `size_min_m..size_max_m`, default 0.5–1.5 m); `PropLayout`
+keeps the mask + per-mode counts + requested / density cap. The shared
+helpers (`footprint`, `dilate`, `within`, `path_tangents`,
+`nearest_road_angle`) moved from houses.rs into `generator/placement.rs`.
+Tests: quantity placed with room, density cap + note, no overlap with
+roads/walls/houses/each other, walkable ground one piece, near-house props
+hug houses, non-town maps scatter, determinism.
 
 ## Done-ness checklist for every step
 

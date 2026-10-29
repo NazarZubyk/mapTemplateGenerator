@@ -201,6 +201,7 @@ mod tests {
             roads: None,
             region_walls: None,
             houses: None,
+            props: None,
             regions: None,
             noise_preview: None,
             notes: Vec::new(),

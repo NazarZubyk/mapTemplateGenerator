@@ -11,6 +11,8 @@ use crate::model::LevelConfig;
 pub mod grid;
 pub mod houses;
 pub mod noise;
+pub mod placement;
+pub mod props;
 pub mod region_walls;
 pub mod regions;
 pub mod roads;
@@ -118,7 +120,7 @@ pub fn generate_with_progress(
                 region_walls: region_walls.as_ref().map(|w| &w.mask),
                 roads: roads.as_ref(),
             };
-            houses::build_with_progress(config, &mut rng, &ground, &stage(0.93, 0.99)).map(|built| {
+            houses::build_with_progress(config, &mut rng, &ground, &stage(0.93, 0.97)).map(|built| {
                 notes.extend(built.notes);
                 objects.extend(built.objects);
                 built.layout
@@ -126,6 +128,26 @@ pub fn generate_with_progress(
         }
         _ => None,
     };
+
+    // Step 8: props (every map kind) — against houses, at road edges,
+    // scattered.
+    let props = regions.as_ref().and_then(|split| {
+        let ground = props::Ground {
+            regions: &split.map,
+            outer_wall: walls.as_ref().map(|w| &w.mask),
+            region_walls: region_walls.as_ref().map(|w| &w.mask),
+            roads: roads.as_ref(),
+            house_mask: houses.as_ref().map(|h| &h.mask),
+            houses: &objects,
+        };
+        let built = props::build_with_progress(config, &mut rng, &ground, &stage(0.97, 0.99))?;
+        notes.extend(built.notes);
+        Some((built.layout, built.objects))
+    });
+    let props = props.map(|(layout, placed)| {
+        objects.extend(placed);
+        layout
+    });
 
     let total = region_mask.width * region_mask.height;
     let mut stats = built.shape.stats;
@@ -145,6 +167,7 @@ pub fn generate_with_progress(
         roads,
         region_walls,
         houses,
+        props,
         noise_preview: Some(built.noise_preview),
         notes,
     }

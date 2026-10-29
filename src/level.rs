@@ -314,6 +314,21 @@ pub struct HouseLayout {
     pub target_pct: f32,
 }
 
+/// What the props node built (the props themselves are `PlacedObject`s in
+/// `GeneratedLevel::objects`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PropLayout {
+    /// Cells covered by props.
+    pub mask: CellMask,
+    /// Props placed against houses / at road edges / scattered.
+    pub near_houses: u32,
+    pub roadside: u32,
+    pub scattered: u32,
+    /// The quantity asked for, and the cap the density allowed.
+    pub requested: u32,
+    pub density_cap: u32,
+}
+
 /// An opening in a region wall where a road passes through.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct WallGap {
@@ -361,6 +376,9 @@ pub struct GeneratedLevel {
     /// The houses node's footprint and stats (town maps).
     #[serde(default)]
     pub houses: Option<HouseLayout>,
+    /// The props node's footprint and stats.
+    #[serde(default)]
+    pub props: Option<PropLayout>,
     /// Raw noise field behind the region shape, for the bench "noise texture"
     /// view.
     pub noise_preview: Option<NoiseTexture>,

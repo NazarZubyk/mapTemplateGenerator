@@ -38,6 +38,8 @@ fn generation_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
         flow_arrow(ui, "free ground between roads and walls");
         node_houses(ui, app);
     }
+    flow_arrow(ui, "free ground left over");
+    node_props(ui, app);
     ui.weak("Next nodes appear here as sections finish; which nodes exist depends on the map kind (docs/workflow.md).");
     ui.add_space(4.0);
     ui.separator();
@@ -860,6 +862,100 @@ smaller than the minimum the two are swapped. NO EFFECT at 0% complex.";
                 h.complex_houses,
                 h.coverage_pct,
                 h.target_pct
+            ));
+        }
+    });
+}
+
+/// Node 8: decorative props, every map kind (see step 8 notes in
+/// docs/workflow.md).
+fn node_props(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_QUANTITY: &str = "How many props to place — crates and barrels in a town, rocks \
+in a cave, logs in a forest. Density may cap it: whichever is lower wins, and a note tells \
+you when the cap or the free space stopped placement.";
+    const TIP_DENSITY: &str = "Coverage cap: props never cover more than this share of the \
+free ground (town minus walls, roads and houses), counted at the average prop size. NO EFFECT \
+while Quantity is below the cap.";
+    const TIP_SIZE_MIN: &str = "Smallest prop side in meters (rounded up to one cell). Width \
+and depth are rolled independently between min and max.";
+    const TIP_SIZE_MAX: &str = "Largest prop side in meters. If max is smaller than min the \
+two are swapped.";
+    const TIP_NEAR: &str = "Share of props set against house walls — one cell off the wall, \
+turned like the house (wings count too). Town maps only: elsewhere these props are scattered \
+instead. If this and Roadside add up to more than 100% they are scaled down.";
+    const TIP_ROADSIDE: &str = "Share of props set at the road edges, turned along the road. \
+Props never stand ON a road. Whatever is left after Near houses and Roadside is scattered \
+over open ground at random angles.";
+    const TIP_COLOR: &str = "Prop color on the map image, the preview and the legend.";
+    node(ui, "8 · Props", |ui| {
+        ui.weak("input: free ground left over · output: props (every map kind)");
+        let town = app.config.kind == MapKind::Town;
+        egui::Grid::new("props_node_grid")
+            .num_columns(2)
+            .spacing([10.0, 3.0])
+            .show(ui, |ui| {
+                let props = &mut app.config.props;
+                param_row(ui, "Quantity", TIP_QUANTITY, |ui| {
+                    ui.add(egui::DragValue::new(&mut props.quantity).range(0..=2000).speed(0.5))
+                });
+                param_row(ui, "Density cap", TIP_DENSITY, |ui| {
+                    ui.add(egui::Slider::new(&mut props.density_pct, 0.0..=100.0).suffix(" %"))
+                });
+                param_row(ui, "Size min", TIP_SIZE_MIN, |ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut props.size_min_m)
+                            .range(0.1..=10.0)
+                            .speed(0.05)
+                            .suffix(" m"),
+                    )
+                });
+                param_row(ui, "Size max", TIP_SIZE_MAX, |ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut props.size_max_m)
+                            .range(0.1..=10.0)
+                            .speed(0.05)
+                            .suffix(" m"),
+                    )
+                });
+                if town {
+                    param_row(ui, "Near houses", TIP_NEAR, |ui| {
+                        ui.add(egui::Slider::new(&mut props.near_houses_pct, 0.0..=100.0).suffix(" %"))
+                    });
+                }
+                param_row(ui, "Roadside", TIP_ROADSIDE, |ui| {
+                    ui.add(egui::Slider::new(&mut props.roadside_pct, 0.0..=100.0).suffix(" %"))
+                });
+                param_row(ui, "Color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut props.color));
+            });
+        ui.horizontal(|ui| {
+            if ui
+                .button("🎲 Random params")
+                .on_hover_text(
+                    "Rolls every value independently inside its reasonable range — they may \
+                     contradict each other. Keeps the color. Set values only; press Generate.",
+                )
+                .clicked()
+            {
+                let mut rng = rand::rng();
+                let props = &mut app.config.props;
+                props.quantity = rng.random_range(0..=300);
+                props.density_pct = rng.random_range(1.0..=40.0);
+                props.size_min_m = rng.random_range(0.3..=2.0);
+                props.size_max_m = rng.random_range(0.5..=3.0);
+                props.near_houses_pct = rng.random_range(0.0..=100.0);
+                props.roadside_pct = rng.random_range(0.0..=100.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(p) = app.generated.as_ref().and_then(|l| l.props.as_ref()) {
+            ui.weak(format!(
+                "generated: {} props ({} near houses, {} roadside, {} scattered) · asked {}, density allows {}",
+                p.near_houses + p.roadside + p.scattered,
+                p.near_houses,
+                p.roadside,
+                p.scattered,
+                p.requested,
+                p.density_cap
             ));
         }
     });
