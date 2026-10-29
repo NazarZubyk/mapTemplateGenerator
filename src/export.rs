@@ -65,6 +65,8 @@ pub struct ExportSpec {
     pub map_kind: &'static str,
     /// The region split, once the regions node is built.
     pub regions: Option<Vec<ExportRegion>>,
+    /// The road network, once the roads node is built.
+    pub roads: Option<ExportRoads>,
     /// Every placed object with position and size in meters.
     pub objects: Vec<crate::level::PlacedObject>,
 }
@@ -77,6 +79,67 @@ pub struct ExportRegion {
     pub target_pct: f32,
     pub actual_pct: f32,
     pub cells: u32,
+}
+
+/// The roads: each one as a centerline polyline, plus the points where they
+/// cross between regions — all in meters from the map's top-left corner.
+#[derive(Debug, Serialize)]
+pub struct ExportRoads {
+    pub width_m: f32,
+    pub roads: Vec<ExportRoad>,
+    /// Where a road crosses between two regions (future wall gaps).
+    pub passages: Vec<ExportPassage>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ExportRoad {
+    pub length_m: f32,
+    /// Centerline points every ~1 m, end to end.
+    pub path_m: Vec<[f32; 2]>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ExportPassage {
+    pub x_m: f32,
+    pub y_m: f32,
+    pub from_region: u8,
+    pub to_region: u8,
+}
+
+impl ExportRoads {
+    fn new(net: &crate::level::RoadNetwork) -> Self {
+        let w = net.mask.width;
+        let cs = net.mask.cell_size_m;
+        let at = |x: usize, y: usize| [(x as f32 + 0.5) * cs, (y as f32 + 0.5) * cs];
+        let every = ((1.0 / cs).round() as usize).max(1);
+        Self {
+            width_m: net.width_cells as f32 * cs,
+            roads: net
+                .links
+                .iter()
+                .map(|l| {
+                    let pts: Vec<[f32; 2]> = l.path.iter().map(|&c| at(c % w, c / w)).collect();
+                    let length_m = pts
+                        .windows(2)
+                        .map(|p| ((p[1][0] - p[0][0]).powi(2) + (p[1][1] - p[0][1]).powi(2)).sqrt())
+                        .sum();
+                    let mut path_m: Vec<[f32; 2]> = pts.iter().step_by(every).copied().collect();
+                    if pts.len() > 1 && !(pts.len() - 1).is_multiple_of(every) {
+                        path_m.push(pts[pts.len() - 1]);
+                    }
+                    ExportRoad { length_m, path_m }
+                })
+                .collect(),
+            passages: net
+                .passages
+                .iter()
+                .map(|p| {
+                    let [x_m, y_m] = at(p.x, p.y);
+                    ExportPassage { x_m, y_m, from_region: p.from_region, to_region: p.to_region }
+                })
+                .collect(),
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -107,6 +170,15 @@ impl ExportSpec {
             legend.push(LegendEntry {
                 color: color_hex(render::REGION),
                 name: level.config.kind.slug().to_owned(),
+                category: "ground",
+            });
+        }
+        if let Some(roads) = &level.roads
+            && !roads.nodes.is_empty()
+        {
+            legend.push(LegendEntry {
+                color: color_hex(render::ROAD),
+                name: "road".to_owned(),
                 category: "ground",
             });
         }
@@ -155,6 +227,7 @@ impl ExportSpec {
             legend,
             layer_categories: render::layer_categories(),
             regions,
+            roads: level.roads.as_ref().map(ExportRoads::new),
             objects: level.objects.clone(),
         }
     }
@@ -196,6 +269,7 @@ mod tests {
             ],
             shape: None,
             walls: None,
+            roads: None,
             regions: None,
             noise_preview: None,
             notes: Vec::new(),

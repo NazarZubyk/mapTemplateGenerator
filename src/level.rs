@@ -190,6 +190,53 @@ pub struct RegionSplit {
     pub stats: Vec<RegionStat>,
 }
 
+/// A crossroad node of the road network.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct RoadNode {
+    /// Cell coordinates on the level grid.
+    pub x: usize,
+    pub y: usize,
+    /// Region the node stands in (1-based).
+    pub region: u8,
+}
+
+/// A road between two nodes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RoadLink {
+    /// Node indices.
+    pub a: usize,
+    pub b: usize,
+    /// Centerline, as cell indices from `a` to `b` (8-connected steps).
+    pub path: Vec<usize>,
+    /// Added beyond the minimum network (a loop / alternative route).
+    pub extra: bool,
+}
+
+/// Where a road crosses from one region into another: the future gap in the
+/// wall between those regions.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Passage {
+    /// The first cell on the `to_region` side, in cell coordinates.
+    pub x: usize,
+    pub y: usize,
+    pub from_region: u8,
+    pub to_region: u8,
+    /// The link it lies on.
+    pub link: usize,
+}
+
+/// The road network of the town area.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RoadNetwork {
+    /// Every road cell (the full road width).
+    pub mask: CellMask,
+    pub nodes: Vec<RoadNode>,
+    pub links: Vec<RoadLink>,
+    pub passages: Vec<Passage>,
+    /// Road width actually used, in cells (≥ 1).
+    pub width_cells: u32,
+}
+
 /// A generated level: the config snapshot it came from plus everything placed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GeneratedLevel {
@@ -202,6 +249,9 @@ pub struct GeneratedLevel {
     pub walls: Option<OuterWall>,
     /// The region split of the town area, once the regions section is built.
     pub regions: Option<RegionSplit>,
+    /// The road network, once the roads section is built.
+    #[serde(default)]
+    pub roads: Option<RoadNetwork>,
     /// Raw noise field behind the region shape, for the bench "noise texture"
     /// view.
     pub noise_preview: Option<NoiseTexture>,

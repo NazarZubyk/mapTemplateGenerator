@@ -192,6 +192,14 @@ impl MapGenApp {
                     }
                 }
             }
+            if let Some(roads) = &level.roads {
+                let c = |rgb: [u8; 3]| egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
+                for (px, on) in pixels.iter_mut().zip(&roads.mask.cells) {
+                    if *on {
+                        *px = c(crate::render::ROAD);
+                    }
+                }
+            }
             if let Some(walls) = &level.walls {
                 for (px, is_wall) in pixels.iter_mut().zip(&walls.mask.cells) {
                     if *is_wall {

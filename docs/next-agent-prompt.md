@@ -102,8 +102,8 @@ region palette colors).
 
 ## Current state
 
-Steps 0–2 are done and promoted into nodes. Step 3 (regions) is implemented
-and sits in the bench awaiting the user's verdict — its controls are NOT yet
-promoted into node 4. If the user opens with "next step", promote regions
-into node 4 first (per the workflow above), then continue with step 4
-(section walls between regions).
+Steps 0–4 are done and live in their nodes (shape, outer walls, regions,
+roads). The bench is empty. Next: step 5 — walls along the borders between
+regions, with gaps at the step-4 passages (road width). The user prefers
+new steps built straight into their left-panel node, not in the bench, and
+wants the map to show only finished things (roads, not junction dots).

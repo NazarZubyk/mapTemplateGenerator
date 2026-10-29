@@ -50,8 +50,12 @@ Right now:
    output: region mask. Finished (step 1); its controls live in the node.
 3. **Outer walls** — input: region mask · output: region mask + wall ring.
    Finished (step 2); its controls live in the node.
-4. **Regions** — input: region inside the wall · output: region id map. In
-   development; its test controls are in the bench below.
+4. **Regions** — input: region inside the wall · output: region id map.
+   Finished (step 3); its controls live in the node.
+5. **Roads** — input: region id map · output: road mask (+ passages for the
+   region walls). Every map kind. Finished (step 4); its controls live in
+   the node. Junctions (crossroad nodes) only steer routing — the map shows
+   roads alone.
 
 - **Action bar** (`src/ui/app.rs`): seed + Generate + Re-roll. Generation
   runs on a background thread (`MapGenApp::job`); the bar shows a progress
@@ -59,7 +63,7 @@ Right now:
   disabled until it finishes. Phases report through
   `generator::generate_with_progress` (`Progress` callback, `Stage` maps a
   phase's 0..1 into its slice of the whole: shape 0–55%, wall 55–65%,
-  regions 65–99%). New phases must report too.
+  regions 65–85%, roads 85–99%). New phases must report too.
 - **Preview** (`src/ui/preview.rs`): draws the generated level (rect objects,
   circle mob spawns/gates, legend) plus the bench texture layer (noise
   texture or town shape — toggle lives in the bench).
@@ -96,7 +100,9 @@ src/
 │   │                  # → hole fill → wavy border margin
 │   ├── walls.rs       # step 2: border walk (random segment lengths) → wall
 │                      # polygon → interior fill / outside cut
-│   └── regions.rs     # step 3: smallest-first region growth, % shares
+│   ├── regions.rs     # step 3: smallest-first region growth, % shares
+│   └── roads.rs       # step 4: crossroad nodes → MST + extra links →
+│                      # noise-bent A* routing → passages
 ├── render.rs          # map.png / layer.png rasterizer (region + wall under objects)
 ├── export.rs          # export bundle: map.png + layer.png + spec.json (format v1)
 ├── validate.rs        # config validation (grows per section)
@@ -158,23 +164,25 @@ Rules that carried over from the old build (keep them in every section):
       the wall's interior (cut outside, fill inside). Width via
       `outer_wall.thickness_m`. Controls promoted into node 3. (done — see
       "Step 2 notes")
-- [~] **Step 3 — regions (IN DEVELOPMENT, in the bench)**: split the town
+- [x] **Step 3 — regions**: split the town
       area into `regions.count` regions with per-region % shares (the UI
       auto-balances: raising one lowers the rest). Placement runs SMALLEST
       first — the smallest seeds on the wall or deep inside (`nesting_pct`
       chance per region → nested regions) and grows to its target; every
       next region seeds beside the already-placed ones and grows the same
       way; the largest is placed last and absorbs everything left.
-      See "Step 3 notes" below.
-- [ ] **Step 4 — section walls (inside walls)**: walls between the regions
-      with gaps/passage points (cell-based successor of the old
-      `reference/sections.rs`).
-- [ ] **Step 5 — occupancy grid & walkable budget**: placement flags on the
+      Controls promoted into node 4. (done — see "Step 3 notes")
+- [x] **Step 4 — roads**: crossroad nodes
+      (count or density, never fewer than the regions count — at least one
+      per region), linked by a minimum spanning tree + optional extra links,
+      each routed as a gently winding road; region crossings recorded as
+      passages. Built straight into node 5 (the user does not want the
+      bench for it). (done — see "Step 4 notes")
+- [ ] **Step 5 — region walls (inside walls)**: walls along the borders
+      between regions, with gaps exactly at the step-4 passages (road width).
+- [ ] **Step 6 — occupancy grid & walkable budget**: placement flags on the
       grid (walkable / road / occupied), walkable-% budget, connectivity
       checks (reference `generator/grid.rs` helpers).
-- [ ] **Step 6 — roads**: crossroad-node web + curvy roads through all
-      regions, roads vs buildings rules (reference `roads.rs` + grid
-      `road` flag).
 - [ ] **Step 7 — structures**: rotated organic placement, road avoidance,
       fitting into tight spots (reference `structures.rs` + rotated
       rasterization).
@@ -379,6 +387,48 @@ Known behavior: exact coverage can slightly exceed the target when the noise
 has ties at the cut level; a 1% target can keep a little more than 1% for the
 same reason. Combine a small target with a large `min_blob_cells` to empty
 the shape entirely (the generator then emits a note).
+
+## Step 4 notes — roads
+
+The user's algorithm: first crossroad-like nodes, then links between them;
+links are not straight lines but get some shape (not too much); later the
+walls between regions get gaps where these roads pass. Implemented in
+`generator/roads.rs`, every map kind:
+
+1. **Node budget** — `roads.amount`: `count` (`node_count`) or `density`
+   (`nodes_per_1000m2` of town area). Always clamped to ≥ the regions count
+   (every region gets one node; the minimum is edited only in node 4 — the
+   bench lifts `node_count` to it) and ≤ 64. The remainder goes by D'Hondt
+   on region area: big regions get more crossroads.
+2. **Placement** — within its region, on cells at least road-radius + 2
+   from the region border (or the deepest available); best of 24 random
+   candidates by distance to all nodes placed so far → spread out.
+3. **Links** — Kruskal MST over all node pairs (Euclidean MST: planar,
+   connected); then each pair among the 4 nearest neighbors, shortest first,
+   is rolled against `extra_links_pct` (always rolled — stable stream) and
+   kept unless it crosses a chosen link or meets one at < 30° at either end.
+4. **Routing** — A* over town cells, 8 directions (diagonal only between two
+   town cells), admissible heuristic. Step cost = length × exp(±2.5·wiggle)
+   by a 10 m fBm field × 3 within road-radius+1 of the town edge (roads
+   don't hug the outer wall) × 2.5 near a region border (roads cross
+   borders briskly → one clean passage, not a zigzag along the border) ×
+   0.6 on existing road (links merge near crossroads). MST links route
+   first. Stamp: a disc of the road radius per centerline cell, town cells
+   only, plus an orthogonal cell at every diagonal step (4-connected even
+   at 1-cell width). Crossroads are always road.
+5. **Passages** — every centerline step from region A into region B; the
+   same pair within road width + 2 cells counts once. These are the
+   positions of the step-5 wall gaps.
+
+Output `RoadNetwork { mask, nodes, links (centerline cells), passages,
+width_cells }`. The user wants ROADS ONLY on the picture: map.png, the
+preview and the legend show the road mask in cream — no junction dots, no
+passage markers. spec.json gets `roads` { width_m, roads: [{ length_m,
+path_m (every ~1 m) }], passages }. Junctions are called "junctions" in the
+UI (node 5: Road width, Wiggle, Extra links, Junctions by count/density). 200 m map / 30 nodes: ~0.25 s of
+routing in release. Tests: one node per region, connected network, node
+count honored with bigger regions getting more, passages on region
+borders, 0% extra = tree, density math, determinism.
 
 ## Done-ness checklist for every step
 

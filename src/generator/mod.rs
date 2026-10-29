@@ -11,6 +11,7 @@ use crate::model::LevelConfig;
 pub mod grid;
 pub mod noise;
 pub mod regions;
+pub mod roads;
 pub mod shape;
 pub mod walls;
 
@@ -85,10 +86,18 @@ pub fn generate_with_progress(
 
     // Step 3: split the town area into regions (smallest placed first).
     let regions = if region_mask.count_true() > 0 {
-        regions::build_with_progress(config, &mut rng, &region_mask, &stage(0.65, 0.99))
+        regions::build_with_progress(config, &mut rng, &region_mask, &stage(0.65, 0.85))
     } else {
         None
     };
+
+    // Step 4: the road network — crossroad nodes (≥ 1 per region) and the
+    // winding links between them; region crossings become passages.
+    let roads = regions.as_ref().and_then(|split| {
+        let built = roads::build_with_progress(config, &mut rng, split, &stage(0.85, 0.99))?;
+        notes.extend(built.notes);
+        Some(built.network)
+    });
 
     let total = region_mask.width * region_mask.height;
     let mut stats = built.shape.stats;
@@ -105,6 +114,7 @@ pub fn generate_with_progress(
         }),
         walls,
         regions,
+        roads,
         noise_preview: Some(built.noise_preview),
         notes,
     }

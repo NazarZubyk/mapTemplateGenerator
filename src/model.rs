@@ -51,6 +51,8 @@ pub struct LevelConfig {
     pub outer_wall: OuterWallSettings,
     /// The region split of the town area (step 3).
     pub regions: RegionsSettings,
+    /// The road network: crossroad nodes and the links between them (step 4).
+    pub roads: RoadsSettings,
     pub cell_size_m: f32,
     pub seed: u64,
 }
@@ -63,8 +65,55 @@ impl Default for LevelConfig {
             shape: ShapeSettings::for_kind(MapKind::Town),
             outer_wall: OuterWallSettings::default(),
             regions: RegionsSettings::default(),
+            roads: RoadsSettings::default(),
             cell_size_m: 0.5,
             seed: 0,
+        }
+    }
+}
+
+/// How the number of crossroad nodes is set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum NodeAmount {
+    /// A fixed total number of nodes (`RoadsSettings::node_count`).
+    Count,
+    /// Nodes per 1000 m² of town area (`RoadsSettings::nodes_per_1000m2`).
+    Density,
+}
+
+/// Settings of the roads node (docs/workflow.md, step 4).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RoadsSettings {
+    /// Whether the node amount is a total count or a density.
+    pub amount: NodeAmount,
+    /// Total crossroad nodes (Count mode). Never fewer than the region count:
+    /// every region gets at least one node.
+    pub node_count: u32,
+    /// Crossroad nodes per 1000 m² of town area (Density mode). Also never
+    /// fewer than one per region.
+    pub nodes_per_1000m2: f32,
+    /// Road width in meters.
+    pub width_m: f32,
+    /// How much links bend away from the straight line, %. Kept gentle: 100%
+    /// is a lazy meander, not a maze.
+    pub wiggle_pct: f32,
+    /// Chance, %, that each candidate link beyond the minimum network is
+    /// added — loops and alternative routes. 0 = a tree (one route between
+    /// any two nodes).
+    pub extra_links_pct: f32,
+}
+
+impl Default for RoadsSettings {
+    fn default() -> Self {
+        Self {
+            amount: NodeAmount::Count,
+            node_count: 8,
+            nodes_per_1000m2: 3.0,
+            width_m: 2.0,
+            wiggle_pct: 35.0,
+            extra_links_pct: 35.0,
         }
     }
 }

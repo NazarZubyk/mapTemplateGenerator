@@ -1,7 +1,7 @@
 use eframe::egui;
 use rand::Rng;
 
-use crate::model::{LevelConfig, MapKind, ShapeSettings};
+use crate::model::{LevelConfig, MapKind, NodeAmount, ShapeSettings};
 use crate::ui::app::{ConfigStatus, MapGenApp};
 use crate::ui::widgets::param_row;
 
@@ -30,6 +30,8 @@ fn generation_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_outer_walls(ui, app);
     flow_arrow(ui, "region inside the wall");
     node_regions(ui, app);
+    flow_arrow(ui, "region id map");
+    node_roads(ui, app);
     ui.weak("Next nodes appear here as sections finish; which nodes exist depends on the map kind (docs/workflow.md).");
     ui.add_space(4.0);
     ui.separator();
@@ -376,14 +378,236 @@ region behind the wall into the ring itself.";
     });
 }
 
-/// Node 4: the region split of the town area. In development: its test
-/// controls live in the bench; once accepted they move into this node body.
+const TIP_COUNT: &str = "How many regions the town area is split into. Changing the \
+count resets the shares to equal parts.";
+
+const TIP_SHARE: &str = "This region's share of the town area, in %. Raising it shrinks \
+all the others automatically so the total stays 100. Placement runs SMALLEST region \
+first: it starts on the wall or deep inside (see Nested chance) and grows to its target; \
+every next one starts beside the already-placed ones and grows the same way; the largest is \
+placed last and fills everything left, so the town always ends fully split. Every \
+region comes out as one connected piece with smooth, wavy borders.";
+
+const TIP_NESTING: &str = "Chance, per region, that it starts deep inside the town \
+instead of against the wall. A nested region gets surrounded by the regions placed after \
+it (the larger ones), so you get districts inside districts. 0% = every region sits on \
+the wall, 100% = every region nests inside the next. No visible effect with 1 region; \
+with a tiny town or very large shares there may be no spot deep enough, and the region \
+starts as deep as it can.";
+
+const TIP_IRREGULARITY: &str = "How irregular region shapes are. 0% = compact round \
+blobs. Higher values stretch each region along its own random direction (up to 3× longer \
+than wide) and let a strong noise field carve lobes, bays and fingers into its border. No \
+visible effect with 1 region (it takes the whole town).";
+
+/// Rebalance the shares after region `i` was changed to a new value: the
+/// others are rescaled to fill the remainder, keeping their proportions.
+fn rebalance(shares: &mut [f32], i: usize) {
+    let n = shares.len();
+    if n <= 1 {
+        if n == 1 {
+            shares[0] = 100.0;
+        }
+        return;
+    }
+    let rest_target = (100.0 - shares[i]).max(0.0);
+    let rest_sum: f32 = shares
+        .iter()
+        .enumerate()
+        .filter(|(j, _)| *j != i)
+        .map(|(_, v)| v)
+        .sum();
+    if rest_sum > 0.0 {
+        for (j, s) in shares.iter_mut().enumerate() {
+            if j != i {
+                *s = *s / rest_sum * rest_target;
+            }
+        }
+    } else {
+        let each = rest_target / (n - 1) as f32;
+        for (j, s) in shares.iter_mut().enumerate() {
+            if j != i {
+                *s = each;
+            }
+        }
+    }
+}
+
+/// Node 4: the region split of the town area (finished — promoted from the
+/// bench; see step 3 notes in docs/workflow.md).
 fn node_regions(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node(ui, "4 · Regions", |ui| {
         ui.weak("input: region inside the wall · output: region id map");
-        ui.weak("⚙ in development — test controls in the Current workflow bench");
+        egui::Grid::new("regions_node_grid")
+            .num_columns(2)
+            .spacing([10.0, 3.0])
+            .show(ui, |ui| {
+                let regions = &mut app.config.regions;
+                let before = regions.count;
+                param_row(ui, "Regions count", TIP_COUNT, |ui| {
+                    ui.add(egui::DragValue::new(&mut regions.count).range(1..=8).speed(0.2))
+                });
+                if regions.count != before {
+                    let count = regions.count as usize;
+                    regions.shares = vec![100.0 / count as f32; count];
+                }
+                param_row(ui, "Nested chance", TIP_NESTING, |ui| {
+                    ui.add(egui::Slider::new(&mut regions.nesting_pct, 0.0..=100.0).suffix(" %"))
+                });
+                param_row(ui, "Irregularity", TIP_IRREGULARITY, |ui| {
+                    ui.add(egui::Slider::new(&mut regions.irregularity_pct, 0.0..=100.0).suffix(" %"))
+                });
+                for i in 0..regions.shares.len() {
+                    let before = regions.shares[i];
+                    param_row(ui, &format!("Region {}", i + 1), TIP_SHARE, |ui| {
+                        ui.add(egui::Slider::new(&mut regions.shares[i], 1.0..=98.0).suffix(" %"))
+                    });
+                    if regions.shares[i] != before {
+                        rebalance(&mut regions.shares, i);
+                    }
+                }
+            });
+        ui.horizontal(|ui| {
+            if ui
+                .button("🎲 Random params")
+                .on_hover_text(
+                    "Rolls the count, shares, nested chance and irregularity independently \
+                     inside their reasonable ranges. Set values only; press Generate.",
+                )
+                .clicked()
+            {
+                let mut rng = rand::rng();
+                let regions = &mut app.config.regions;
+                regions.count = rng.random_range(1..=8);
+                let raw: Vec<f32> = (0..regions.count).map(|_| rng.random_range(1.0..=10.0)).collect();
+                let sum: f32 = raw.iter().sum();
+                regions.shares = raw.iter().map(|v| v / sum * 100.0).collect();
+                regions.nesting_pct = rng.random_range(0.0..=100.0);
+                regions.irregularity_pct = rng.random_range(0.0..=100.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
         if let Some(regions) = app.generated.as_ref().and_then(|l| l.regions.as_ref()) {
-            ui.weak(format!("generated: {} regions", regions.stats.len()));
+            let line = regions
+                .stats
+                .iter()
+                .map(|s| format!("#{} {:.1}%", s.id, s.actual_pct))
+                .collect::<Vec<_>>()
+                .join(" · ");
+            ui.weak(format!("generated: {line}"));
+        }
+    });
+}
+
+const TIP_AMOUNT: &str = "How the number of road junctions (the points roads run between) is set. count: a fixed total. \
+density: nodes per 1000 m² of town area, so a bigger town gets more crossroads. Either \
+way every region gets at least one node, so the minimum is the regions count (node 4).";
+
+const TIP_NODES: &str = "Total road junctions — the points the roads run between (not drawn on the map). Never fewer than the regions count — \
+every region gets one; the rest go to the regions with the most area per node, so big \
+regions get more. More junctions: a denser street network with shorter roads.";
+
+const TIP_DENSITY: &str = "Road junctions per 1000 m² of town area (0.5 m cells: 4000 \
+cells = 1000 m²). Never fewer than one per region, at most 64 in total.";
+
+const TIP_WIDTH: &str = "Road width in meters, rounded to whole cells (at least one). \
+Also the width of the future gaps in the walls between regions.";
+
+const TIP_WIGGLE: &str = "How much each road bends away from the straight line, following \
+a smooth noise field. 0%: straight (only bent around obstacles like bays). 30–50%: gentle \
+curves. 100%: a lazy meander — still never a maze.";
+
+const TIP_EXTRA: &str = "The minimum network connects all crossroads with no loops. Each \
+extra candidate link (between near neighbors) is added with this chance — loops and \
+alternative routes. Candidates that would cross another road or meet one at a sharp angle \
+are skipped. 0%: a tree (exactly one route between any two crossroads). NO EFFECT with 2 \
+or fewer crossroads.";
+
+/// Node 5: the road network, every map kind (finished; see step 4 notes in
+/// docs/workflow.md). Crossroad nodes only steer where roads go — the map
+/// shows the roads alone.
+fn node_roads(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    node(ui, "5 · Roads", |ui| {
+        ui.weak("input: region id map · output: road mask (+ passages for region walls)");
+        let min_nodes = app.config.regions.count.max(1);
+        let roads = &mut app.config.roads;
+        egui::Grid::new("roads_node_grid")
+            .num_columns(2)
+            .spacing([10.0, 3.0])
+            .show(ui, |ui| {
+                param_row(ui, "Road width", TIP_WIDTH, |ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut roads.width_m)
+                            .range(0.5..=12.0)
+                            .speed(0.1)
+                            .suffix(" m"),
+                    )
+                });
+                param_row(ui, "Wiggle", TIP_WIGGLE, |ui| {
+                    ui.add(egui::Slider::new(&mut roads.wiggle_pct, 0.0..=100.0).suffix(" %"))
+                });
+                param_row(ui, "Extra links", TIP_EXTRA, |ui| {
+                    ui.add(egui::Slider::new(&mut roads.extra_links_pct, 0.0..=100.0).suffix(" %"))
+                });
+                param_row(ui, "Junctions by", TIP_AMOUNT, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.radio_value(&mut roads.amount, NodeAmount::Count, "count");
+                        ui.radio_value(&mut roads.amount, NodeAmount::Density, "density")
+                    })
+                    .inner
+                });
+                match roads.amount {
+                    NodeAmount::Count => {
+                        // The minimum follows the region count (edited in node 4).
+                        roads.node_count = roads.node_count.max(min_nodes);
+                        param_row(ui, "Junctions", TIP_NODES, |ui| {
+                            ui.add(
+                                egui::DragValue::new(&mut roads.node_count)
+                                    .range(min_nodes..=crate::generator::roads::MAX_NODES.max(min_nodes))
+                                    .speed(0.1),
+                            )
+                        });
+                    }
+                    NodeAmount::Density => {
+                        param_row(ui, "Junctions / 1000 m²", TIP_DENSITY, |ui| {
+                            ui.add(
+                                egui::DragValue::new(&mut roads.nodes_per_1000m2)
+                                    .range(0.0..=50.0)
+                                    .speed(0.05),
+                            )
+                        });
+                    }
+                }
+            });
+        ui.weak(format!("Minimum junctions = regions count ({min_nodes}) — set in node 4."));
+        ui.horizontal(|ui| {
+            if ui
+                .button("🎲 Random params")
+                .on_hover_text(
+                    "Every value is picked inside its reasonable range, independently — the \
+                     combination may contradict itself. Set values only; press Generate.",
+                )
+                .clicked()
+            {
+                let mut rng = rand::rng();
+                let roads = &mut app.config.roads;
+                roads.amount = if rng.random_bool(0.5) { NodeAmount::Count } else { NodeAmount::Density };
+                roads.node_count = rng.random_range(min_nodes..=24.max(min_nodes));
+                roads.nodes_per_1000m2 = rng.random_range(0.5..=10.0);
+                roads.width_m = rng.random_range(0.5..=6.0);
+                roads.wiggle_pct = rng.random_range(0.0..=100.0);
+                roads.extra_links_pct = rng.random_range(0.0..=100.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(net) = app.generated.as_ref().and_then(|l| l.roads.as_ref()) {
+            let cells = net.mask.count_true();
+            ui.weak(format!(
+                "generated: {} roads, {:.0} m² of road, {} region crossings",
+                net.links.len(),
+                cells as f32 * net.mask.cell_size_m * net.mask.cell_size_m,
+                net.passages.len()
+            ));
         }
     });
 }
