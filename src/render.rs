@@ -207,6 +207,7 @@ mod tests {
             props: None,
             interactive: None,
             hidden_rooms: None,
+            mobs: None,
             regions: None,
             noise_preview: None,
             notes: Vec::new(),

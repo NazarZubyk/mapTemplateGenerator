@@ -64,6 +64,8 @@ pub struct LevelConfig {
     pub interactive: Vec<InteractiveType>,
     /// Hidden rooms with one small access path each (step 10, every map kind).
     pub hidden_rooms: HiddenRoomSettings,
+    /// Mob spawn points bought from a budget (step 11, every map kind).
+    pub mobs: MobSettings,
     pub cell_size_m: f32,
     pub seed: u64,
 }
@@ -82,6 +84,7 @@ impl Default for LevelConfig {
             props: PropSettings::default(),
             interactive: vec![InteractiveType::default()],
             hidden_rooms: HiddenRoomSettings::default(),
+            mobs: MobSettings::default(),
             cell_size_m: 0.5,
             seed: 0,
         }
@@ -174,6 +177,125 @@ impl Default for PropSettings {
             near_houses_pct: 50.0,
             roadside_pct: 25.0,
             color: [92, 110, 140],
+        }
+    }
+}
+
+/// One mob type of the mobs node (docs/workflow.md, step 11).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MobType {
+    /// Display name (map legend, spec.json).
+    pub name: String,
+    /// Cost of one mob of this type, taken from the budget.
+    pub price: f32,
+    /// Body size in meters (diameter).
+    pub size_m: f32,
+    /// Desired share of this type among all mobs, % (the UI keeps the
+    /// shares at 100 in total: raising one lowers the rest).
+    pub balance_pct: f32,
+    /// Color on map.png, the preview and the legend.
+    pub color: [u8; 3],
+}
+
+impl Default for MobType {
+    fn default() -> Self {
+        Self { name: "Goblin".to_owned(), price: 10.0, size_m: 0.8, balance_pct: 100.0, color: [200, 60, 50] }
+    }
+}
+
+/// Settings of the mobs node (docs/workflow.md, step 11).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MobSettings {
+    /// Money for all mobs on the level; the generator spends as much of it
+    /// as it can.
+    pub budget: f32,
+    /// Absolute cap on the number of mobs, on top of the budget.
+    pub max_entities: u32,
+    /// How the minimum is set: a total count or a density.
+    pub min_amount: NodeAmount,
+    /// Fewest mobs on the level (Count mode). Beats the budget (buying goes
+    /// over it) and the spacing (it relaxes); never beats `max_entities`.
+    pub min_entities: u32,
+    /// Fewest mobs per 100 m² of walkable ground (Density mode).
+    pub min_per_100m2: f32,
+    pub types: Vec<MobType>,
+    /// `combinations[a][b]`: types a and b may share a spawn point. Kept
+    /// symmetric by the UI; a missing entry counts as allowed and a type
+    /// always combines with itself.
+    pub combinations: Vec<Vec<bool>>,
+    /// Mobs at one spawn point (a pack), rolled per spawn between min and max.
+    pub pack_min: u32,
+    pub pack_max: u32,
+    /// Smallest distance between two spawn points, meters.
+    pub spacing_m: f32,
+    /// Whether spawn points may stand on roads.
+    pub on_roads: bool,
+}
+
+impl Default for MobSettings {
+    fn default() -> Self {
+        Self {
+            budget: 400.0,
+            max_entities: 60,
+            min_amount: NodeAmount::Count,
+            min_entities: 0,
+            min_per_100m2: 0.0,
+            types: vec![
+                MobType { balance_pct: 70.0, ..MobType::default() },
+                MobType { name: "Orc".to_owned(), price: 25.0, size_m: 1.2, balance_pct: 30.0, color: [150, 40, 90] },
+            ],
+            combinations: vec![vec![true, true], vec![true, true]],
+            pack_min: 1,
+            pack_max: 4,
+            spacing_m: 5.0,
+            on_roads: true,
+        }
+    }
+}
+
+impl MobSettings {
+    /// Whether types `a` and `b` may share a spawn point.
+    pub fn combines(&self, a: usize, b: usize) -> bool {
+        a == b || self.combinations.get(a).and_then(|row| row.get(b)).copied().unwrap_or(true)
+    }
+
+    /// Set whether `a` and `b` combine (both directions).
+    pub fn set_combines(&mut self, a: usize, b: usize, allowed: bool) {
+        self.fit_matrix();
+        if a < self.types.len() && b < self.types.len() && a != b {
+            self.combinations[a][b] = allowed;
+            self.combinations[b][a] = allowed;
+        }
+    }
+
+    /// Size the combination matrix to the types (new entries allowed).
+    pub fn fit_matrix(&mut self) {
+        let n = self.types.len();
+        self.combinations.resize(n, vec![true; n]);
+        for row in &mut self.combinations {
+            row.resize(n, true);
+        }
+    }
+
+    /// Add a type; it combines with every other type.
+    pub fn add_type(&mut self, mob: MobType) {
+        self.fit_matrix();
+        self.types.push(mob);
+        self.fit_matrix();
+    }
+
+    /// Remove a type and its row/column of combinations.
+    pub fn remove_type(&mut self, i: usize) {
+        if i >= self.types.len() {
+            return;
+        }
+        self.fit_matrix();
+        self.types.remove(i);
+        self.combinations.remove(i);
+        for row in &mut self.combinations {
+            row.remove(i);
         }
     }
 }
@@ -341,7 +463,8 @@ impl Default for RegionWallSettings {
     }
 }
 
-/// How the number of crossroad nodes is set.
+/// How an amount is set: a total count or a density (crossroad nodes,
+/// minimum mobs).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum NodeAmount {

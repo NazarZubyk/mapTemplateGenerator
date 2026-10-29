@@ -75,6 +75,9 @@ pub struct ExportSpec {
     /// Hidden rooms: floor rect, access path centerline + width, whether
     /// mobs may use the path, and their object indices in `objects`.
     pub hidden_rooms: Option<Vec<crate::level::HiddenRoom>>,
+    /// Mob spawn points (center, radius, pack members, cost, on road, hidden
+    /// room) and the budget spent.
+    pub mobs: Option<crate::level::MobLayout>,
     /// Every placed object with position and size in meters.
     pub objects: Vec<crate::level::PlacedObject>,
 }
@@ -280,6 +283,7 @@ impl ExportSpec {
             }),
             interactive_groups: level.interactive.as_ref().map(|l| l.groups.clone()),
             hidden_rooms: level.hidden_rooms.as_ref().map(|l| l.rooms.clone()),
+            mobs: level.mobs.clone(),
             objects: level.objects.clone(),
         }
     }
@@ -331,6 +335,7 @@ mod tests {
             props: None,
             interactive: None,
             hidden_rooms: None,
+            mobs: None,
             regions: None,
             noise_preview: None,
             notes: Vec::new(),

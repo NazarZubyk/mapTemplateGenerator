@@ -1,7 +1,7 @@
 use eframe::egui;
 use rand::Rng;
 
-use crate::model::{HiddenRoomPlace, InteractiveSpot, InteractiveType, LevelConfig, MapKind, NodeAmount, ShapeSettings};
+use crate::model::{HiddenRoomPlace, InteractiveSpot, InteractiveType, LevelConfig, MapKind, MobType, NodeAmount, ShapeSettings};
 use crate::ui::app::{ConfigStatus, MapGenApp};
 use crate::ui::widgets::param_row;
 
@@ -44,6 +44,8 @@ fn generation_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_interactive(ui, app);
     flow_arrow(ui, "everything placed so far");
     node_hidden_rooms(ui, app);
+    flow_arrow(ui, "walkable ground (roads, open hidden rooms)");
+    node_mobs(ui, app);
     ui.weak("Next nodes appear here as sections finish; which nodes exist depends on the map kind (docs/workflow.md).");
     ui.add_space(4.0);
     ui.separator();
@@ -1200,6 +1202,227 @@ only everywhere, 100% = everyone everywhere; in between each path rolls on its o
             ));
         }
     });
+}
+
+/// Node 11: mob spawn points bought from a budget, every map kind (see
+/// step 11 notes in docs/workflow.md).
+fn node_mobs(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_BUDGET: &str = "Money for all mobs on the level. The generator buys packs until \
+no type is affordable any more, so as much as possible is spent — a bigger budget means more \
+and/or stronger mobs.";
+    const TIP_MAX: &str = "Absolute cap on the number of mobs, on top of the budget. Beats \
+the minimum.";
+    const TIP_MIN: &str = "Fewest mobs on the level — for a crowded, high-density map. As a \
+count, or as a density (mobs per 100 m² of walkable ground, so it scales with the map). The \
+minimum beats the budget (buying goes on past it, with a note) and the spawn spacing (it is \
+halved step by step, down to spawn circles merely not overlapping). 0 = no minimum, the \
+budget alone decides.";
+    const TIP_PACK_MIN: &str = "Fewest mobs at one spawn point. A pack that fits nowhere \
+shrinks to a single mob.";
+    const TIP_PACK_MAX: &str = "Most mobs at one spawn point; each spawn rolls its pack size \
+between min and max (fewer when the budget or the cap runs out).";
+    const TIP_SPACING: &str = "Smallest distance between two spawn points, meters. Bigger \
+spreads mobs over the map but leaves room for fewer spawns (a note says when space ran out).";
+    const TIP_ROADS: &str = "Let spawn points stand on roads. Spawns are markers, not \
+obstacles — they never block a road.";
+    const TIP_NAME: &str = "Mob type name — map legend and spec.json.";
+    const TIP_PRICE: &str = "Cost of one mob of this type, paid from the budget.";
+    const TIP_SIZE: &str = "Body size (diameter) in meters. A pack's spawn circle is the \
+biggest member's size × ⌈√pack⌉ across, and must fit on walkable ground.";
+    const TIP_BALANCE: &str = "Desired share of this type among all mobs. Raising one share \
+lowers the others; the counts follow these shares as closely as prices, combinations and the \
+budget allow. 0% = never placed.";
+    const TIP_COLOR: &str = "Color of this type's spawn markers (a mixed pack shows its \
+biggest group's color).";
+    const TIP_COMBINE: &str = "Which types may appear together at one spawn point. A type \
+always combines with itself.";
+    node(ui, "11 · Mobs", |ui| {
+        ui.weak("input: walkable ground (roads, open hidden rooms) · output: mob spawn points (every map kind)");
+        let mobs = &mut app.config.mobs;
+        egui::Grid::new("mobs_node_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Budget", TIP_BUDGET, |ui| {
+                ui.add(egui::DragValue::new(&mut mobs.budget).range(0.0..=100_000.0).speed(5.0))
+            });
+            param_row(ui, "Max mobs", TIP_MAX, |ui| {
+                ui.add(egui::DragValue::new(&mut mobs.max_entities).range(0..=5000).speed(0.5))
+            });
+            param_row(ui, "Min mobs", TIP_MIN, |ui| {
+                ui.horizontal(|ui| {
+                    ui.radio_value(&mut mobs.min_amount, NodeAmount::Count, "count");
+                    ui.radio_value(&mut mobs.min_amount, NodeAmount::Density, "density");
+                    match mobs.min_amount {
+                        NodeAmount::Count => {
+                            ui.add(egui::DragValue::new(&mut mobs.min_entities).range(0..=5000).speed(0.5))
+                        }
+                        NodeAmount::Density => ui.add(
+                            egui::DragValue::new(&mut mobs.min_per_100m2)
+                                .range(0.0..=50.0)
+                                .speed(0.02)
+                                .suffix(" /100 m²"),
+                        ),
+                    }
+                })
+                .response
+            });
+            param_row(ui, "Pack min", TIP_PACK_MIN, |ui| {
+                ui.add(egui::DragValue::new(&mut mobs.pack_min).range(1..=20).speed(0.1))
+            });
+            param_row(ui, "Pack max", TIP_PACK_MAX, |ui| {
+                ui.add(egui::DragValue::new(&mut mobs.pack_max).range(1..=20).speed(0.1))
+            });
+            param_row(ui, "Spawn spacing", TIP_SPACING, |ui| {
+                ui.add(egui::DragValue::new(&mut mobs.spacing_m).range(0.0..=50.0).speed(0.1).suffix(" m"))
+            });
+            param_row(ui, "Spawn on roads", TIP_ROADS, |ui| ui.checkbox(&mut mobs.on_roads, ""));
+        });
+
+        let mut remove = None;
+        let mut balance_changed = None;
+        for (i, t) in mobs.types.iter_mut().enumerate() {
+            let title = if t.name.trim().is_empty() { format!("Mob #{}", i + 1) } else { t.name.clone() };
+            egui::CollapsingHeader::new(title).id_salt(("mob_type", i)).default_open(true).show(ui, |ui| {
+                egui::Grid::new(("mob_type_grid", i)).num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+                    param_row(ui, "Name", TIP_NAME, |ui| {
+                        ui.add(egui::TextEdit::singleline(&mut t.name).desired_width(120.0))
+                    });
+                    param_row(ui, "Price", TIP_PRICE, |ui| {
+                        ui.add(egui::DragValue::new(&mut t.price).range(0.1..=10_000.0).speed(0.5))
+                    });
+                    param_row(ui, "Size", TIP_SIZE, |ui| {
+                        ui.add(egui::DragValue::new(&mut t.size_m).range(0.1..=10.0).speed(0.05).suffix(" m"))
+                    });
+                    param_row(ui, "Balance", TIP_BALANCE, |ui| {
+                        let before = t.balance_pct;
+                        let r = ui.add(egui::Slider::new(&mut t.balance_pct, 0.0..=100.0).suffix(" %"));
+                        if t.balance_pct != before {
+                            balance_changed = Some(i);
+                        }
+                        r
+                    });
+                    param_row(ui, "Color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut t.color));
+                });
+                if ui.button("🗑 Remove type").clicked() {
+                    remove = Some(i);
+                }
+            });
+        }
+        if let Some(i) = balance_changed {
+            let mut shares: Vec<f32> = mobs.types.iter().map(|t| t.balance_pct).collect();
+            rebalance(&mut shares, i);
+            for (t, v) in mobs.types.iter_mut().zip(shares) {
+                t.balance_pct = v;
+            }
+        }
+        if let Some(i) = remove {
+            mobs.remove_type(i);
+            if let Some(first) = mobs.types.first().map(|t| t.balance_pct) {
+                let mut shares: Vec<f32> = mobs.types.iter().map(|t| t.balance_pct).collect();
+                shares[0] = first;
+                rebalance(&mut shares, 0);
+                for (t, v) in mobs.types.iter_mut().zip(shares) {
+                    t.balance_pct = v;
+                }
+            }
+        }
+
+        let n = mobs.types.len();
+        if n >= 2 {
+            ui.label("Combinations").on_hover_text(TIP_COMBINE);
+            egui::Grid::new("mob_combinations").spacing([6.0, 2.0]).show(ui, |ui| {
+                ui.label("");
+                for j in 0..n {
+                    ui.weak(short_name(&mobs.types[j].name, j));
+                }
+                ui.end_row();
+                for i in 0..n {
+                    ui.weak(short_name(&mobs.types[i].name, i));
+                    for j in 0..n {
+                        let mut on = mobs.combines(i, j);
+                        let r = ui.add_enabled(i != j, egui::Checkbox::without_text(&mut on));
+                        if r.changed() {
+                            mobs.set_combines(i, j, on);
+                        }
+                    }
+                    ui.end_row();
+                }
+            });
+        }
+
+        ui.horizontal(|ui| {
+            if ui.button("➕ Add type").clicked() {
+                let mut rng = rand::rng();
+                let k = mobs.types.len() + 1;
+                mobs.add_type(MobType {
+                    name: format!("Mob #{k}"),
+                    balance_pct: 100.0 / k as f32,
+                    color: [rng.random_range(40..=230), rng.random_range(40..=230), rng.random_range(40..=230)],
+                    ..MobType::default()
+                });
+                let last = mobs.types.len() - 1;
+                let mut shares: Vec<f32> = mobs.types.iter().map(|t| t.balance_pct).collect();
+                rebalance(&mut shares, last);
+                for (t, v) in mobs.types.iter_mut().zip(shares) {
+                    t.balance_pct = v;
+                }
+            }
+            if ui
+                .button("🎲 Random params")
+                .on_hover_text(
+                    "Rolls budget, cap, pack size, spacing and every type's price, size and \
+                     balance independently — they may contradict each other. Keeps names, colors \
+                     and combinations. Set values only; press Generate.",
+                )
+                .clicked()
+            {
+                let mut rng = rand::rng();
+                mobs.budget = rng.random_range(50.0..=2000.0f32).round();
+                mobs.max_entities = rng.random_range(5..=200);
+                mobs.pack_min = rng.random_range(1..=3);
+                mobs.pack_max = rng.random_range(1..=6);
+                mobs.spacing_m = rng.random_range(2.0..=10.0);
+                for t in &mut mobs.types {
+                    t.price = rng.random_range(5.0..=60.0f32).round();
+                    t.size_m = rng.random_range(0.5..=2.0);
+                    t.balance_pct = rng.random_range(1.0..=100.0);
+                }
+                let sum: f32 = mobs.types.iter().map(|t| t.balance_pct).sum();
+                for t in &mut mobs.types {
+                    t.balance_pct = t.balance_pct / sum * 100.0;
+                }
+            }
+        });
+        ui.weak("Changes apply on ⚙ Generate");
+        if let Some(lvl) = app.generated.as_ref()
+            && let Some(l) = lvl.mobs.as_ref()
+        {
+            // Names from the config the level was generated with.
+            let per: Vec<String> = lvl
+                .config
+                .mobs
+                .types
+                .iter()
+                .zip(&l.per_type)
+                .map(|(t, c)| format!("{c} {}", t.name))
+                .collect();
+            ui.weak(format!(
+                "generated: {} mobs at {} spawns ({}) · min {} · spent {:.0} of {:.0} · spacing {:.1} m · stopped: {}",
+                l.entities,
+                l.spawns.len(),
+                per.join(", "),
+                l.min_target,
+                l.spent,
+                l.budget,
+                l.spacing_used_m,
+                l.stop_reason
+            ));
+        }
+    });
+}
+
+/// A type name cut to a few characters for the combinations grid header.
+fn short_name(name: &str, i: usize) -> String {
+    let name = name.trim();
+    if name.is_empty() { format!("#{}", i + 1) } else { name.chars().take(6).collect() }
 }
 
 fn section<R>(ui: &mut egui::Ui, title: &str, body: impl FnOnce(&mut egui::Ui) -> R) {

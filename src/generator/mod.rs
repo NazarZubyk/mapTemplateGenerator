@@ -12,6 +12,7 @@ pub mod grid;
 pub mod hidden_rooms;
 pub mod houses;
 pub mod interactive;
+pub mod mobs;
 pub mod noise;
 pub mod placement;
 pub mod props;
@@ -194,7 +195,7 @@ pub fn generate_with_progress(
             roads: roads.as_ref(),
             objects: &object_masks,
         };
-        hidden_rooms::build_with_progress(config, &mut rng, &ground, &stage(0.985, 0.995))
+        hidden_rooms::build_with_progress(config, &mut rng, &ground, &stage(0.985, 0.99))
     });
     let hidden_rooms = hidden_rooms.map(|mut built| {
         notes.extend(built.notes);
@@ -211,6 +212,39 @@ pub fn generate_with_progress(
                 *cell &= !dug;
             }
         }
+        built.layout
+    });
+
+    // Step 11: mobs (every map kind) — packs bought from the budget, on
+    // walkable ground (roads too, if allowed).
+    let mobs = regions.as_ref().and_then(|split| {
+        let object_masks: Vec<&CellMask> = [
+            houses.as_ref().map(|l| &l.mask),
+            props.as_ref().map(|l| &l.mask),
+            interactive.as_ref().map(|l| &l.mask),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let ground = mobs::Ground {
+            regions: &split.map,
+            outer_wall: walls.as_ref().map(|w| &w.mask),
+            region_walls: region_walls.as_ref().map(|w| &w.mask),
+            roads: roads.as_ref(),
+            objects: &object_masks,
+            hidden_rooms: hidden_rooms.as_ref(),
+        };
+        mobs::build_with_progress(config, &mut rng, &ground, &stage(0.99, 0.995))
+    });
+    let mobs = mobs.map(|mut built| {
+        notes.extend(built.notes);
+        let offset = objects.len();
+        for sp in &mut built.layout.spawns {
+            for o in &mut sp.objects {
+                *o += offset;
+            }
+        }
+        objects.extend(built.objects);
         built.layout
     });
 
@@ -235,6 +269,7 @@ pub fn generate_with_progress(
         props,
         interactive,
         hidden_rooms,
+        mobs,
         noise_preview: Some(built.noise_preview),
         notes,
     }

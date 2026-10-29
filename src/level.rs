@@ -81,6 +81,11 @@ impl PlacedObject {
     /// Is the point (meters) inside the rotated rect or any of its parts?
     pub fn contains(&self, x: f32, y: f32) -> bool {
         let (cx, cy) = self.center();
+        // Markers (mob spawns, gates) are circles inscribed in their rect.
+        if matches!(self.category, Category::MobSpawn | Category::Gate) {
+            let r = self.w_m.min(self.h_m) / 2.0;
+            return (x - cx).powi(2) + (y - cy).powi(2) <= r * r;
+        }
         let (s, c) = self.angle_deg.to_radians().sin_cos();
         let (dx, dy) = (x - cx, y - cy);
         let (u, v) = (dx * c + dy * s, dy * c - dx * s);
@@ -359,6 +364,53 @@ pub struct InteractiveTypeStats {
     pub groups: u32,
 }
 
+/// The mobs node's output.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MobLayout {
+    pub spawns: Vec<MobSpawn>,
+    /// Mobs placed per type, in config order.
+    pub per_type: Vec<u32>,
+    pub entities: u32,
+    /// The minimum asked for (count, or density × walkable area), capped by
+    /// the entity cap.
+    #[serde(default)]
+    pub min_target: u32,
+    /// May exceed `budget` when the minimum needed more mobs.
+    pub spent: f32,
+    pub budget: f32,
+    /// Spawn spacing in force at the end (relaxed below the setting when the
+    /// minimum did not fit otherwise).
+    #[serde(default)]
+    pub spacing_used_m: f32,
+    /// Why spending stopped (budget, entity cap or space).
+    pub stop_reason: String,
+}
+
+/// One spawn point and the pack that appears there.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MobSpawn {
+    /// Spawn center in meters.
+    pub center_m: [f32; 2],
+    /// Radius of the pack's footprint, meters.
+    pub radius_m: f32,
+    pub members: Vec<MobPackMember>,
+    pub cost: f32,
+    pub on_road: bool,
+    /// The hidden room it stands in (only rooms with a mob-passable path).
+    pub hidden_room: Option<u32>,
+    /// Indices of its markers in `GeneratedLevel::objects`: one per mob,
+    /// each at its type's body size, inside the pack circle.
+    pub objects: Vec<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MobPackMember {
+    /// Index of the type in `config.mobs.types`.
+    pub type_index: usize,
+    pub name: String,
+    pub count: u32,
+}
+
 /// The hidden rooms node's output.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HiddenRoomLayout {
@@ -447,6 +499,9 @@ pub struct GeneratedLevel {
     /// The hidden rooms node's rooms, walls and paths.
     #[serde(default)]
     pub hidden_rooms: Option<HiddenRoomLayout>,
+    /// The mobs node's spawn points and spending.
+    #[serde(default)]
+    pub mobs: Option<MobLayout>,
     /// Raw noise field behind the region shape, for the bench "noise texture"
     /// view.
     pub noise_preview: Option<NoiseTexture>,

@@ -72,6 +72,10 @@ Right now:
    rooms (`Category::HiddenRoom` floors, own wall mask) each with ONE narrow
    access path (`Category::HiddenRoomPath` pieces), outside the outer wall
    or inside. Every map kind. Finished (step 10).
+11. **Mobs** — input: walkable ground (roads too if allowed, floors of
+   hidden rooms with a mob-passable path) · output: mob spawn markers
+   (`Category::MobSpawn`, circles) with packs bought from the budget. Every
+   map kind. Finished (step 11).
 
 - **Action bar** (`src/ui/app.rs`): seed + Generate + Re-roll. Generation
   runs on a background thread (`MapGenApp::job`); the bar shows a progress
@@ -81,7 +85,8 @@ Right now:
   phase's 0..1 into its slice of the whole: shape 0–55%, wall 55–65%,
   regions 65–85%, roads 85–90%, region walls 90–93%, houses 93–96%,
   props 96–98%, interactive 98–98.5%,
-  hidden rooms 98.5–99.5%). New phases must report too.
+  hidden rooms 98.5–99%,
+  mobs 99–99.5%). New phases must report too.
 - **Preview** (`src/ui/preview.rs`): draws the generated level (rect objects,
   circle mob spawns/gates, legend) plus the bench texture layer (noise
   texture or town shape — toggle lives in the bench).
@@ -117,6 +122,7 @@ src/
 │   ├── props.rs       # step 8: props near houses / roadside / scattered
 │   ├── interactive.rs # step 9: interactive object types in groups
 │   ├── hidden_rooms.rs # step 10: walled rooms + one access path each
+│   ├── mobs.rs        # step 11: budgeted mob packs on spawn points
 │   ├── grid.rs        # CellMask algorithms: components, speckle removal,
 │   │                  # bridge closest pair (multi-source BFS), hole fill
 │   ├── shape.rs       # step 1: noise → coverage cut → despeckle → bridges
@@ -223,7 +229,11 @@ Rules that carried over from the old build (keep them in every section):
       thickness, path width / max length, place (outside the wall / inside /
       either), mob-passable chance, colors. Node 10. (done — see "Step 10
       notes")
-- [ ] **Step 11 — mobs**: budget/combos/balance packs (reference `mobs.rs`).
+- [x] **Step 11 — mobs** (every kind): mob types (name, price, size,
+      balance share, color), combination matrix, budget, entity cap +
+      minimum (count or density — beats budget and spacing), pack
+      size range, spawn spacing, spawn on roads. Node 11. (done — see "Step
+      11 notes")
 - [ ] **Step 12 — gates**: gate markers on wall openings (reference `gates.rs`).
 - [ ] **Step 13 — validation & export polish**: feasibility pre-check,
       duplicate colors, full spec.json details (reference `validate.rs`,
@@ -674,6 +684,59 @@ outside. Tests: rooms placed and reachable (floors + paths + map one piece),
 outside rooms beyond the town with the wall opened, inside rooms keep the
 ground one piece, paths never dig through objects/region walls, width + mob
 flag follow settings, impossible-size note, non-town maps, determinism.
+
+## Step 11 notes — mobs
+
+`generator/mobs.rs`, every map kind (node 11). Settings: `config.mobs:
+MobSettings` — budget 400, cap 60, packs 1–4, spacing 5 m, on roads ✓,
+types Goblin (10, 0.8 m, 70%) + Orc (25, 1.2 m, 30%), all combinations
+allowed. `combinations[a][b]` is kept symmetric by `set_combines`;
+`add_type` / `remove_type` / `fit_matrix` keep it square; `combines()`
+treats a missing entry as allowed and a type always combines with itself.
+Balance shares live on each `MobType` (`balance_pct`), auto-balanced in the
+UI with the regions `rebalance` helper. New types get a random color.
+
+1. **Spawnable ground** — town minus outer/region walls, houses, props,
+   interactives, hidden-room walls and paths; roads only with `on_roads`;
+   a hidden room's floor only if its path is `mob_passable`. Spawns are
+   markers, not obstacles: they never block anything, so no connectivity
+   check is needed.
+2. **Spending loop** — roll a pack size (capped by the entity cap); each
+   member is the affordable, positive-share type with the largest deficit
+   `share × (total + 1) − count` (ties → lower index) that combines with
+   every type already in the pack. Empty pack → "budget spent". Cheaper
+   types keep buying until nothing is affordable, so the leftover is less
+   than the cheapest price.
+3. **Spot** — random candidate cell ≥ `spacing_m` from every spawn (cells
+   too close are dropped for good); footprint circle radius = biggest
+   member size × ⌈√pack⌉ / 2, every cell under it spawnable and in the same
+   room (or none). 60 draws; a pack that fits nowhere shrinks to one mob,
+   then spending stops with "no free spot left" (note).
+4. **Minimum** — `min_amount` Count (`min_entities`) or Density
+   (`min_per_100m2` × spawnable area / 100), capped by `max_entities` (note
+   if above). While below it: once nothing is affordable, packs are bought
+   past the budget (members by balance alone, pack capped to what the
+   minimum still needs; note "went X over the budget"); when no spot is
+   left the spacing is halved (→ 0 below 0.5 m) and the candidates rebuilt,
+   instead of stopping (note "spacing relaxed"). Spawn circles never
+   overlap regardless of spacing. `MobLayout` records `min_target` and
+   `spacing_used_m`. Default minimum 0 = budget alone decides.
+
+`MobLayout` keeps spawns (center, pack radius, members by type, cost,
+on_road, hidden_room id, marker object indices — shifted in `generate`),
+per-type counts, entities, spent / budget, stop reason. Every mob is its
+own marker — a `PlacedObject` (`Category::MobSpawn`) at its type's body
+size and color — so one type always looks the same and mixed packs show
+each type. Members sit on a sunflower spiral (golden angle, radius
+0.65 × biggest body × √(k + ½), randomly turned; `member_offset`), which
+keeps them a body apart; the pack radius (`pack_radius`) holds them all
+and is what must fit on spawnable ground. `PlacedObject::contains` treats
+MobSpawn / Gate as circles, so map.png and layer.png draw them round. spec.json gets `mobs`.
+Tests: budget spent down to below the cheapest price, balance followed with
+equal prices, entity cap, forbidden combinations never mixed (and mixed
+when allowed), spacing + walkable spot, roads only when allowed, hidden
+rooms only through passable paths, empty config, marker indices, matrix
+add/remove, non-town maps, determinism.
 
 ## Done-ness checklist for every step
 
