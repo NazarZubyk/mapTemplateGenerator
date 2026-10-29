@@ -86,6 +86,15 @@ impl ExportSpec {
                 category: "ground",
             });
         }
+        if let Some(walls) = &level.walls
+            && walls.stats.wall_cells > 0
+        {
+            legend.push(LegendEntry {
+                color: color_hex(render::WALL),
+                name: "outer wall".to_owned(),
+                category: "ground",
+            });
+        }
         for o in &level.objects {
             if legend
                 .iter()
@@ -149,6 +158,7 @@ mod tests {
                 },
             ],
             shape: None,
+            walls: None,
             noise_preview: None,
             notes: Vec::new(),
         };

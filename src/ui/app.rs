@@ -97,20 +97,33 @@ impl MapGenApp {
             ));
         }
         if let Some(shape) = &level.shape {
-            // Preview-only colors: dark background so the region
-            // silhouette pops. (The exported map.png keeps its paper colors.)
+            // Preview-only colors: dark background so the region silhouette
+            // pops, brown wall ring over it. (The exported map.png keeps its
+            // paper colors.)
             let empty = egui::Color32::from_gray(38);
             let filled = egui::Color32::from_rgb(
                 crate::render::REGION[0],
                 crate::render::REGION[1],
                 crate::render::REGION[2],
             );
-            let pixels = shape
+            let wall = egui::Color32::from_rgb(
+                crate::render::WALL[0],
+                crate::render::WALL[1],
+                crate::render::WALL[2],
+            );
+            let mut pixels: Vec<egui::Color32> = shape
                 .mask
                 .cells
                 .iter()
                 .map(|cell| if *cell { filled } else { empty })
                 .collect();
+            if let Some(walls) = &level.walls {
+                for (px, is_wall) in pixels.iter_mut().zip(&walls.mask.cells) {
+                    if *is_wall {
+                        *px = wall;
+                    }
+                }
+            }
             self.bench_shape = Some(upload(
                 "bench_shape",
                 pixels,

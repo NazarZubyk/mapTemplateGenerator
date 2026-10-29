@@ -21,9 +21,9 @@ pub fn validate(config: &LevelConfig) -> Vec<Warning> {
     }
     if !(1.0..=99.0).contains(&config.shape.coverage_target_pct) {
         warnings.push(Warning {
-            field: Some("town.coverage_target_pct".to_owned()),
+            field: Some("shape.coverage_target_pct".to_owned()),
             message: format!(
-                "Town coverage must be in 1..=99 % (is {})",
+                "Region coverage must be in 1..=99 % (is {})",
                 config.shape.coverage_target_pct
             ),
             blocking: false,
@@ -31,7 +31,7 @@ pub fn validate(config: &LevelConfig) -> Vec<Warning> {
     }
     if config.shape.border_margin_m < 0.0 {
         warnings.push(Warning {
-            field: Some("town.border_margin_m".to_owned()),
+            field: Some("shape.border_margin_m".to_owned()),
             message: "Border margin cannot be negative".to_owned(),
             blocking: false,
         });
@@ -41,11 +41,36 @@ pub fn validate(config: &LevelConfig) -> Vec<Warning> {
         && 2.0 * config.shape.border_margin_m >= config.map.width_m.min(config.map.height_m)
     {
         warnings.push(Warning {
-            field: Some("town.border_margin_m".to_owned()),
+            field: Some("shape.border_margin_m".to_owned()),
             message: format!(
-                "Border margin {} m leaves no interior on a {}×{} m map — the town is \
+                "Border margin {} m leaves no interior on a {}×{} m map — the region is \
                  squeezed into a thin strip",
                 config.shape.border_margin_m, config.map.width_m, config.map.height_m
+            ),
+            blocking: false,
+        });
+    }
+    if config.outer_wall.segment_min_m <= 0.0 {
+        warnings.push(Warning {
+            field: Some("outer_wall.segment_min_m".to_owned()),
+            message: "Wall segment min must be positive".to_owned(),
+            blocking: false,
+        });
+    }
+    if config.outer_wall.thickness_m <= 0.0 {
+        warnings.push(Warning {
+            field: Some("outer_wall.thickness_m".to_owned()),
+            message: "Wall thickness must be positive".to_owned(),
+            blocking: false,
+        });
+    }
+    if config.outer_wall.segment_max_m < config.outer_wall.segment_min_m {
+        warnings.push(Warning {
+            field: Some("outer_wall.segment_max_m".to_owned()),
+            message: format!(
+                "Wall segment max ({}) is smaller than min ({}) — the two are swapped \
+                 at generation time",
+                config.outer_wall.segment_max_m, config.outer_wall.segment_min_m
             ),
             blocking: false,
         });
@@ -80,7 +105,21 @@ mod tests {
         assert_eq!(warnings.len(), 1);
         assert_eq!(
             warnings[0].field.as_deref(),
-            Some("town.coverage_target_pct")
+            Some("shape.coverage_target_pct")
+        );
+        assert!(!warnings[0].blocking);
+    }
+
+    #[test]
+    fn wall_segment_max_below_min_warns() {
+        let mut config = LevelConfig::default();
+        config.outer_wall.segment_min_m = 8.0;
+        config.outer_wall.segment_max_m = 3.0;
+        let warnings = validate(&config);
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(
+            warnings[0].field.as_deref(),
+            Some("outer_wall.segment_max_m")
         );
         assert!(!warnings[0].blocking);
     }

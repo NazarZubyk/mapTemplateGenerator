@@ -45,8 +45,10 @@ pub struct LevelConfig {
     pub map: MapSettings,
     /// What the map is: picks the shape defaults and the node workflow.
     pub kind: MapKind,
-    /// The section under development in the workflow bench (step 1).
+    /// The noise-derived region shape (step 1).
     pub shape: ShapeSettings,
+    /// The outer wall ring around the region (step 2).
+    pub outer_wall: OuterWallSettings,
     pub cell_size_m: f32,
     pub seed: u64,
 }
@@ -57,8 +59,36 @@ impl Default for LevelConfig {
             map: MapSettings::default(),
             kind: MapKind::Town,
             shape: ShapeSettings::for_kind(MapKind::Town),
+            outer_wall: OuterWallSettings::default(),
             cell_size_m: 0.5,
             seed: 0,
+        }
+    }
+}
+
+/// Settings of the outer wall node (docs/workflow.md, step 2).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct OuterWallSettings {
+    /// Shortest wall segment in meters: the wall is built point by point,
+    /// each segment taking a random length between min and max while it walks
+    /// the region border.
+    pub segment_min_m: f32,
+    /// Longest wall segment in meters. With min == max every segment has the
+    /// same length and the loop closes with a chord that can pass inside the
+    /// region.
+    pub segment_max_m: f32,
+    /// Wall thickness in meters, quantized to whole grid cells (rounded).
+    /// 0.5 m is a one-cell wall at the default cell size.
+    pub thickness_m: f32,
+}
+
+impl Default for OuterWallSettings {
+    fn default() -> Self {
+        Self {
+            segment_min_m: 4.0,
+            segment_max_m: 10.0,
+            thickness_m: 0.5,
         }
     }
 }

@@ -47,8 +47,9 @@ Right now:
 1. **Template** — input: nothing · output: empty field (W×H, cell size) +
    map kind. Switching the kind loads that kind's shape defaults.
 2. **Region shape** (title follows the kind) — input: template field ·
-   output: region mask. In development; its test controls are in the bench
-   below.
+   output: region mask. Finished (step 1); its controls live in the node.
+3. **Outer walls** — input: region mask · output: region mask + wall ring.
+   In development; its test controls are in the bench below.
 
 - **Action bar** (`src/ui/app.rs`): seed + Generate + Re-roll. Untouched.
 - **Preview** (`src/ui/preview.rs`): draws the generated level (rect objects,
@@ -75,20 +76,23 @@ Right now:
 src/
 ├── main.rs            # eframe entry (unchanged)
 ├── lib.rs
-├── model.rs           # LevelConfig: map settings, TownSettings (step 1), cell size, seed
-├── level.rs           # PlacedObject, Category (7 kinds), CellMask, NoiseTexture,
-│                      # TownShape + TownStats, GeneratedLevel (town + noise_preview)
+├── model.rs           # LevelConfig: map, MapKind, ShapeSettings, OuterWallSettings, cell size, seed
+├── level.rs           # PlacedObject, Category, CellMask, NoiseTexture,
+│                      # LevelShape/ShapeStats, OuterWall/OuterWallStats, GeneratedLevel
 ├── generator/
-│   ├── mod.rs         # generate(): runs the implemented sections in order
+│   ├── mod.rs         # generate(): fixed phase order, one RNG stream
 │   ├── noise.rs       # general seeded value noise + fBm (utility for everything)
 │   ├── grid.rs        # CellMask algorithms: components, speckle removal,
 │   │                  # bridge closest pair (multi-source BFS), hole fill
-│   └── town_shape.rs  # step 1 pipeline: noise → coverage-targeted cut →
-│                      # despeckle → bridges → hole fill; stats
-├── render.rs          # map.png / layer.png rasterizer (town mask under objects)
+│   ├── shape.rs       # step 1: noise → coverage cut → despeckle → bridges
+│   │                  # → hole fill → wavy border margin
+│   └── walls.rs       # step 2: border walk (random segment lengths) → wall
+│                      # polygon → interior fill / outside cut
+├── render.rs          # map.png / layer.png rasterizer (region + wall under objects)
 ├── export.rs          # export bundle: map.png + layer.png + spec.json (format v1)
-├── validate.rs        # basic config validation (grows per section)
-└── ui/                # app.rs, left_panel.rs, preview.rs, warnings.rs, workflow.rs
+├── validate.rs        # config validation (grows per section)
+└── ui/                # app.rs, left_panel.rs, preview.rs, warnings.rs,
+                       # widgets.rs (param_row), workflow.rs
 reference/             # OLD generator + old model/level/render/export — copy from here
 docs/workflow.md       # this file
 ```
@@ -129,19 +133,21 @@ Rules that carried over from the old build (keep them in every section):
 
 - [x] **Step 0 — shell**: action bar, preview, empty settings panel, export,
       config file, warnings, workflow bench. (done)
-- [~] **Step 1 — noise & region shape (IN DEVELOPMENT, in the bench)**:
-      general seeded noise utility (`generator/noise.rs`); region shape =
-      noise field → full-contrast stretch → cut sized to hit the coverage
-      target over the buildable area → speckle removal → bridges between the
-      pieces → enclosed-hole fill → wavy border-margin cut
-      (`generator/shape.rs`, `generator/grid.rs`). NEW: the Template node has
-      a **MapKind** selector (Town / Swamp / Forest / Cave) that loads
-      per-kind shape defaults — Town = "cut the rest" (keeps ~85%, solid
-      center, texture-eroded edges), the island kinds scatter blobs and
-      bridge them. Bench toggles between the raw noise texture and the
-      resulting shape. Settings in `model.rs` as `ShapeSettings`; on
-      acceptance they move into the node body and the bench clears. See
-      "Step 1 notes" below.
+- [x] **Step 1 — noise & region shape**: general seeded noise utility
+      (`generator/noise.rs`); region shape = noise field → full-contrast
+      stretch → coverage-targeted cut over the buildable area → speckle
+      removal → bridges → enclosed-hole fill → wavy border-margin cut
+      (`generator/shape.rs`, `generator/grid.rs`). MapKind selector
+      (Town / Swamp / Forest / Cave) in the Template node with per-kind
+      defaults — Town = "cut the rest" (keeps ~85%), island kinds scatter
+      blobs and bridge them. Controls promoted into node 2. (done — see
+      "Step 1 notes")
+- [~] **Step 2 — outer walls (IN DEVELOPMENT, in the bench)**: walk the
+      region border point by point, each segment a random length between
+      `outer_wall.segment_min_m` and `segment_max_m`, until the wall closes
+      on itself; built from the inside, lagoons wrapped not skipped; then
+      the region is redefined as the wall's interior (cut outside, fill
+      inside). See "Step 2 notes" below.
 - [ ] **Step 2 — occupancy grid & walkable budget**: turn the town shape into
       the placement grid, walkable-% budget, connectivity checks
       (reference `generator/grid.rs`).
@@ -217,6 +223,41 @@ The kind lives in the Template node (`LevelConfig.kind`, serialized lowercase
 "town"/"swamp"/"forest"/"cave") and is exported as `map_kind` in spec.json;
 the region legend entry uses the kind's slug. Future nodes declare which
 kinds include them.
+
+## Step 2 notes — outer walls
+
+The user's algorithm, implemented literally in `generator/walls.rs`:
+
+1. **Boundary edges** — the region's border is collected as directed unit
+   edges on the corner lattice, oriented so the region stays on the LEFT of
+   every edge. Chaining them edge-to-edge (deterministic: lowest edge index
+   first) walks the border while hugging the region — this is what makes the
+   wall follow the border INTO lagoons and back out instead of shortcutting
+   across non-town area.
+2. **Loops** — the region is one connected, hole-free blob, so the longest
+   loop is the outer boundary; any extra loops (rare pinch artifacts) are
+   discarded and reported as a generation note.
+3. **Point walk** — starting at the first contour vertex, a point is placed
+   after every segment whose length is random in
+   `[segment_min_m, segment_max_m]` (one RNG stream, seeded per generation).
+   When the next segment would run past the start, the loop closes with a
+   straight chord back to the first point — with min == max that chord can
+   pass through the interior (expected, per the user's spec).
+4. **Rasterize** — the closed polygon (including the closing chord) is
+   sampled every half cell into wall cells, stamping a
+   `outer_wall.thickness_m`-wide square (rounded to whole cells, centered on
+   the line) around every sample; the marked cells are 8-connected, and a
+   diagonal chain already blocks a 4-connected flood.
+5. **Redefine the region** — flood the outside from the map border through
+   non-wall cells; everything unreachable is inside the wall. The new region
+   = the wall's interior (wall cells excluded, stored as the separate
+   `OuterWall` mask): town outside the wall is cut away, empty space inside
+   is filled. Chords legitimately cut corner slivers off the region.
+
+Stats (points, wall cells, closed, filled/cut) show under the bench controls;
+the wall paints dark brown over the region in map.png, the preview, and the
+legend/spec ("outer wall"). Wall thickness is one cell for now; wall layer
+ids in layer.png come when walls become placed objects (gates step).
 
 Result: one connected organic blob (or empty → generation note) — the raw
 possible form of the town. Stats (`raw_blobs`, bridges, speckle/hole cells,

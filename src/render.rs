@@ -16,6 +16,32 @@ pub const GROUND: [u8; 3] = [225, 220, 205];
 /// The region footprint from the shape node (town, swamp, forest, cave),
 /// painted under every object.
 pub const REGION: [u8; 3] = [204, 186, 158];
+/// The outer wall ring, painted over the region.
+pub const WALL: [u8; 3] = [97, 82, 70];
+
+/// Paint a cell mask onto the map image, one color per cell.
+fn paint_mask(map: &mut image::ImageBuffer<image::Rgb<u8>, Vec<u8>>, m: &crate::level::CellMask, px_per_m: f32, w: u32, h: u32, color: [u8; 3]) {
+    let cs = m.cell_size_m * px_per_m;
+    if cs <= 0.0 {
+        return;
+    }
+    for cy in 0..m.height {
+        let y0 = (cy as f32 * cs).round() as i64;
+        let y1 = ((cy + 1) as f32 * cs).round() as i64;
+        for cx in 0..m.width {
+            if !m.get(cx, cy) {
+                continue;
+            }
+            let x0 = (cx as f32 * cs).round() as i64;
+            let x1 = ((cx + 1) as f32 * cs).round() as i64;
+            for py in y0.max(0)..y1.min(h as i64) {
+                for px in x0.max(0)..x1.min(w as i64) {
+                    map.put_pixel(px as u32, py as u32, image::Rgb(color));
+                }
+            }
+        }
+    }
+}
 
 pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
     let px_per_m = px_per_m.max(0.1);
@@ -24,28 +50,12 @@ pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
     let mut map = ImageBuffer::from_pixel(w, h, Rgb(GROUND));
     let mut layer = ImageBuffer::from_pixel(w, h, Rgba([0, 0, 0, 0]));
 
-    // The region mask is the base layer of the map.
+    // The region mask is the base layer; the wall ring paints over it.
     if let Some(shape) = &level.shape {
-        let m = &shape.mask;
-        let cs = m.cell_size_m * px_per_m;
-        if cs > 0.0 {
-            for cy in 0..m.height {
-                let y0 = (cy as f32 * cs).round() as i64;
-                let y1 = ((cy + 1) as f32 * cs).round() as i64;
-                for cx in 0..m.width {
-                    if !m.get(cx, cy) {
-                        continue;
-                    }
-                    let x0 = (cx as f32 * cs).round() as i64;
-                    let x1 = ((cx + 1) as f32 * cs).round() as i64;
-                    for py in y0.max(0)..y1.min(h as i64) {
-                        for px in x0.max(0)..x1.min(w as i64) {
-                            map.put_pixel(px as u32, py as u32, Rgb(REGION));
-                        }
-                    }
-                }
-            }
-        }
+        paint_mask(&mut map, &shape.mask, px_per_m, w, h, REGION);
+    }
+    if let Some(walls) = &level.walls {
+        paint_mask(&mut map, &walls.mask, px_per_m, w, h, WALL);
     }
 
     // Draw in stored order: later objects paint over earlier ones.
@@ -123,6 +133,7 @@ mod tests {
                 h_m: 2.0,
             }],
             shape: None,
+            walls: None,
             noise_preview: None,
             notes: Vec::new(),
         }

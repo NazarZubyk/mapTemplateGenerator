@@ -186,6 +186,11 @@ fn draw_legend(painter: &egui::Painter, canvas: Rect, level: &GeneratedLevel) {
     {
         entries.push((crate::render::REGION, level.config.kind.slug()));
     }
+    if let Some(walls) = &level.walls
+        && walls.stats.wall_cells > 0
+    {
+        entries.push((crate::render::WALL, "outer wall"));
+    }
     for o in &level.objects {
         let key = (o.color, o.type_name.as_str());
         if !entries.iter().any(|(c, n)| *c == key.0 && *n == key.1) {

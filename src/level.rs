@@ -130,6 +130,30 @@ pub struct LevelShape {
     pub stats: ShapeStats,
 }
 
+/// What the outer-wall phase did; shown in the workflow bench.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct OuterWallStats {
+    /// Wall points placed by the border walk.
+    pub points: u32,
+    /// The loop closed on itself.
+    pub closed: bool,
+    /// Boundary loops discarded beyond the outer one (rare pinch artifacts).
+    pub extra_loops: u32,
+    /// Cells occupied by the wall ring.
+    pub wall_cells: u32,
+    /// Region cells removed because they ended up outside the wall.
+    pub area_cut_cells: u32,
+    /// Non-region cells filled because they ended up inside the wall.
+    pub area_filled_cells: u32,
+}
+
+/// The outer wall ring around the region.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OuterWall {
+    pub mask: CellMask,
+    pub stats: OuterWallStats,
+}
+
 /// A generated level: the config snapshot it came from plus everything placed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GeneratedLevel {
@@ -138,6 +162,8 @@ pub struct GeneratedLevel {
     pub objects: Vec<PlacedObject>,
     /// The noise-derived region footprint, once the shape section is built.
     pub shape: Option<LevelShape>,
+    /// The outer wall ring, once the outer-walls section is built.
+    pub walls: Option<OuterWall>,
     /// Raw noise field behind the region shape, for the bench "noise texture"
     /// view.
     pub noise_preview: Option<NoiseTexture>,
