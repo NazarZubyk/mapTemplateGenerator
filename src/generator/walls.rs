@@ -233,7 +233,7 @@ pub fn build(
 
 /// Mark the cells a straight segment passes through, sampling every half cell
 /// and stamping a `thickness`-cell square around each sample.
-fn rasterize_segment(
+pub(crate) fn rasterize_segment(
     wall: &mut CellMask,
     a: (f32, f32),
     b: (f32, f32),

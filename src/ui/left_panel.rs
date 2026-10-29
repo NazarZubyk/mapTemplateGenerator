@@ -32,6 +32,8 @@ fn generation_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_regions(ui, app);
     flow_arrow(ui, "region id map");
     node_roads(ui, app);
+    flow_arrow(ui, "regions + roads");
+    node_region_walls(ui, app);
     ui.weak("Next nodes appear here as sections finish; which nodes exist depends on the map kind (docs/workflow.md).");
     ui.add_space(4.0);
     ui.separator();
@@ -608,6 +610,97 @@ fn node_roads(ui: &mut egui::Ui, app: &mut MapGenApp) {
                 cells as f32 * net.mask.cell_size_m * net.mask.cell_size_m,
                 net.passages.len()
             ));
+        }
+    });
+}
+
+/// Node 6: walls between regions, built like the outer wall and opened where
+/// roads cross (see step 5 notes in docs/workflow.md).
+fn node_region_walls(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_SEG_MIN: &str = "Shortest wall segment in meters. Each border between two \
+regions is walked point by point, like the outer wall: the next point lands after a random \
+length between min and max. Small values (1–3 m) hug the border closely; large values cut \
+across its bends. NO EFFECT with 1 region (there are no borders).";
+    const TIP_SEG_MAX: &str = "Longest wall segment in meters. Every wall still ends \
+exactly where its border meets the outer wall or another region wall, so walls always \
+join up with no leaks. If max is smaller than min the two are swapped.";
+    const TIP_THICKNESS: &str = "Wall thickness in meters, rounded to whole grid cells. \
+The wall grows on both sides of the walked line.";
+    const TIP_GAP: &str = "Extra clearance on each side of a road where it passes through \
+a wall, in meters: each opening is the road width plus twice this. 0: the opening is \
+exactly the road. Openings exist only where roads cross — set roads in node 5.";
+    node(ui, "6 · Region walls", |ui| {
+        ui.weak("input: regions + roads · output: walls between regions with road gaps");
+        egui::Grid::new("region_walls_node_grid")
+            .num_columns(2)
+            .spacing([10.0, 3.0])
+            .show(ui, |ui| {
+                let walls = &mut app.config.region_walls;
+                param_row(ui, "Segment min", TIP_SEG_MIN, |ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut walls.segment_min_m)
+                            .range(0.5..=64.0)
+                            .speed(0.2)
+                            .suffix(" m"),
+                    )
+                });
+                param_row(ui, "Segment max", TIP_SEG_MAX, |ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut walls.segment_max_m)
+                            .range(0.5..=64.0)
+                            .speed(0.2)
+                            .suffix(" m"),
+                    )
+                });
+                param_row(ui, "Wall width", TIP_THICKNESS, |ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut walls.thickness_m)
+                            .range(0.1..=8.0)
+                            .speed(0.1)
+                            .suffix(" m"),
+                    )
+                });
+                param_row(ui, "Gap margin", TIP_GAP, |ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut walls.gap_margin_m)
+                            .range(0.0..=8.0)
+                            .speed(0.1)
+                            .suffix(" m"),
+                    )
+                });
+            });
+        ui.horizontal(|ui| {
+            if ui
+                .button("🎲 Random params")
+                .on_hover_text(
+                    "Rolls every value independently inside its reasonable range — they may \
+                     contradict each other. Set values only; press Generate.",
+                )
+                .clicked()
+            {
+                let mut rng = rand::rng();
+                let walls = &mut app.config.region_walls;
+                walls.segment_min_m = rng.random_range(0.5..=16.0);
+                walls.segment_max_m = rng.random_range(0.5..=16.0);
+                walls.thickness_m = rng.random_range(0.1..=4.0);
+                walls.gap_margin_m = rng.random_range(0.0..=3.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        match app.generated.as_ref().map(|l| l.region_walls.as_ref()) {
+            Some(Some(walls)) => {
+                ui.weak(format!(
+                    "generated: {} wall lines, {} points, {} road gaps, {} cells refit to walls",
+                    walls.lines,
+                    walls.points,
+                    walls.gaps.len(),
+                    walls.recolored_cells
+                ));
+            }
+            Some(None) => {
+                ui.weak("generated: no region walls (only one region)");
+            }
+            None => {}
         }
     });
 }

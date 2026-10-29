@@ -19,6 +19,8 @@ pub const REGION: [u8; 3] = [204, 186, 158];
 /// The outer wall ring, painted over the region.
 pub const WALL: [u8; 3] = [97, 82, 70];
 
+/// Walls between regions, painted over regions and roads.
+pub const REGION_WALL: [u8; 3] = [128, 108, 90];
 /// Roads, painted over the regions and under the wall.
 pub const ROAD: [u8; 3] = [238, 228, 202];
 /// Colors for the region split (cycled when there are more regions than
@@ -99,6 +101,9 @@ pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
     }
     if let Some(roads) = &level.roads {
         paint_mask(&mut map, &roads.mask, px_per_m, w, h, ROAD);
+    }
+    if let Some(region_walls) = &level.region_walls {
+        paint_mask(&mut map, &region_walls.mask, px_per_m, w, h, REGION_WALL);
     }
     if let Some(walls) = &level.walls {
         paint_mask(&mut map, &walls.mask, px_per_m, w, h, WALL);
@@ -181,6 +186,7 @@ mod tests {
             shape: None,
             walls: None,
             roads: None,
+            region_walls: None,
             regions: None,
             noise_preview: None,
             notes: Vec::new(),

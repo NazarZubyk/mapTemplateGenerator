@@ -53,6 +53,8 @@ pub struct LevelConfig {
     pub regions: RegionsSettings,
     /// The road network: crossroad nodes and the links between them (step 4).
     pub roads: RoadsSettings,
+    /// Walls along the borders between regions, open where roads cross (step 5).
+    pub region_walls: RegionWallSettings,
     pub cell_size_m: f32,
     pub seed: u64,
 }
@@ -66,8 +68,37 @@ impl Default for LevelConfig {
             outer_wall: OuterWallSettings::default(),
             regions: RegionsSettings::default(),
             roads: RoadsSettings::default(),
+            region_walls: RegionWallSettings::default(),
             cell_size_m: 0.5,
             seed: 0,
+        }
+    }
+}
+
+/// Settings of the region walls node (docs/workflow.md, step 5): built like
+/// the outer wall, but along the borders between regions.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RegionWallSettings {
+    /// Shortest wall segment in meters (the border is walked point by point,
+    /// each segment a random length between min and max).
+    pub segment_min_m: f32,
+    /// Longest wall segment in meters.
+    pub segment_max_m: f32,
+    /// Wall thickness in meters, quantized to whole grid cells (rounded).
+    pub thickness_m: f32,
+    /// Extra clearance on each side of a road where it passes through a
+    /// wall, in meters: the gap is the road width plus twice this.
+    pub gap_margin_m: f32,
+}
+
+impl Default for RegionWallSettings {
+    fn default() -> Self {
+        Self {
+            segment_min_m: 3.0,
+            segment_max_m: 8.0,
+            thickness_m: 0.5,
+            gap_margin_m: 0.5,
         }
     }
 }

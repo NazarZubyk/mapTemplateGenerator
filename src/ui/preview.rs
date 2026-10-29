@@ -223,6 +223,11 @@ fn draw_legend(painter: &egui::Painter, canvas: Rect, level: &GeneratedLevel) {
     {
         entries.push((crate::render::ROAD, "road".to_owned()));
     }
+    if let Some(region_walls) = &level.region_walls
+        && region_walls.mask.count_true() > 0
+    {
+        entries.push((crate::render::REGION_WALL, "region wall".to_owned()));
+    }
     if let Some(walls) = &level.walls
         && walls.stats.wall_cells > 0
     {

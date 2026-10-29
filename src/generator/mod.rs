@@ -10,6 +10,7 @@ use crate::model::LevelConfig;
 
 pub mod grid;
 pub mod noise;
+pub mod region_walls;
 pub mod regions;
 pub mod roads;
 pub mod shape;
@@ -85,7 +86,7 @@ pub fn generate_with_progress(
     }
 
     // Step 3: split the town area into regions (smallest placed first).
-    let regions = if region_mask.count_true() > 0 {
+    let mut regions = if region_mask.count_true() > 0 {
         regions::build_with_progress(config, &mut rng, &region_mask, &stage(0.65, 0.85))
     } else {
         None
@@ -94,9 +95,16 @@ pub fn generate_with_progress(
     // Step 4: the road network — crossroad nodes (≥ 1 per region) and the
     // winding links between them; region crossings become passages.
     let roads = regions.as_ref().and_then(|split| {
-        let built = roads::build_with_progress(config, &mut rng, split, &stage(0.85, 0.99))?;
+        let built = roads::build_with_progress(config, &mut rng, split, &stage(0.85, 0.93))?;
         notes.extend(built.notes);
         Some(built.network)
+    });
+
+    // Step 5: walls along the borders between regions, opened where roads
+    // cross them.
+    // The regions are refit so each one ends exactly at its walls.
+    let region_walls = regions.as_mut().and_then(|split| {
+        region_walls::build_with_progress(config, &mut rng, split, roads.as_ref(), &stage(0.93, 0.99))
     });
 
     let total = region_mask.width * region_mask.height;
@@ -115,6 +123,7 @@ pub fn generate_with_progress(
         walls,
         regions,
         roads,
+        region_walls,
         noise_preview: Some(built.noise_preview),
         notes,
     }

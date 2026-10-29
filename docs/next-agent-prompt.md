@@ -102,8 +102,8 @@ region palette colors).
 
 ## Current state
 
-Steps 0–4 are done and live in their nodes (shape, outer walls, regions,
-roads). The bench is empty. Next: step 5 — walls along the borders between
-regions, with gaps at the step-4 passages (road width). The user prefers
-new steps built straight into their left-panel node, not in the bench, and
-wants the map to show only finished things (roads, not junction dots).
+Steps 0–5 are done and live in their nodes (shape, outer walls, regions,
+roads, region walls). The bench is empty. Next: step 6 — occupancy grid &
+walkable budget (see docs/workflow.md step list). The user prefers new steps
+built straight into their left-panel node, not in the bench, and wants the
+map to show only finished things.

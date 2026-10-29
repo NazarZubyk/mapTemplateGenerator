@@ -200,6 +200,14 @@ impl MapGenApp {
                     }
                 }
             }
+            if let Some(region_walls) = &level.region_walls {
+                let c = crate::render::REGION_WALL;
+                for (px, on) in pixels.iter_mut().zip(&region_walls.mask.cells) {
+                    if *on {
+                        *px = egui::Color32::from_rgb(c[0], c[1], c[2]);
+                    }
+                }
+            }
             if let Some(walls) = &level.walls {
                 for (px, is_wall) in pixels.iter_mut().zip(&walls.mask.cells) {
                     if *is_wall {

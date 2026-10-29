@@ -67,6 +67,8 @@ pub struct ExportSpec {
     pub regions: Option<Vec<ExportRegion>>,
     /// The road network, once the roads node is built.
     pub roads: Option<ExportRoads>,
+    /// The walls between regions and their road openings.
+    pub region_walls: Option<ExportRegionWalls>,
     /// Every placed object with position and size in meters.
     pub objects: Vec<crate::level::PlacedObject>,
 }
@@ -142,6 +144,22 @@ impl ExportRoads {
     }
 }
 
+/// Walls between regions: drawn on map.png; their openings listed here.
+#[derive(Debug, Serialize)]
+pub struct ExportRegionWalls {
+    pub thickness_m: f32,
+    /// Openings where a road passes, in meters from the top-left corner.
+    pub gaps: Vec<ExportWallGap>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ExportWallGap {
+    pub x_m: f32,
+    pub y_m: f32,
+    /// The two regions the opening connects.
+    pub regions: [u8; 2],
+}
+
 #[derive(Debug, Serialize)]
 pub struct LegendEntry {
     pub color: String,
@@ -179,6 +197,15 @@ impl ExportSpec {
             legend.push(LegendEntry {
                 color: color_hex(render::ROAD),
                 name: "road".to_owned(),
+                category: "ground",
+            });
+        }
+        if let Some(region_walls) = &level.region_walls
+            && region_walls.mask.count_true() > 0
+        {
+            legend.push(LegendEntry {
+                color: color_hex(render::REGION_WALL),
+                name: "region wall".to_owned(),
                 category: "ground",
             });
         }
@@ -228,6 +255,21 @@ impl ExportSpec {
             layer_categories: render::layer_categories(),
             regions,
             roads: level.roads.as_ref().map(ExportRoads::new),
+            region_walls: level.region_walls.as_ref().map(|rw| {
+                let cs = rw.mask.cell_size_m;
+                ExportRegionWalls {
+                    thickness_m: (level.config.region_walls.thickness_m / cs).round().max(1.0) * cs,
+                    gaps: rw
+                        .gaps
+                        .iter()
+                        .map(|g| ExportWallGap {
+                            x_m: (g.x as f32 + 0.5) * cs,
+                            y_m: (g.y as f32 + 0.5) * cs,
+                            regions: [g.regions.0, g.regions.1],
+                        })
+                        .collect(),
+                }
+            }),
             objects: level.objects.clone(),
         }
     }
@@ -270,6 +312,7 @@ mod tests {
             shape: None,
             walls: None,
             roads: None,
+            region_walls: None,
             regions: None,
             noise_preview: None,
             notes: Vec::new(),

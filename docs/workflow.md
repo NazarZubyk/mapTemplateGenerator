@@ -56,6 +56,9 @@ Right now:
    region walls). Every map kind. Finished (step 4); its controls live in
    the node. Junctions (crossroad nodes) only steer routing — the map shows
    roads alone.
+6. **Region walls** — input: region id map + roads · output: walls along
+   the borders between regions, opened where roads cross. Every map kind.
+   Finished (step 5); built straight into the node.
 
 - **Action bar** (`src/ui/app.rs`): seed + Generate + Re-roll. Generation
   runs on a background thread (`MapGenApp::job`); the bar shows a progress
@@ -63,7 +66,8 @@ Right now:
   disabled until it finishes. Phases report through
   `generator::generate_with_progress` (`Progress` callback, `Stage` maps a
   phase's 0..1 into its slice of the whole: shape 0–55%, wall 55–65%,
-  regions 65–85%, roads 85–99%). New phases must report too.
+  regions 65–85%, roads 85–93%, region walls 93–99%). New phases must
+  report too.
 - **Preview** (`src/ui/preview.rs`): draws the generated level (rect objects,
   circle mob spawns/gates, legend) plus the bench texture layer (noise
   texture or town shape — toggle lives in the bench).
@@ -100,6 +104,8 @@ src/
 │   │                  # → hole fill → wavy border margin
 │   ├── walls.rs       # step 2: border walk (random segment lengths) → wall
 │                      # polygon → interior fill / outside cut
+│   ├── region_walls.rs # step 5: border lines per region pair → point walk
+│   │                  # (like walls.rs) → road gaps
 │   ├── regions.rs     # step 3: smallest-first region growth, % shares
 │   └── roads.rs       # step 4: crossroad nodes → MST + extra links →
 │                      # noise-bent A* routing → passages
@@ -178,8 +184,10 @@ Rules that carried over from the old build (keep them in every section):
       each routed as a gently winding road; region crossings recorded as
       passages. Built straight into node 5 (the user does not want the
       bench for it). (done — see "Step 4 notes")
-- [ ] **Step 5 — region walls (inside walls)**: walls along the borders
-      between regions, with gaps exactly at the step-4 passages (road width).
+- [x] **Step 5 — region walls**: walls along the borders between regions,
+      walked like the outer wall (random segments, own min/max/thickness),
+      opened wherever a road crosses (road width + `gap_margin_m` each side).
+      Node 6. (done — see "Step 5 notes")
 - [ ] **Step 6 — occupancy grid & walkable budget**: placement flags on the
       grid (walkable / road / occupied), walkable-% budget, connectivity
       checks (reference `generator/grid.rs` helpers).
@@ -429,6 +437,50 @@ UI (node 5: Road width, Wiggle, Extra links, Junctions by count/density). 200 m 
 routing in release. Tests: one node per region, connected network, node
 count honored with bigger regions getting more, passages on region
 borders, 0% extra = tree, density math, determinism.
+
+## Step 5 notes — region walls
+
+The user's request: walls between regions, similar to the outer walls but a
+separate node, and they must separate the regions; the road passages become
+the gaps. `generator/region_walls.rs`, every map kind:
+
+1. **Border lines** — every corner-lattice unit edge between two different
+   (non-zero) region ids, grouped by region pair. A vertex's degree counts
+   ALL boundary edges (inter-region + town edge), so a line stops wherever
+   another wall meets it: at the outer wall, at a three-region junction, or
+   at a pinch. Lines are walked from those stop vertices; leftover edges are
+   closed loops (borders around nested regions). Pairs in id order, edges in
+   scan order — deterministic.
+2. **Point walk** — as in `walls.rs`: a point after every random segment in
+   `[segment_min_m, segment_max_m]` (`region_walls.*`, defaults 3–8 m), BUT
+   an open line always ends exactly on its last vertex (no closing chord):
+   walls join the outer wall and each other with no leaks. A loop closes
+   with a chord (or follows the loop exactly if it is too short to walk).
+3. **Rasterize** — `walls::rasterize_segment` (shared), `thickness_m` wide,
+   then clipped to town cells.
+4. **Fit regions to walls** — the straight segments cut across the curvy
+   region borders, leaving slivers of one region's color on the wrong side
+   of a wall. Before any gap opens, every 4-connected piece of (town − wall)
+   takes its majority region id (ties: lower id); wall cells take the
+   nearest open cell's id; the region stats are recounted
+   (`RegionWalls::recolored_cells` counts the moved cells, shown in node 6).
+   The split is updated in place, so map.png, the preview, the legend and
+   spec.json all show regions that end exactly at their walls.
+5. **Gaps** — wall cells on a road or within `gap_margin_m` of one (BFS
+   distance from the road mask) are removed. Roads already cross borders
+   briskly (step 4's border penalty), so this opens exactly the crossings;
+   every road passes through, and since the road network reaches every
+   region, every region stays reachable. Openings are grouped (8-connected)
+   into `WallGap { x, y, regions, cells }` — region pair = the two most
+   common ids around the opening.
+
+map.png / preview / legend: "region wall" in a lighter brown than the outer
+wall; spec.json `region_walls { thickness_m, gaps: [{x_m, y_m, regions}] }`.
+1 region → no walls (`None`, node says so). Tests: without gaps each open
+piece is exactly one region after the refit (< 5% cells moved, stats
+recounted), with gaps no road cell is walled and every region is reachable, 1 region → none, determinism.
+Stress-checked: 6 nested regions (100% nesting) and 200 m / 3 sections —
+no region cut off, ≤ 0.8 s total generation in release.
 
 ## Done-ness checklist for every step
 

@@ -237,6 +237,32 @@ pub struct RoadNetwork {
     pub width_cells: u32,
 }
 
+/// An opening in a region wall where a road passes through.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct WallGap {
+    /// Center of the opening, in cell coordinates.
+    pub x: usize,
+    pub y: usize,
+    /// The two regions it connects (lower id first).
+    pub regions: (u8, u8),
+    /// Wall cells removed for this opening.
+    pub cells: u32,
+}
+
+/// The walls between regions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RegionWalls {
+    pub mask: CellMask,
+    pub gaps: Vec<WallGap>,
+    /// Border lines walked (one per stretch of border between two regions).
+    pub lines: u32,
+    /// Wall points placed over all lines.
+    pub points: u32,
+    /// Region cells re-assigned so every region ends exactly at its walls.
+    #[serde(default)]
+    pub recolored_cells: u32,
+}
+
 /// A generated level: the config snapshot it came from plus everything placed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GeneratedLevel {
@@ -252,6 +278,9 @@ pub struct GeneratedLevel {
     /// The road network, once the roads section is built.
     #[serde(default)]
     pub roads: Option<RoadNetwork>,
+    /// The walls between regions, once the region walls section is built.
+    #[serde(default)]
+    pub region_walls: Option<RegionWalls>,
     /// Raw noise field behind the region shape, for the bench "noise texture"
     /// view.
     pub noise_preview: Option<NoiseTexture>,
