@@ -364,6 +364,35 @@ pub struct InteractiveTypeStats {
     pub groups: u32,
 }
 
+/// The gates node's output.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GateLayout {
+    pub gates: Vec<GateInfo>,
+    /// Gates asked for.
+    pub requested: u32,
+}
+
+/// One placed gate.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GateInfo {
+    /// 1-based gate id (its place in the config list).
+    pub id: u32,
+    /// Direction asked for, and where the gate ended up (they differ when
+    /// the asked ray met no wall and a nearby angle was used).
+    pub direction_deg: f32,
+    pub actual_deg: f32,
+    /// The gate point (middle of the wall opening), meters.
+    pub point_m: [f32; 2],
+    /// Region the gate opens into.
+    pub region: u8,
+    /// Width of the wall opening, meters (0 on maps without an outer wall).
+    pub opening_m: f32,
+    /// Index of the gate road in `RoadNetwork::links`, if one was laid.
+    pub road_link: Option<usize>,
+    /// Index of its marker in `GeneratedLevel::objects`.
+    pub object: usize,
+}
+
 /// The mobs node's output.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MobLayout {
@@ -499,6 +528,9 @@ pub struct GeneratedLevel {
     /// The hidden rooms node's rooms, walls and paths.
     #[serde(default)]
     pub hidden_rooms: Option<HiddenRoomLayout>,
+    /// The gates node's gates.
+    #[serde(default)]
+    pub gates: Option<GateLayout>,
     /// The mobs node's spawn points and spending.
     #[serde(default)]
     pub mobs: Option<MobLayout>,

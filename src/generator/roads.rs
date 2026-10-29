@@ -549,7 +549,7 @@ impl Router<'_> {
 /// Paint the road along `path`: a disc of `radius` cells around every
 /// centerline cell (town cells only), plus one orthogonal cell at each
 /// diagonal step so even a 1-cell road stays 4-connected.
-fn stamp_path(road: &mut CellMask, town: &[bool], path: &[usize], radius: f32) {
+pub(crate) fn stamp_path(road: &mut CellMask, town: &[bool], path: &[usize], radius: f32) {
     let (w, h) = (road.width, road.height);
     let r = radius.ceil() as i64;
     let r2 = radius * radius;

@@ -1,7 +1,8 @@
 //! The mobs node (every map kind): spawn points bought from a budget.
 //!
 //! 1. **Where mobs may stand** — walkable ground: the town minus walls,
-//!    houses, props and interactives; roads too when `on_roads` is set; the
+//!    houses, props and interactives, and nothing within `gate_clearance_m`
+//!    of a gate (the player arrives there); roads too when `on_roads` is set; the
 //!    floor of a hidden room only if its path is mob-passable (never the
 //!    narrow paths themselves). Spawn points are markers, not obstacles —
 //!    they never block a road or seal a pocket.
@@ -28,7 +29,7 @@ use rand_chacha::ChaCha8Rng;
 
 use crate::generator::Stage;
 use crate::level::{
-    Category, CellMask, HiddenRoomLayout, MobLayout, MobPackMember, MobSpawn, PlacedObject, RegionMap, RoadNetwork,
+    Category, CellMask, GateInfo, HiddenRoomLayout, MobLayout, MobPackMember, MobSpawn, PlacedObject, RegionMap, RoadNetwork,
 };
 use crate::model::{LevelConfig, NodeAmount};
 
@@ -51,6 +52,8 @@ pub struct Ground<'a> {
     /// Footprints of solid objects (houses, props, interactives).
     pub objects: &'a [&'a CellMask],
     pub hidden_rooms: Option<&'a HiddenRoomLayout>,
+    /// Gates: no spawn within `gate_clearance_m` of one.
+    pub gates: &'a [GateInfo],
 }
 
 /// `build_with_progress` without progress reporting.
@@ -91,6 +94,11 @@ pub(crate) fn build_with_progress(
     let hidden = |m: fn(&HiddenRoomLayout) -> &CellMask, i: usize| ground.hidden_rooms.is_some_and(|l| m(l).cells[i]);
     let spawnable: Vec<bool> = (0..w * h)
         .map(|i| {
+            let (x, y) = (((i % w) as f32 + 0.5) * cell, ((i / w) as f32 + 0.5) * cell);
+            let clear2 = s.gate_clearance_m.max(0.0).powi(2);
+            if ground.gates.iter().any(|g| (g.point_m[0] - x).powi(2) + (g.point_m[1] - y).powi(2) < clear2) {
+                return false;
+            }
             if room_of[i] != 0 {
                 return room_ok[i];
             }

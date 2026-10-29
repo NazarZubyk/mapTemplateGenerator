@@ -19,6 +19,8 @@
 //!    longer than `path_max_m` is skipped. Each room rolls
 //!    `mob_passable_pct` for whether mobs may use its path.
 //!
+//! Neither kind comes within 6 m of a gate.
+//!
 //! Inside rooms sit on ground with a free ring all around, so the walkable
 //! area stays one piece; outside rooms only add ground.
 
@@ -35,6 +37,9 @@ use crate::model::{HiddenRoomPlace, LevelConfig};
 
 pub const ROOM_NAME: &str = "hidden room";
 pub const PATH_NAME: &str = "hidden room path";
+/// No room block closer than this to a gate, meters — the gate's way in
+/// stays clear.
+const GATE_CLEARANCE_M: f32 = 6.0;
 /// Spots tried per room (per side of the wall).
 const TRIES: usize = 300;
 
@@ -53,6 +58,8 @@ pub struct Ground<'a> {
     pub roads: Option<&'a RoadNetwork>,
     /// Footprints of placed objects (houses, props, interactives).
     pub objects: &'a [&'a CellMask],
+    /// Gate points, meters: rooms keep `GATE_CLEARANCE_M` away from them.
+    pub gates: &'a [[f32; 2]],
 }
 
 /// `build_with_progress` without progress reporting.
@@ -89,15 +96,19 @@ pub(crate) fn build_with_progress(
     let void: Vec<bool> = (0..w * h).map(|i| map.ids[i] == 0 && !outer(i)).collect();
     // Outside: the block sits on empty ground a cell clear of everything else.
     let not_void: Vec<bool> = void.iter().map(|&v| !v).collect();
+    let near_gate = |i: usize| {
+        let (x, y) = (((i % w) as f32 + 0.5) * cell, ((i / w) as f32 + 0.5) * cell);
+        ground.gates.iter().any(|g| (g[0] - x).powi(2) + (g[1] - y).powi(2) < GATE_CLEARANCE_M.powi(2))
+    };
     let outside_ok: Vec<bool> = {
         let near = dilate(&not_void, w, h, 1);
-        (0..w * h).map(|i| !near[i]).collect()
+        (0..w * h).map(|i| !near[i] && !near_gate(i)).collect()
     };
     // Inside: free ground, no road, a free cell from every obstacle.
     let obstacles: Vec<bool> = (0..w * h).map(|i| !walkable[i]).collect();
     let inside_ok: Vec<bool> = {
         let near = dilate(&obstacles, w, h, 1);
-        (0..w * h).map(|i| walkable[i] && !road(i) && !near[i]).collect()
+        (0..w * h).map(|i| walkable[i] && !road(i) && !near[i] && !near_gate(i)).collect()
     };
     // Cells a path may never dig through (rooms and paths join this as they
     // are placed).

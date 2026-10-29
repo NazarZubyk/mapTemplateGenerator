@@ -1,7 +1,7 @@
 use eframe::egui;
 use rand::Rng;
 
-use crate::model::{HiddenRoomPlace, InteractiveSpot, InteractiveType, LevelConfig, MapKind, MobType, NodeAmount, ShapeSettings};
+use crate::model::{GateSpec, HiddenRoomPlace, InteractiveSpot, InteractiveType, LevelConfig, MapKind, MobType, NodeAmount, ShapeSettings};
 use crate::ui::app::{ConfigStatus, MapGenApp};
 use crate::ui::widgets::param_row;
 
@@ -34,6 +34,8 @@ fn generation_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_roads(ui, app);
     flow_arrow(ui, "regions + roads");
     node_region_walls(ui, app);
+    flow_arrow(ui, "walled regions + roads");
+    node_gates(ui, app);
     if app.config.kind == MapKind::Town {
         flow_arrow(ui, "free ground between roads and walls");
         node_houses(ui, app);
@@ -742,7 +744,116 @@ exactly the road. Openings exist only where roads cross — set roads in node 5.
     });
 }
 
-/// Node 7: houses (town maps only) — street fronts first, then the yards
+/// Node 7: entry/exit gates on the outer wall, every map kind (see step 12
+/// notes in docs/workflow.md). Runs right after the region walls.
+fn node_gates(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_DIRECTION: &str = "Direction from the map center, degrees: 0 = east (right), \
+90 = north (up), 180 = west, 270 = south. The gate sits where that ray crosses the outer \
+wall; if it meets no wall, it turns up to 45° to find one (spec.json gives the angle used).";
+    const TIP_COUNT: &str = "Number of gates. Raising it adds gates spread evenly between \
+the existing ones; lowering it removes the last ones. Each gate's direction is set below.";
+    const TIP_OPENING: &str = "Width of the gap cut into the outer wall at each gate, meters.";
+    const TIP_ROAD: &str = "Lay a road from each gate to the nearest road, inside the gate's \
+region. Houses, props and everything after keep off it.";
+    const TIP_ROAD_W: &str = "Width of the gate roads, meters.";
+    const TIP_COLOR: &str = "Gate marker color on the map image, the preview and the legend.";
+    node(ui, "7 · Gates", |ui| {
+        ui.weak("input: walled regions + roads · output: gate points, wall openings, gate roads (every map kind)");
+        let g = &mut app.config.gates;
+        let mut remove = None;
+        egui::Grid::new("gates_node_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            let mut count = g.gates.len();
+            param_row(ui, "Count", TIP_COUNT, |ui| ui.add(egui::DragValue::new(&mut count).range(0..=32).speed(0.1)));
+            set_gate_count(&mut g.gates, count);
+            for (i, spec) in g.gates.iter_mut().enumerate() {
+                param_row(ui, &format!("Gate #{}", i + 1), TIP_DIRECTION, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.add(egui::Slider::new(&mut spec.direction_deg, 0.0..=359.0).suffix("°"));
+                        if ui.small_button("🗑").on_hover_text("Remove this gate").clicked() {
+                            remove = Some(i);
+                        }
+                    })
+                    .response
+                });
+            }
+            param_row(ui, "Opening", TIP_OPENING, |ui| {
+                ui.add(egui::DragValue::new(&mut g.opening_m).range(0.5..=20.0).speed(0.05).suffix(" m"))
+            });
+            param_row(ui, "Gate road", TIP_ROAD, |ui| ui.checkbox(&mut g.road, ""));
+            if g.road {
+                param_row(ui, "Road width", TIP_ROAD_W, |ui| {
+                    ui.add(egui::DragValue::new(&mut g.road_width_m).range(0.5..=10.0).speed(0.05).suffix(" m"))
+                });
+            }
+            param_row(ui, "Color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut g.color));
+        });
+        if let Some(i) = remove {
+            g.gates.remove(i);
+        }
+        ui.horizontal(|ui| {
+            if ui.button("➕ Add gate").clicked() {
+                // Opposite the last gate: a fair first guess.
+                let deg = g.gates.last().map_or(90.0, |l| (l.direction_deg + 180.0).rem_euclid(360.0));
+                g.gates.push(GateSpec { direction_deg: deg });
+            }
+            if ui
+                .button("⟳ Spread evenly")
+                .on_hover_text("Spreads the gates evenly around the map, keeping the first one's direction.")
+                .clicked()
+                && !g.gates.is_empty()
+            {
+                let n = g.gates.len() as f32;
+                let start = g.gates[0].direction_deg;
+                for (k, spec) in g.gates.iter_mut().enumerate() {
+                    spec.direction_deg = (start + k as f32 * 360.0 / n).rem_euclid(360.0);
+                }
+            }
+        });
+        ui.weak("Changes apply on ⚙ Generate");
+        if let Some(l) = app.generated.as_ref().and_then(|l| l.gates.as_ref()) {
+            let parts: Vec<String> = l
+                .gates
+                .iter()
+                .map(|g| {
+                    let turned = if (g.actual_deg - g.direction_deg.rem_euclid(360.0)).abs() > 0.5 {
+                        format!(" (turned to {:.0}°)", g.actual_deg)
+                    } else {
+                        String::new()
+                    };
+                    format!("#{} region {}{}{}", g.id, g.region, turned, if g.road_link.is_some() { ", road" } else { "" })
+                })
+                .collect();
+            ui.weak(format!("generated: {} of {} gates · {}", l.gates.len(), l.requested, parts.join(" · ")));
+        }
+    });
+}
+
+/// Resize the gate list: new gates go into the middle of the widest gap
+/// between the existing directions (the first one points north).
+fn set_gate_count(gates: &mut Vec<GateSpec>, count: usize) {
+    gates.truncate(count);
+    while gates.len() < count {
+        let mut dirs: Vec<f32> = gates.iter().map(|g| g.direction_deg.rem_euclid(360.0)).collect();
+        dirs.sort_by(f32::total_cmp);
+        let deg = match dirs.len() {
+            0 => 90.0,
+            1 => dirs[0] + 180.0,
+            n => {
+                // Widest gap, wrapping around 360°.
+                let (gap, from) = (0..n)
+                    .map(|k| {
+                        let next = if k + 1 < n { dirs[k + 1] } else { dirs[0] + 360.0 };
+                        (next - dirs[k], dirs[k])
+                    })
+                    .fold((f32::MIN, 0.0), |best, cur| if cur.0 > best.0 { cur } else { best });
+                from + gap / 2.0
+            }
+        };
+        gates.push(GateSpec { direction_deg: deg.rem_euclid(360.0) });
+    }
+}
+
+/// Node 8: houses (town maps only) — street fronts first, then the yards
 /// (see step 6 notes in docs/workflow.md).
 fn node_houses(ui: &mut egui::Ui, app: &mut MapGenApp) {
     const TIP_DENSITY: &str = "Share of the buildable ground (town minus walls and roads) \
@@ -776,7 +887,7 @@ along the block a wing runs, and how far it sticks out. Wings make a house bigge
 max (which is the main block). NO EFFECT at 0% complex.";
     const TIP_WING_MAX: &str = "Largest wing, as a share of the main block's side. If it is \
 smaller than the minimum the two are swapped. NO EFFECT at 0% complex.";
-    node(ui, "7 · Houses", |ui| {
+    node(ui, "8 · Houses", |ui| {
         ui.weak("input: town minus walls and roads · output: houses (town only)");
         egui::Grid::new("houses_node_grid")
             .num_columns(2)
@@ -873,7 +984,7 @@ smaller than the minimum the two are swapped. NO EFFECT at 0% complex.";
     });
 }
 
-/// Node 8: decorative props, every map kind (see step 8 notes in
+/// Node 9: decorative props, every map kind (see step 8 notes in
 /// docs/workflow.md).
 fn node_props(ui: &mut egui::Ui, app: &mut MapGenApp) {
     const TIP_QUANTITY: &str = "How many props to place — crates and barrels in a town, rocks \
@@ -893,7 +1004,7 @@ instead. If this and Roadside add up to more than 100% they are scaled down.";
 Props never stand ON a road. Whatever is left after Near houses and Roadside is scattered \
 over open ground at random angles.";
     const TIP_COLOR: &str = "Prop color on the map image, the preview and the legend.";
-    node(ui, "8 · Props", |ui| {
+    node(ui, "9 · Props", |ui| {
         ui.weak("input: free ground left over · output: props (every map kind)");
         let town = app.config.kind == MapKind::Town;
         egui::Grid::new("props_node_grid")
@@ -967,7 +1078,7 @@ over open ground at random angles.";
     });
 }
 
-/// Node 9: interactive object types placed in groups, every map kind (see
+/// Node 10: interactive object types placed in groups, every map kind (see
 /// step 9 notes in docs/workflow.md).
 fn node_interactive(ui: &mut egui::Ui, app: &mut MapGenApp) {
     const TIP_NAME: &str = "Type name — shown in the map legend and spec.json (e.g. Herb, \
@@ -990,7 +1101,7 @@ two are swapped.";
 to a wall, house or prop. Open ground: at least 3 m from every obstacle and road. If no spot \
 of that kind is left, the rest go anywhere (with a note).";
     const TIP_COLOR: &str = "Color of this type on the map image, the preview and the legend.";
-    node(ui, "9 · Interactive objects", |ui| {
+    node(ui, "10 · Interactive objects", |ui| {
         ui.weak("input: free ground after props · output: interactive objects in groups (every map kind)");
         let mut remove = None;
         for (i, it) in app.config.interactive.iter_mut().enumerate() {
@@ -1097,7 +1208,7 @@ of that kind is left, the rest go anywhere (with a note).";
     });
 }
 
-/// Node 10: hidden rooms, every map kind (see step 10 notes in
+/// Node 11: hidden rooms, every map kind (see step 10 notes in
 /// docs/workflow.md).
 fn node_hidden_rooms(ui: &mut egui::Ui, app: &mut MapGenApp) {
     const TIP_COUNT: &str = "How many hidden rooms to dig. A room that finds no spot with a \
@@ -1121,7 +1232,7 @@ only everywhere, 100% = everyone everywhere; in between each path rolls on its o
 (spec.json says which).";
     const TIP_COLOR_ROOM: &str = "Room floor color on the map image, the preview and the legend.";
     const TIP_COLOR_PATH: &str = "Access path color.";
-    node(ui, "10 · Hidden rooms", |ui| {
+    node(ui, "11 · Hidden rooms", |ui| {
         ui.weak("input: everything placed so far · output: walled rooms + one access path each (every map kind)");
         egui::Grid::new("hidden_rooms_node_grid")
             .num_columns(2)
@@ -1204,7 +1315,7 @@ only everywhere, 100% = everyone everywhere; in between each path rolls on its o
     });
 }
 
-/// Node 11: mob spawn points bought from a budget, every map kind (see
+/// Node 12: mob spawn points bought from a budget, every map kind (see
 /// step 11 notes in docs/workflow.md).
 fn node_mobs(ui: &mut egui::Ui, app: &mut MapGenApp) {
     const TIP_BUDGET: &str = "Money for all mobs on the level. The generator buys packs until \
@@ -1223,6 +1334,8 @@ shrinks to a single mob.";
 between min and max (fewer when the budget or the cap runs out).";
     const TIP_SPACING: &str = "Smallest distance between two spawn points, meters. Bigger \
 spreads mobs over the map but leaves room for fewer spawns (a note says when space ran out).";
+    const TIP_GATE_CLEAR: &str = "No spawn point closer than this to a gate, meters — gates \
+are where the player arrives.";
     const TIP_ROADS: &str = "Let spawn points stand on roads. Spawns are markers, not \
 obstacles — they never block a road.";
     const TIP_NAME: &str = "Mob type name — map legend and spec.json.";
@@ -1236,7 +1349,7 @@ budget allow. 0% = never placed.";
 biggest group's color).";
     const TIP_COMBINE: &str = "Which types may appear together at one spawn point. A type \
 always combines with itself.";
-    node(ui, "11 · Mobs", |ui| {
+    node(ui, "12 · Mobs", |ui| {
         ui.weak("input: walkable ground (roads, open hidden rooms) · output: mob spawn points (every map kind)");
         let mobs = &mut app.config.mobs;
         egui::Grid::new("mobs_node_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
@@ -1274,6 +1387,9 @@ always combines with itself.";
                 ui.add(egui::DragValue::new(&mut mobs.spacing_m).range(0.0..=50.0).speed(0.1).suffix(" m"))
             });
             param_row(ui, "Spawn on roads", TIP_ROADS, |ui| ui.checkbox(&mut mobs.on_roads, ""));
+            param_row(ui, "Gate clearance", TIP_GATE_CLEAR, |ui| {
+                ui.add(egui::DragValue::new(&mut mobs.gate_clearance_m).range(0.0..=50.0).speed(0.1).suffix(" m"))
+            });
         });
 
         let mut remove = None;
@@ -1550,4 +1666,20 @@ fn save_config(config: &LevelConfig, path: &str) -> ConfigStatus {
 fn load_config(path: &str) -> Result<LevelConfig, String> {
     let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     serde_json::from_str(&text).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gate_count_fills_the_widest_gap() {
+        let mut gates = Vec::new();
+        set_gate_count(&mut gates, 4);
+        let dirs: Vec<f32> = gates.iter().map(|g| g.direction_deg).collect();
+        assert_eq!(dirs, vec![90.0, 270.0, 180.0, 0.0]);
+        set_gate_count(&mut gates, 1);
+        assert_eq!(gates.len(), 1);
+        assert_eq!(gates[0].direction_deg, 90.0);
+    }
 }

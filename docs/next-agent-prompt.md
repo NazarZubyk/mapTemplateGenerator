@@ -102,10 +102,12 @@ region palette colors).
 
 ## Current state
 
-Steps 0–6 and 8–11 are done and live in their nodes (shape, outer walls,
-regions, roads with width hierarchy, region walls, houses — town only, with
-compound L/T/U shapes — props, interactive object types in groups, hidden
-rooms with one access path each, and budgeted mob packs). The bench is
-empty. Next: step 12 (gates) — see the step list in docs/workflow.md. Step 7 (walkable budget) is still open. The user prefers new steps built straight
+Steps 0–6 and 8–12 are done and live in their nodes (shape, outer walls,
+regions, roads with width hierarchy, region walls, gates — node 7, run right
+after the region walls — houses — town only, with compound L/T/U shapes —
+props, interactive object types in groups, hidden rooms with one access
+path each, and budgeted mob packs). The bench is empty. Next: step 13
+(validation & export polish) and step 7 (walkable budget) — see the step
+list in docs/workflow.md. Step 7 (walkable budget) is still open. The user prefers new steps built straight
 into their left-panel node, not in the bench, and wants the map to show only
 finished things.

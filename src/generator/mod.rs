@@ -8,6 +8,7 @@ use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 use crate::level::{CellMask, GeneratedLevel, LevelShape};
 use crate::model::LevelConfig;
 
+pub mod gates;
 pub mod grid;
 pub mod hidden_rooms;
 pub mod houses;
@@ -100,7 +101,7 @@ pub fn generate_with_progress(
 
     // Step 4: the road network — crossroad nodes (≥ 1 per region) and the
     // winding links between them; region crossings become passages.
-    let roads = regions.as_ref().and_then(|split| {
+    let mut roads = regions.as_ref().and_then(|split| {
         let built = roads::build_with_progress(config, &mut rng, split, &stage(0.85, 0.9))?;
         notes.extend(built.notes);
         Some(built.network)
@@ -112,6 +113,21 @@ pub fn generate_with_progress(
     let region_walls = regions.as_mut().and_then(|split| {
         region_walls::build_with_progress(config, &mut rng, split, roads.as_ref(), &stage(0.9, 0.93))
     });
+
+    // Step 12 (runs here, before the objects): gates on the outer wall —
+    // openings plus a road into the network, so houses, props and the rest
+    // keep off the gate roads and mobs keep away from the gates. Markers
+    // are appended last so they draw on top.
+    let gates = regions.as_mut().map(|split| {
+        gates::build(config, split, walls.as_mut(), region_walls.as_ref().map(|w| &w.mask), roads.as_mut())
+    });
+    let (gates, gate_objects) = match gates {
+        Some(built) => {
+            notes.extend(built.notes);
+            (Some(built.layout), built.objects)
+        }
+        None => (None, Vec::new()),
+    };
 
     // Step 6: houses (town maps) — street fronts first, then the yards.
     let mut objects = Vec::new();
@@ -188,12 +204,15 @@ pub fn generate_with_progress(
         .into_iter()
         .flatten()
         .collect();
+        let gate_points: Vec<[f32; 2]> =
+            gates.as_ref().map(|g| g.gates.iter().map(|g| g.point_m).collect()).unwrap_or_default();
         let ground = hidden_rooms::Ground {
             regions: &split.map,
             outer_wall: walls.as_ref().map(|w| &w.mask),
             region_walls: region_walls.as_ref().map(|w| &w.mask),
             roads: roads.as_ref(),
             objects: &object_masks,
+            gates: &gate_points,
         };
         hidden_rooms::build_with_progress(config, &mut rng, &ground, &stage(0.985, 0.99))
     });
@@ -233,6 +252,7 @@ pub fn generate_with_progress(
             roads: roads.as_ref(),
             objects: &object_masks,
             hidden_rooms: hidden_rooms.as_ref(),
+            gates: gates.as_ref().map(|g| g.gates.as_slice()).unwrap_or(&[]),
         };
         mobs::build_with_progress(config, &mut rng, &ground, &stage(0.99, 0.995))
     });
@@ -247,6 +267,15 @@ pub fn generate_with_progress(
         objects.extend(built.objects);
         built.layout
     });
+
+    let mut gates = gates;
+    if let Some(layout) = gates.as_mut() {
+        let offset = objects.len();
+        for g in &mut layout.gates {
+            g.object += offset;
+        }
+        objects.extend(gate_objects);
+    }
 
     let total = region_mask.width * region_mask.height;
     let mut stats = built.shape.stats;
@@ -270,6 +299,7 @@ pub fn generate_with_progress(
         interactive,
         hidden_rooms,
         mobs,
+        gates,
         noise_preview: Some(built.noise_preview),
         notes,
     }

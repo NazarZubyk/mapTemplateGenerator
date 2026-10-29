@@ -78,6 +78,9 @@ pub struct ExportSpec {
     /// Mob spawn points (center, radius, pack members, cost, on road, hidden
     /// room) and the budget spent.
     pub mobs: Option<crate::level::MobLayout>,
+    /// Gates: direction asked / used (0° = east, 90° = north), point,
+    /// region, wall opening width, gate road link index.
+    pub gates: Option<Vec<crate::level::GateInfo>>,
     /// Every placed object with position and size in meters.
     pub objects: Vec<crate::level::PlacedObject>,
 }
@@ -284,6 +287,7 @@ impl ExportSpec {
             interactive_groups: level.interactive.as_ref().map(|l| l.groups.clone()),
             hidden_rooms: level.hidden_rooms.as_ref().map(|l| l.rooms.clone()),
             mobs: level.mobs.clone(),
+            gates: level.gates.as_ref().map(|g| g.gates.clone()),
             objects: level.objects.clone(),
         }
     }
@@ -336,6 +340,7 @@ mod tests {
             interactive: None,
             hidden_rooms: None,
             mobs: None,
+            gates: None,
             regions: None,
             noise_preview: None,
             notes: Vec::new(),

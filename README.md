@@ -10,8 +10,8 @@ See [docs/goals.md](docs/goals.md) for the main goals and feature requirements, 
 The first full generator grew too complex in one shot, so it was moved to
 [`reference/`](reference/README.md) (dead code, kept for reuse) and the
 generator is being rebuilt **one step at a time**. Each finished step is a
-node in the left panel. Steps 1–6 and 8–11 are done; next up are the walkable
-budget, gates and validation.
+node in the left panel. Steps 1–6 and 8–12 are done; next up are the walkable
+budget and validation.
 
 Generation is **deterministic**: the same config + seed always gives the same map.
 
@@ -39,21 +39,26 @@ body, every control has a tooltip, and changes apply on **⚙ Generate**.
    between a min and max width.
 6. **Region walls**: walls along the borders between regions, opened where
    roads cross. Region colors are refit to the walls.
-7. **Houses** (town only): street-front houses facing the roads, then yard
+7. **Gates**: entry/exit points, each with a direction from the map
+   center (0° east, 90° north). A gate opens the outer wall where that
+   ray crosses it, and an optional road links it to the network. This
+   node runs before the objects, so houses and props keep off gate roads,
+   and mobs and hidden rooms keep away from gates.
+8. **Houses** (town only): street-front houses facing the roads, then yard
    houses. They are rotated and can be compound L/T/U shapes. Options:
    density, size, spacing, setback, wings and color.
-8. **Props**: quantity with a density cap and size range. Props are placed
+9. **Props**: quantity with a density cap and size range. Props are placed
    against houses, at road edges, or scattered.
-9. **Interactive objects**: a list of types (herbs, chests, ...), each
+10. **Interactive objects**: a list of types (herbs, chests, ...), each
    with its own size, quantity, group size, group spread, spot (anywhere,
    along walls, or open ground) and color. Objects are placed in groups,
    and spec.json lists each group's members.
-10. **Hidden rooms**: small walled rooms, each reached by ONE narrow path
+11. **Hidden rooms**: small walled rooms, each reached by ONE narrow path
     (always wide enough for the player; a per-room roll decides whether
     mobs can use it). Rooms sit outside the outer wall, with the path
     tunnelling through it, or inside on free ground. Options: count, size,
     wall thickness, path width, max path length, place and colors.
-11. **Mobs**: any number of mob types, each with a price, size, color
+12. **Mobs**: any number of mob types, each with a price, size, color
     and balance share (sliders auto-balance). A combination matrix sets
     which types may share a spawn point. The generator buys packs from the
     budget until it can't afford any more, capped by a max entity count.
@@ -61,7 +66,7 @@ body, every control has a tooltip, and changes apply on **⚙ Generate**.
     buys past the budget and relaxes spacing if needed.
     Pack size and spacing between spawns are configurable. Spawns may
     stand on roads (toggle), and inside hidden rooms only if that room's
-    path is mob-passable.
+    path is mob-passable. A gate clearance keeps spawns away from gates.
 
 Plus app features: **Export** (map.png + layer.png + spec.json) and
 **Config file** (save/load JSON; older configs keep loading).
@@ -101,11 +106,12 @@ src/
 │   ├── regions.rs       # node 4: regions
 │   ├── roads.rs         # node 5: roads
 │   ├── region_walls.rs  # node 6: region walls
-│   ├── houses.rs        # node 7: houses
-│   ├── props.rs         # node 8: props
-│   ├── interactive.rs   # node 9: interactive objects
-│   ├── hidden_rooms.rs  # node 10: hidden rooms + access paths
-│   ├── mobs.rs          # node 11: budgeted mob spawns
+│   ├── gates.rs         # node 7: gates, wall openings, gate roads
+│   ├── houses.rs        # node 8: houses
+│   ├── props.rs         # node 9: props
+│   ├── interactive.rs   # node 10: interactive objects
+│   ├── hidden_rooms.rs  # node 11: hidden rooms + access paths
+│   ├── mobs.rs          # node 12: budgeted mob spawns
 │   └── placement.rs     # shared object footprint / road-angle helpers
 ├── render.rs            # map.png / layer.png rasterizers
 ├── export.rs            # export bundle writer + spec.json

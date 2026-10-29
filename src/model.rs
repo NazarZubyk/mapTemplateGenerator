@@ -66,6 +66,9 @@ pub struct LevelConfig {
     pub hidden_rooms: HiddenRoomSettings,
     /// Mob spawn points bought from a budget (step 11, every map kind).
     pub mobs: MobSettings,
+    /// Entry/exit gates on the outer wall (step 12, every map kind; runs
+    /// right after the region walls so later nodes avoid the gate roads).
+    pub gates: GateSettings,
     pub cell_size_m: f32,
     pub seed: u64,
 }
@@ -85,6 +88,7 @@ impl Default for LevelConfig {
             interactive: vec![InteractiveType::default()],
             hidden_rooms: HiddenRoomSettings::default(),
             mobs: MobSettings::default(),
+            gates: GateSettings::default(),
             cell_size_m: 0.5,
             seed: 0,
         }
@@ -181,6 +185,48 @@ impl Default for PropSettings {
     }
 }
 
+/// One gate: where on the map it is generated.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GateSpec {
+    /// Direction from the map center, degrees: 0 = east (right), 90 = north
+    /// (up), 180 = west, 270 = south — counterclockwise on screen.
+    pub direction_deg: f32,
+}
+
+impl Default for GateSpec {
+    fn default() -> Self {
+        Self { direction_deg: 90.0 }
+    }
+}
+
+/// Settings of the gates node (docs/workflow.md, step 12).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GateSettings {
+    pub gates: Vec<GateSpec>,
+    /// Width of the opening cut into the outer wall at each gate, meters.
+    pub opening_m: f32,
+    /// Lay a road from each gate to the nearest road of the network.
+    pub road: bool,
+    /// Width of that gate road, meters.
+    pub road_width_m: f32,
+    /// Gate marker color on map.png, the preview and the legend.
+    pub color: [u8; 3],
+}
+
+impl Default for GateSettings {
+    fn default() -> Self {
+        Self {
+            gates: vec![GateSpec { direction_deg: 90.0 }, GateSpec { direction_deg: 270.0 }],
+            opening_m: 3.0,
+            road: true,
+            road_width_m: 2.5,
+            color: [50, 110, 230],
+        }
+    }
+}
+
 /// One mob type of the mobs node (docs/workflow.md, step 11).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -232,6 +278,9 @@ pub struct MobSettings {
     pub spacing_m: f32,
     /// Whether spawn points may stand on roads.
     pub on_roads: bool,
+    /// No spawn closer than this to a gate, meters (gates are where the
+    /// player arrives).
+    pub gate_clearance_m: f32,
 }
 
 impl Default for MobSettings {
@@ -251,6 +300,7 @@ impl Default for MobSettings {
             pack_max: 4,
             spacing_m: 5.0,
             on_roads: true,
+            gate_clearance_m: 8.0,
         }
     }
 }

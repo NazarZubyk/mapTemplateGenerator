@@ -217,7 +217,7 @@ fn fit_regions_to_walls(map: &mut RegionMap, wall: &CellMask) -> u32 {
 }
 
 /// Recount every region's cells and share after the ids changed.
-fn recount_stats(split: &mut RegionSplit) {
+pub(crate) fn recount_stats(split: &mut RegionSplit) {
     let total = split.map.ids.iter().filter(|&&id| id != 0).count().max(1) as f32;
     for stat in &mut split.stats {
         stat.cells = split.map.ids.iter().filter(|&&id| id == stat.id).count() as u32;

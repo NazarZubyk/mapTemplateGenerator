@@ -59,23 +59,28 @@ Right now:
 6. **Region walls** — input: region id map + roads · output: walls along
    the borders between regions, opened where roads cross. Every map kind.
    Finished (step 5); built straight into the node.
-7. **Houses** — input: town minus walls and roads · output: rotated house
+7. **Gates** — input: walled regions + roads · output: gate points on the
+   outer wall (`Category::Gate`, circles), wall openings and a gate road
+   into the network. Every map kind. Finished (step 12) — it runs here,
+   before the objects, so houses/props/... keep off the gate roads, hidden
+   rooms keep 6 m away and mobs keep `gate_clearance_m` away.
+8. **Houses** — input: town minus walls and roads · output: rotated house
    objects (`Category::Structure`) + footprint mask. TOWN ONLY (the node is
    hidden for other kinds; the generator skips it). Finished (step 6).
-8. **Props** — input: free ground left over · output: prop objects
+9. **Props** — input: free ground left over · output: prop objects
    (`Category::Prop`) + footprint mask. Every map kind. Finished (step 8).
-9. **Interactive objects** — input: free ground after props · output: a
+10. **Interactive objects** — input: free ground after props · output: a
    list of object types (herbs, chests...) placed in groups
    (`Category::Interactive`) + groups + footprint mask. Every map kind.
    Finished (step 9).
-10. **Hidden rooms** — input: everything placed so far · output: walled
+11. **Hidden rooms** — input: everything placed so far · output: walled
    rooms (`Category::HiddenRoom` floors, own wall mask) each with ONE narrow
    access path (`Category::HiddenRoomPath` pieces), outside the outer wall
    or inside. Every map kind. Finished (step 10).
-11. **Mobs** — input: walkable ground (roads too if allowed, floors of
+12. **Mobs** — input: walkable ground (roads too if allowed, floors of
    hidden rooms with a mob-passable path) · output: mob spawn markers
-   (`Category::MobSpawn`, circles) with packs bought from the budget. Every
-   map kind. Finished (step 11).
+   (`Category::MobSpawn`, circles, one per mob) with packs bought from the
+   budget, away from the gates. Every map kind. Finished (step 11).
 
 - **Action bar** (`src/ui/app.rs`): seed + Generate + Re-roll. Generation
   runs on a background thread (`MapGenApp::job`); the bar shows a progress
@@ -83,7 +88,8 @@ Right now:
   disabled until it finishes. Phases report through
   `generator::generate_with_progress` (`Progress` callback, `Stage` maps a
   phase's 0..1 into its slice of the whole: shape 0–55%, wall 55–65%,
-  regions 65–85%, roads 85–90%, region walls 90–93%, houses 93–96%,
+  regions 65–85%, roads 85–90%, region walls 90–93% (gates run right
+  after, instantly, with no progress slice), houses 93–96%,
   props 96–98%, interactive 98–98.5%,
   hidden rooms 98.5–99%,
   mobs 99–99.5%). New phases must report too.
@@ -123,6 +129,7 @@ src/
 │   ├── interactive.rs # step 9: interactive object types in groups
 │   ├── hidden_rooms.rs # step 10: walled rooms + one access path each
 │   ├── mobs.rs        # step 11: budgeted mob packs on spawn points
+│   ├── gates.rs       # step 12: gates on the outer wall + gate roads
 │   ├── grid.rs        # CellMask algorithms: components, speckle removal,
 │   │                  # bridge closest pair (multi-source BFS), hole fill
 │   ├── shape.rs       # step 1: noise → coverage cut → despeckle → bridges
@@ -234,7 +241,10 @@ Rules that carried over from the old build (keep them in every section):
       minimum (count or density — beats budget and spacing), pack
       size range, spawn spacing, spawn on roads. Node 11. (done — see "Step
       11 notes")
-- [ ] **Step 12 — gates**: gate markers on wall openings (reference `gates.rs`).
+- [x] **Step 12 — gates** (every kind): list of gates with a direction
+      each (0° east, 90° north), wall opening width, gate road toggle +
+      width, color. Node 7 — runs right after the region walls. (done — see
+      "Step 12 notes")
 - [ ] **Step 13 — validation & export polish**: feasibility pre-check,
       duplicate colors, full spec.json details (reference `validate.rs`,
       `export.rs`).
@@ -737,6 +747,45 @@ equal prices, entity cap, forbidden combinations never mixed (and mixed
 when allowed), spacing + walkable spot, roads only when allowed, hidden
 rooms only through passable paths, empty config, marker indices, matrix
 add/remove, non-town maps, determinism.
+
+## Step 12 notes — gates
+
+`generator/gates.rs`, every map kind, node 7 (between region walls and
+houses — the later nodes were renumbered 8–12). No RNG. Settings:
+`config.gates: GateSettings` (default gates at 90° and 270°, 3 m opening,
+gate road on at 2.5 m, blue).
+
+1. **Where** — `ray_cells` walks a ray from the map center (0° = east, 90°
+   = north, counterclockwise on screen; screen y points down) to the map
+   edge. `crossing` takes the OUTERMOST run of outer-wall cells whose inner
+   neighbour is town ground. No such run → the ray is turned ±1°, ±2°, …
+   ±45°; a map with no outer wall uses the outermost town cell.
+2. **Opening** — outer-wall cells within `opening_m / 2` of the crossing
+   segment (inner cell → first cell past the wall), and connected to it
+   (4-flood, so an unrelated stretch of wall nearby stays), are cleared and
+   get the region id behind them. The gate point is the middle of the
+   crossing. `recount_stats` refreshes the region stats.
+3. **Road** — 8-neighbour BFS, no corner cutting, from the gate through
+   town ground (not region walls) to the nearest road cell; stamped with
+   the roads node's `stamp_path` at `road_width_m`. New cells the round
+   brush put beyond a thin wall (not joined to the road) are dropped, so
+   the network stays one piece. Added as a `RoadLink` (a = a new node at
+   the gate, b = the node nearest the join), so houses front it and props
+   line it.
+
+UI: a **Count** field resizes the list (`set_gate_count` in left_panel.rs:
+new gates go into the middle of the widest gap between the existing
+directions, the first pointing north; lowering it drops the last ones),
+then one direction slider per gate with 🗑, plus ➕ Add gate and ⟳ Spread
+evenly. `GateLayout { gates, requested }`; each `GateInfo` has id, asked / actual
+angle, point, region, opening width, road link index, marker object index
+(markers are appended after every other object so they draw on top). Gate
+markers are 1 m circles. Mobs skip cells within `mobs.gate_clearance_m`
+(default 8 m); hidden rooms keep their block 6 m away (`GATE_CLEARANCE_M`).
+spec.json gets `gates`. Tests: angle system, default gates open the wall
+on town ground (north top half, south bottom half), gate roads join a
+connected network, later objects keep off gate roads, mobs and hidden rooms
+keep clear, 8 directions all find the wall, island maps, determinism.
 
 ## Done-ness checklist for every step
 
