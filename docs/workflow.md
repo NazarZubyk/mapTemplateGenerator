@@ -430,6 +430,16 @@ walls between regions get gaps where these roads pass. Implemented in
 5. **Passages** — every centerline step from region A into region B; the
    same pair within road width + 2 cells counts once. These are the
    positions of the step-5 wall gaps.
+6. **Width hierarchy** (added later) — traffic per link: Dijkstra from
+   every node over the straight-line network, each node pair's route counts
+   one trip on every link it uses (ties → lower index). The busiest
+   `main_roads_pct` (default 30%) of links get `width_m` ("Max width",
+   default 2.5 m); the rest `min_width_m + (max − min) · traffic /
+   traffic_of_quietest_main`, down to `min_width_m` ("Min width", default
+   1 m) for dead-end alleys. Widths are computed BEFORE routing so each link
+   is stamped at its own width (`RoadLink::width_cells`); a junction is as
+   wide as its widest road. min = max → uniform roads. Street houses use
+   their road's own width for the setback; spec.json roads carry `width_m`.
 
 Output `RoadNetwork { mask, nodes, links (centerline cells), passages,
 width_cells }`. The user wants ROADS ONLY on the picture: map.png, the
@@ -505,7 +515,23 @@ no region cut off, ≤ 0.8 s total generation in release.
    direction (BFS from centerlines carrying the angle) ± 6°, else random.
    Shrink-to-fit (1 → 0.5 → 0 toward min) and a 90°-turned try per spot;
    80 consecutive failed houses = yards full.
-4. **Stop** at `density_pct` of the buildable ground. Real ceiling ≈ 25–35%
+4. **Complex houses** (added later) — `complex_pct` (default 35%) of the
+   houses get 1..`max_parts − 1` wings (`max_parts` 2–3, default 3). A wing
+   is a `WingSpec` in fractions of the main block (side, length along it,
+   reach out — both in `wing_min_pct..wing_max_pct`, default 40–75% — and
+   position: flush with an end 60% of the time, else anywhere), turned into
+   an `ObjectPart` for the actual (maybe shrunk) size; it overlaps the block
+   by a third of its reach (≥ 1 cell). The second wing goes to another side,
+   or 40% of the time to the first wing's side at the opposite end (U).
+   Street houses never get a wing on the road side (local −side·v).
+   Fallback order per spot: compound → plain block → shrink (→ turned 90°
+   for yards). A compound shape that would close its own courtyard (U wings
+   almost touching) is rejected (`courtyards_open`), keeping the walkable
+   ground one piece. `PlacedObject::parts` (local u/v offsets + size,
+   shared rotation; omitted from JSON when empty) — one object, one layer
+   id; render tests pixels against all rects; the preview strokes all
+   rects, then fills them (one outline around the whole shape).
+5. **Stop** at `density_pct` of the buildable ground. Real ceiling ≈ 25–35%
    (roads, walls, spacing); a note reports the reached % when it is < 80% of
    the ask. Default 25%.
 
@@ -516,7 +542,8 @@ convex polygons; legend and spec.json pick them up from `objects`.
 `HouseLayout` keeps the footprint mask + street/yard counts + coverage.
 Tests: no overlap with roads/walls/each other, walkable ground stays one
 piece, density controls coverage with streets first, sizes in range, only
-towns, determinism.
+towns, determinism, complex houses (share, ≤ 3 rects, wings overlap the
+block, 0% → none, max 2 → one wing), flat street fronts, courtyard check.
 
 Also fixed in step 5 while testing this: two region walls could close off a
 1-cell pocket no road reaches — such pockets now become wall, so the open

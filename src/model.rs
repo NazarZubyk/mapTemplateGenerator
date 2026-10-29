@@ -98,6 +98,15 @@ pub struct HouseSettings {
     /// Chance, %, that a yard house turns to face the nearest road; the rest
     /// get a random angle (organic old-town look).
     pub face_road_pct: f32,
+    /// Share of houses, %, built from more than one rectangle (a main block
+    /// plus overlapping wings → L, T, U, Z and cross shapes).
+    pub complex_pct: f32,
+    /// Most rectangles in one complex house (2 or 3).
+    pub max_parts: u32,
+    /// Wing size as a share of the main block's side, % (min..max): how far
+    /// along the main block a wing runs and how far it sticks out.
+    pub wing_min_pct: f32,
+    pub wing_max_pct: f32,
     /// House color on map.png, the preview and the legend.
     pub color: [u8; 3],
 }
@@ -111,6 +120,10 @@ impl Default for HouseSettings {
             spacing_m: 1.0,
             setback_m: 0.5,
             face_road_pct: 80.0,
+            complex_pct: 35.0,
+            max_parts: 3,
+            wing_min_pct: 40.0,
+            wing_max_pct: 75.0,
             color: [158, 96, 64],
         }
     }
@@ -166,8 +179,15 @@ pub struct RoadsSettings {
     /// Crossroad nodes per 1000 m² of town area (Density mode). Also never
     /// fewer than one per region.
     pub nodes_per_1000m2: f32,
-    /// Road width in meters.
+    /// Width of the main roads in meters — the widest a road gets.
     pub width_m: f32,
+    /// Width of the quietest roads (dead-end alleys) in meters. Roads in
+    /// between get wider with the traffic they carry. Equal to `width_m` =
+    /// every road the same width.
+    pub min_width_m: f32,
+    /// Share of the roads, %, that count as main roads (the busiest ones) and
+    /// get the full `width_m`.
+    pub main_roads_pct: f32,
     /// How much links bend away from the straight line, %. Kept gentle: 100%
     /// is a lazy meander, not a maze.
     pub wiggle_pct: f32,
@@ -183,7 +203,9 @@ impl Default for RoadsSettings {
             amount: NodeAmount::Count,
             node_count: 8,
             nodes_per_1000m2: 3.0,
-            width_m: 2.0,
+            width_m: 2.5,
+            min_width_m: 1.0,
+            main_roads_pct: 30.0,
             wiggle_pct: 35.0,
             extra_links_pct: 35.0,
         }

@@ -56,6 +56,21 @@ pub struct PlacedObject {
     /// Clockwise rotation in degrees around the rect center (screen +y down).
     #[serde(default)]
     pub angle_deg: f32,
+    /// Extra rectangles of a compound object (a house's wings), overlapping
+    /// the main rect and sharing its rotation. Empty for a simple rect.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<ObjectPart>,
+}
+
+/// One extra rectangle of a compound object, in the object's own frame: the
+/// center offset (`u_m` along the width / `angle_deg` direction, `v_m` along
+/// the depth) from the object's center, and its size.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ObjectPart {
+    pub u_m: f32,
+    pub v_m: f32,
+    pub w_m: f32,
+    pub h_m: f32,
 }
 
 impl PlacedObject {
@@ -63,21 +78,36 @@ impl PlacedObject {
         (self.x_m + self.w_m / 2.0, self.y_m + self.h_m / 2.0)
     }
 
-    /// Is the point (meters) inside the rotated rect?
+    /// Is the point (meters) inside the rotated rect or any of its parts?
     pub fn contains(&self, x: f32, y: f32) -> bool {
         let (cx, cy) = self.center();
         let (s, c) = self.angle_deg.to_radians().sin_cos();
         let (dx, dy) = (x - cx, y - cy);
         let (u, v) = (dx * c + dy * s, dy * c - dx * s);
-        u.abs() <= self.w_m / 2.0 && v.abs() <= self.h_m / 2.0
+        let inside = |pu: f32, pv: f32, w: f32, h: f32| (u - pu).abs() <= w / 2.0 && (v - pv).abs() <= h / 2.0;
+        inside(0.0, 0.0, self.w_m, self.h_m) || self.parts.iter().any(|p| inside(p.u_m, p.v_m, p.w_m, p.h_m))
     }
 
-    /// The four corners of the rotated rect, in meters, clockwise on screen.
+    /// The four corners of the main rotated rect, in meters, clockwise on
+    /// screen.
     pub fn corners(&self) -> [(f32, f32); 4] {
+        self.rect_corners(0.0, 0.0, self.w_m, self.h_m)
+    }
+
+    /// Corners of every rect: the main one first, then each part.
+    pub fn all_corners(&self) -> Vec<[(f32, f32); 4]> {
+        std::iter::once(self.corners())
+            .chain(self.parts.iter().map(|p| self.rect_corners(p.u_m, p.v_m, p.w_m, p.h_m)))
+            .collect()
+    }
+
+    fn rect_corners(&self, pu: f32, pv: f32, w: f32, h: f32) -> [(f32, f32); 4] {
         let (cx, cy) = self.center();
         let (s, c) = self.angle_deg.to_radians().sin_cos();
-        let (hw, hh) = (self.w_m / 2.0, self.h_m / 2.0);
-        [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)].map(|(u, v)| (cx + u * c - v * s, cy + u * s + v * c))
+        let (hw, hh) = (w / 2.0, h / 2.0);
+        [(-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh)]
+            .map(|(u, v)| (pu + u, pv + v))
+            .map(|(u, v)| (cx + u * c - v * s, cy + u * s + v * c))
     }
 }
 
@@ -237,6 +267,9 @@ pub struct RoadLink {
     pub path: Vec<usize>,
     /// Added beyond the minimum network (a loop / alternative route).
     pub extra: bool,
+    /// This road's width in cells (main roads widest, alleys narrowest).
+    #[serde(default)]
+    pub width_cells: u32,
 }
 
 /// Where a road crosses from one region into another: the future gap in the
@@ -260,7 +293,7 @@ pub struct RoadNetwork {
     pub nodes: Vec<RoadNode>,
     pub links: Vec<RoadLink>,
     pub passages: Vec<Passage>,
-    /// Road width actually used, in cells (≥ 1).
+    /// Widest road width actually used, in cells (≥ 1).
     pub width_cells: u32,
 }
 
@@ -273,6 +306,9 @@ pub struct HouseLayout {
     /// Houses placed along the roads (facing them) / in the yards behind.
     pub street_houses: u32,
     pub yard_houses: u32,
+    /// Houses built from 2–3 overlapping rectangles.
+    #[serde(default)]
+    pub complex_houses: u32,
     /// Share of the buildable ground covered by houses: reached / asked, %.
     pub coverage_pct: f32,
     pub target_pct: f32,

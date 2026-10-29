@@ -110,11 +110,13 @@ pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
     }
 
     // Draw in stored order: later objects paint over earlier ones. Objects
-    // may be rotated: every pixel in the bounding box of the corners is
-    // tested against the rotated rect (pixel centers).
+    // may be rotated and compound: every pixel in the bounding box of all
+    // corners is tested against the object's rects (pixel centers). A
+    // compound house is ONE instance id on layer.png.
     for (idx, o) in level.objects.iter().enumerate() {
         let instance = (idx + 1) as u16;
-        let corners = o.corners();
+        // Every rect of the object (main + wings of a compound house).
+        let corners: Vec<(f32, f32)> = o.all_corners().into_iter().flatten().collect();
         let fold = |f: fn(f32, f32) -> f32, init: f32, pick: fn(&(f32, f32)) -> f32| {
             corners.iter().map(pick).fold(init, f)
         };
@@ -192,6 +194,7 @@ mod tests {
                 w_m: 3.0,
                 h_m: 2.0,
                 angle_deg: 0.0,
+                parts: Vec::new(),
             }],
             shape: None,
             walls: None,
@@ -261,6 +264,7 @@ mod tests {
                 w_m: 64.0,
                 h_m: 64.0,
                 angle_deg: 0.0,
+                parts: Vec::new(),
             },
         );
         let r = rasterize(&level, 4.0);

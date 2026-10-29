@@ -19,7 +19,12 @@
 //!    (`wiggle_pct`, kept gentle), raised near the outer wall (roads do not
 //!    hug it) and lowered on existing road (links merge instead of running
 //!    side by side).
-//! 5. **Passages** — wherever a road crosses from one region into another,
+//! 5. **Widths** — a road hierarchy by traffic: for every pair of nodes the
+//!    shortest route through the network is found and every link on it
+//!    counts one trip. The busiest `main_roads_pct` of the links are main
+//!    roads at the full `width_m`; the rest get narrower with their traffic,
+//!    down to `min_width_m` for quiet dead-end alleys.
+//! 6. **Passages** — wherever a road crosses from one region into another,
 //!    a passage is recorded: the gap the region walls (next step) leave open.
 
 use std::cmp::Reverse;
@@ -100,7 +105,8 @@ pub(crate) fn build_with_progress(
 
     // 2. Node placement.
     stage.report("Placing crossroads", 0.0);
-    let width_cells = ((settings.width_m / map.cell_size_m).round() as u32).max(1);
+    let to_cells = |m: f32| ((m / map.cell_size_m).round() as u32).max(1);
+    let width_cells = to_cells(settings.width_m.max(settings.min_width_m));
     let radius = width_cells as f32 / 2.0;
     let region_depth = region_depth(map);
     let mut nodes: Vec<RoadNode> = Vec::with_capacity(n_nodes);
@@ -133,6 +139,18 @@ pub(crate) fn build_with_progress(
     // 3. Links: minimum spanning tree + optional extras.
     let chosen = choose_links(rng, &nodes, settings.extra_links_pct);
 
+    // 5. (before routing, so each road is stamped at its own width) Widths
+    //    from traffic over the straight-line network.
+    let link_widths = {
+        let traffic = link_traffic(&nodes, &chosen);
+        let lo = settings.min_width_m.min(settings.width_m);
+        let hi = settings.width_m.max(settings.min_width_m);
+        widths_from_traffic(&traffic, settings.main_roads_pct, lo, hi)
+            .into_iter()
+            .map(to_cells)
+            .collect::<Vec<u32>>()
+    };
+
     // 4. Routing, MST links first (extras then reuse their road).
     let wiggle = settings.wiggle_pct.clamp(0.0, 100.0) / 100.0 * WIGGLE_CONTRAST;
     let noise = NoiseField::new(rng.random());
@@ -150,26 +168,30 @@ pub(crate) fn build_with_progress(
     let mut road = CellMask::new(w, h, map.cell_size_m);
     let mut links: Vec<RoadLink> = Vec::with_capacity(chosen.len());
     let mut notes = Vec::new();
+    let mut node_width = vec![1u32; nodes.len()];
     for (k, &(a, b, extra)) in chosen.iter().enumerate() {
         stage.report("Routing roads", 0.1 + 0.85 * k as f32 / chosen.len().max(1) as f32);
         let from = nodes[a].y * w + nodes[a].x;
         let to = nodes[b].y * w + nodes[b].x;
         match router.route(from, to, &road.cells) {
             Some(path) => {
-                stamp_path(&mut road, &town, &path, radius);
-                links.push(RoadLink { a, b, path, extra });
+                let lw = link_widths[k];
+                stamp_path(&mut road, &town, &path, lw as f32 / 2.0);
+                node_width[a] = node_width[a].max(lw);
+                node_width[b] = node_width[b].max(lw);
+                links.push(RoadLink { a, b, path, extra, width_cells: lw });
             }
             None => notes.push(format!(
                 "Road between crossroads {a} and {b} skipped: no way through the town"
             )),
         }
     }
-    // Crossroads themselves are always road.
-    for n in &nodes {
-        stamp_path(&mut road, &town, &[n.y * w + n.x], radius);
+    // Crossroads themselves are always road, as wide as their widest road.
+    for (n, &nw) in nodes.iter().zip(&node_width) {
+        stamp_path(&mut road, &town, &[n.y * w + n.x], nw as f32 / 2.0);
     }
 
-    // 5. Passages between regions.
+    // 6. Passages between regions.
     stage.report("Finding passages", 0.95);
     let passages = find_passages(map, &links, width_cells);
 
@@ -343,6 +365,74 @@ fn choose_links(rng: &mut ChaCha8Rng, nodes: &[RoadNode], extra_pct: f32) -> Vec
         }
     }
     chosen
+}
+
+/// Trips per link: for every node pair, the shortest route over the links
+/// (straight-line lengths) counts one trip on each link it uses. Dijkstra
+/// from every node; ties go to the lower node index — deterministic.
+fn link_traffic(nodes: &[RoadNode], links: &[(usize, usize, bool)]) -> Vec<u32> {
+    let n = nodes.len();
+    let length = |a: usize, b: usize| (dist2((nodes[a].x, nodes[a].y), (nodes[b].x, nodes[b].y)) as f64).sqrt();
+    let mut adjacent: Vec<Vec<(usize, usize)>> = vec![Vec::new(); n]; // (neighbor, link)
+    for (k, &(a, b, _)) in links.iter().enumerate() {
+        adjacent[a].push((b, k));
+        adjacent[b].push((a, k));
+    }
+    let mut traffic = vec![0u32; links.len()];
+    for source in 0..n {
+        let mut dist = vec![f64::INFINITY; n];
+        let mut via = vec![usize::MAX; n]; // link used to reach the node
+        let mut done = vec![false; n];
+        dist[source] = 0.0;
+        for _ in 0..n {
+            let Some(u) = (0..n).filter(|&i| !done[i] && dist[i].is_finite()).min_by(|&i, &j| {
+                dist[i].total_cmp(&dist[j]).then(i.cmp(&j))
+            }) else {
+                break;
+            };
+            done[u] = true;
+            for &(v, k) in &adjacent[u] {
+                let d = dist[u] + length(u, v);
+                if d < dist[v] - 1e-9 {
+                    dist[v] = d;
+                    via[v] = k;
+                }
+            }
+        }
+        // Each pair once: only targets after the source.
+        for target in source + 1..n {
+            let mut v = target;
+            while v != source && via[v] != usize::MAX {
+                let k = via[v];
+                traffic[k] += 1;
+                let (a, b, _) = links[k];
+                v = if a == v { b } else { a };
+            }
+        }
+    }
+    traffic
+}
+
+/// Road widths (meters) from traffic: the busiest `main_pct` of the links
+/// get `hi`; the others scale with their traffic relative to the quietest
+/// main road, down to `lo`.
+fn widths_from_traffic(traffic: &[u32], main_pct: f32, lo: f32, hi: f32) -> Vec<f32> {
+    if traffic.is_empty() {
+        return Vec::new();
+    }
+    let mut order: Vec<usize> = (0..traffic.len()).collect();
+    order.sort_by_key(|&k| (std::cmp::Reverse(traffic[k]), k));
+    let mains = ((main_pct.clamp(0.0, 100.0) / 100.0 * traffic.len() as f32).ceil() as usize).min(traffic.len());
+    let reference = if mains > 0 { traffic[order[mains - 1]] } else { traffic[order[0]] }.max(1) as f32;
+    let mut widths = vec![lo; traffic.len()];
+    for (rank, &k) in order.iter().enumerate() {
+        widths[k] = if rank < mains {
+            hi
+        } else {
+            lo + (hi - lo) * (traffic[k] as f32 / reference).min(1.0)
+        };
+    }
+    widths
 }
 
 /// Cosine of the angle at `at` between the directions to `p` and `q`.
@@ -594,6 +684,36 @@ mod tests {
         let net = build(&config, &mut rng, &split).unwrap().network;
         assert_eq!(net.links.len(), net.nodes.len() - 1);
         assert!(net.links.iter().all(|l| !l.extra));
+    }
+
+    #[test]
+    fn busy_roads_are_wider_than_alleys() {
+        let mut config = LevelConfig::default();
+        config.roads.node_count = 12;
+        config.roads.width_m = 3.0;
+        config.roads.min_width_m = 1.0;
+        let (split, mut rng) = split_for(&config, 4);
+        let net = build(&config, &mut rng, &split).unwrap().network;
+        let widths: Vec<u32> = net.links.iter().map(|l| l.width_cells).collect();
+        assert_eq!(*widths.iter().max().unwrap(), 6, "main roads get the full 3 m");
+        assert!(*widths.iter().min().unwrap() < 6, "some roads are narrower: {widths:?}");
+        assert!(widths.iter().all(|&w| (2..=6).contains(&w)), "{widths:?}");
+        // Equal widths: every road the same.
+        config.roads.min_width_m = 3.0;
+        let (split, mut rng) = split_for(&config, 4);
+        let net = build(&config, &mut rng, &split).unwrap().network;
+        assert!(net.links.iter().all(|l| l.width_cells == 6));
+    }
+
+    #[test]
+    fn traffic_counts_routes_through_a_chain() {
+        // A straight chain 0-1-2-3: the middle link carries the most trips.
+        let nodes: Vec<RoadNode> = (0..4).map(|i| RoadNode { x: i * 10, y: 0, region: 1 }).collect();
+        let links = vec![(0, 1, false), (1, 2, false), (2, 3, false)];
+        assert_eq!(link_traffic(&nodes, &links), vec![3, 4, 3]);
+        let widths = widths_from_traffic(&[3, 4, 3], 30.0, 1.0, 3.0);
+        assert_eq!(widths[1], 3.0);
+        assert!((widths[0] - 2.5).abs() < 1e-6);
     }
 
     #[test]

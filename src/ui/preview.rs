@@ -184,17 +184,21 @@ fn draw_level(painter: &egui::Painter, map_rect: Rect, zoom: f32, level: &Genera
                 clipped.circle_filled(center, r, color);
             }
             _ => {
-                // Rotated rect as a convex polygon.
-                let points: Vec<Pos2> = o
-                    .corners()
+                // Each rect (main + wings) as a rotated convex polygon. All
+                // outlines first, then all fills: the fills cover the inner
+                // edges where wings overlap, so a compound house shows one
+                // outline around its whole shape.
+                let polygons: Vec<Vec<Pos2>> = o
+                    .all_corners()
                     .iter()
-                    .map(|&(x, y)| to_screen(map_rect, zoom, x, y))
+                    .map(|rect| rect.iter().map(|&(x, y)| to_screen(map_rect, zoom, x, y)).collect())
                     .collect();
-                clipped.add(egui::Shape::convex_polygon(
-                    points,
-                    color32(o.color),
-                    Stroke::new(1.0_f32, darker(o.color)),
-                ));
+                for points in &polygons {
+                    clipped.add(egui::Shape::closed_line(points.clone(), Stroke::new(2.0_f32, darker(o.color))));
+                }
+                for points in polygons {
+                    clipped.add(egui::Shape::convex_polygon(points, color32(o.color), Stroke::NONE));
+                }
             }
         }
     }

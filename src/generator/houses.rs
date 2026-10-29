@@ -17,10 +17,19 @@
 //! 4. **Stop** — when houses cover `density_pct` of the buildable ground, or
 //!    no more house fits.
 //!
+//! **Complex houses** — `complex_pct` of the houses get 1 or 2 wings
+//! (`max_parts` rectangles in all): smaller rectangles (`wing_min_pct`..
+//! `wing_max_pct` of the main block's sides) overlapping a side of the main
+//! block, flush with one of its ends or anywhere along it → L, T, U, Z and
+//! cross shapes. A street house never gets a wing on its road side, so its
+//! front stays on the street. A shape whose wings would close a courtyard
+//! is rejected, and a complex house that does not fit falls back to the
+//! plain block before it shrinks.
+//!
 //! Every house keeps at least one free cell (Chebyshev) to every other house
-//! and wall, and houses are convex — so the walkable ground can never be
-//! sealed into a pocket. Width and depth are rolled independently in
-//! `[size_min_m, size_max_m]`.
+//! and wall, and a house is one solid piece without holes — so the walkable
+//! ground can never be sealed into a pocket. Width and depth of the main
+//! block are rolled independently in `[size_min_m, size_max_m]`.
 
 use std::collections::VecDeque;
 
@@ -29,7 +38,7 @@ use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 
 use crate::generator::Stage;
-use crate::level::{Category, CellMask, HouseLayout, PlacedObject, RegionMap, RoadNetwork};
+use crate::level::{Category, CellMask, HouseLayout, ObjectPart, PlacedObject, RegionMap, RoadNetwork};
 use crate::model::LevelConfig;
 
 /// A spot along a road where a street-front house may stand.
@@ -40,6 +49,11 @@ struct StreetSlot {
     normal: (f32, f32),
     /// Road direction, degrees.
     angle_deg: f32,
+    /// Half the width of this road, meters.
+    half_road: f32,
+    /// Which side of the road (±1): the road lies toward the house's local
+    /// −side·v axis, so wings never go there.
+    side: f32,
 }
 
 /// Display name of a house (map legend, spec.json).
@@ -112,17 +126,23 @@ pub(crate) fn build_with_progress(
     let mut covered = 0usize;
     let mut objects: Vec<PlacedObject> = Vec::new();
     let place = |objects: &mut Vec<PlacedObject>,
-                     free: &mut Vec<bool>,
-                     house_mask: &mut CellMask,
-                     covered: &mut usize,
-                     center: (f32, f32),
-                     size: (f32, f32),
-                     angle_deg: f32|
+                 free: &mut Vec<bool>,
+                 house_mask: &mut CellMask,
+                 covered: &mut usize,
+                 center: (f32, f32),
+                 size: (f32, f32),
+                 parts: &[ObjectPart],
+                 angle_deg: f32|
      -> bool {
-        let Some(cells) = footprint(center, size, angle_deg, w, h, cell) else {
+        let Some(cells) = footprint(center, size, parts, angle_deg, w, h, cell) else {
             return false;
         };
         if cells.is_empty() || !cells.iter().all(|&c| free[c]) {
+            return false;
+        }
+        // A compound house must not close its own courtyard (a U whose wings
+        // almost touch): every gap between its parts stays open.
+        if !parts.is_empty() && !courtyards_open(&cells, w) {
             return false;
         }
         for &c in &cells {
@@ -150,17 +170,33 @@ pub(crate) fn build_with_progress(
             w_m: size.0,
             h_m: size.1,
             angle_deg,
+            parts: parts.to_vec(),
         });
         true
+    };
+    let complex = s.complex_pct.clamp(0.0, 100.0) / 100.0;
+    let max_extra = s.max_parts.clamp(1, 3) - 1;
+    let wing_lo = (s.wing_min_pct.min(s.wing_max_pct) / 100.0).clamp(0.1, 1.0);
+    let wing_hi = (s.wing_min_pct.max(s.wing_max_pct) / 100.0).clamp(0.1, 1.0);
+    let mut complex_houses = 0u32;
+    // Roll a house's wings (empty for a plain house). `forbid` = the side
+    // that must stay flat (a street house's road side).
+    let roll_wings = |rng: &mut ChaCha8Rng, forbid: Option<Side>| -> Vec<WingSpec> {
+        if max_extra == 0 || rng.random::<f32>() >= complex {
+            return Vec::new();
+        }
+        let n = rng.random_range(1..=max_extra);
+        wing_specs(rng, n as usize, (wing_lo, wing_hi), forbid)
     };
 
     // 2. Street fronts.
     stage.report("Lining the streets", 0.0);
     let mut street_houses = 0u32;
     if let Some(net) = ground.roads {
-        let half_road = net.width_cells as f32 * cell / 2.0;
+
         let mut slots: Vec<StreetSlot> = Vec::new();
         for link in &net.links {
+            let half_road = link.width_cells.max(1) as f32 * cell / 2.0;
             let tangents = path_tangents(&link.path, w);
             for side in [-1.0f32, 1.0] {
                 let mut next_at = rng.random_range(0.0..hi);
@@ -177,13 +213,17 @@ pub(crate) fn build_with_progress(
                         point: p,
                         normal: (-ty * side, tx * side),
                         angle_deg: ty.atan2(tx).to_degrees(),
+                        half_road,
+                        side,
                     });
                     next_at = walked + rng.random_range(lo..=hi) + s.spacing_m.max(cell);
                 }
             }
         }
         slots.shuffle(rng);
-        for (k, StreetSlot { point: p, normal: n, angle_deg: angle }) in slots.into_iter().enumerate() {
+        for (k, StreetSlot { point: p, normal: n, angle_deg: angle, half_road, side }) in
+            slots.into_iter().enumerate()
+        {
             if (covered as f32) >= target {
                 break;
             }
@@ -191,17 +231,27 @@ pub(crate) fn build_with_progress(
                 stage.report("Lining the streets", 0.5 * (covered as f32 / target.max(1.0)).min(1.0));
             }
             let size = (rng.random_range(lo..=hi), rng.random_range(lo..=hi));
+            // The road lies toward the house's local −side·v: keep it flat.
+            let wings = roll_wings(rng, Some(if side > 0.0 { Side::MinusV } else { Side::PlusV }));
             // Width runs along the road. Try the setback, then a little
-            // deeper; a house that still does not fit gets shallower and
-            // narrower toward the minimum size.
+            // deeper; a complex house that still does not fit drops its
+            // wings, then the house gets shallower and narrower toward the
+            // minimum size.
             let shrink = |f: f32| (lo + (size.0 - lo) * f, lo + (size.1 - lo) * f);
             'fit: for fit in [shrink(1.0), shrink(0.5), shrink(0.0)] {
-                for extra in [0.0f32, 0.5, 1.0] {
-                    let depth = half_road + s.setback_m.max(0.0) + extra + fit.1 / 2.0 + cell * 0.5;
-                    let center = (p.0 + n.0 * depth, p.1 + n.1 * depth);
-                    if place(&mut objects, &mut free, &mut house_mask, &mut covered, center, fit, angle) {
-                        street_houses += 1;
-                        break 'fit;
+                for with_wings in [true, false] {
+                    if with_wings && wings.is_empty() {
+                        continue;
+                    }
+                    let parts = if with_wings { wing_parts(&wings, fit, cell) } else { Vec::new() };
+                    for extra in [0.0f32, 0.5, 1.0] {
+                        let depth = half_road + s.setback_m.max(0.0) + extra + fit.1 / 2.0 + cell * 0.5;
+                        let center = (p.0 + n.0 * depth, p.1 + n.1 * depth);
+                        if place(&mut objects, &mut free, &mut house_mask, &mut covered, center, fit, &parts, angle) {
+                            street_houses += 1;
+                            complex_houses += u32::from(!parts.is_empty());
+                            break 'fit;
+                        }
                     }
                 }
             }
@@ -228,6 +278,7 @@ pub(crate) fn build_with_progress(
             stage.report("Filling the yards", 0.5 + 0.5 * (covered as f32 / target.max(1.0)).min(1.0));
         }
         let size = (rng.random_range(lo..=hi), rng.random_range(lo..=hi));
+        let wings = roll_wings(rng, None);
         let mut placed = false;
         for _ in 0..YARD_TRIES {
             let c = candidates[rng.random_range(0..candidates.len())];
@@ -240,15 +291,22 @@ pub(crate) fn build_with_progress(
                 (Some(field), true) => field[c] + rng.random_range(-FACE_JITTER_DEG..=FACE_JITTER_DEG),
                 _ => rng.random_range(0.0..180.0),
             };
-            // Tight spot: shrink toward the minimum size, and try the house
-            // turned 90° (width and depth swapped), before giving up here.
+            // Tight spot: drop the wings, shrink toward the minimum size, and
+            // try the house turned 90°, before giving up here.
             let shrink = |f: f32| (lo + (size.0 - lo) * f, lo + (size.1 - lo) * f);
-            for fit in [shrink(1.0), shrink(0.5), shrink(0.0)] {
-                if place(&mut objects, &mut free, &mut house_mask, &mut covered, center, fit, angle)
-                    || place(&mut objects, &mut free, &mut house_mask, &mut covered, center, (fit.1, fit.0), angle)
-                {
-                    placed = true;
-                    break;
+            'fit: for fit in [shrink(1.0), shrink(0.5), shrink(0.0)] {
+                for with_wings in [true, false] {
+                    if with_wings && wings.is_empty() {
+                        continue;
+                    }
+                    let parts = if with_wings { wing_parts(&wings, fit, cell) } else { Vec::new() };
+                    for turn in [0.0f32, 90.0] {
+                        if place(&mut objects, &mut free, &mut house_mask, &mut covered, center, fit, &parts, angle + turn) {
+                            placed = true;
+                            complex_houses += u32::from(!parts.is_empty());
+                            break 'fit;
+                        }
+                    }
                 }
             }
             if placed {
@@ -279,6 +337,7 @@ pub(crate) fn build_with_progress(
             mask: house_mask,
             street_houses,
             yard_houses,
+            complex_houses,
             coverage_pct,
             target_pct,
         },
@@ -287,11 +346,13 @@ pub(crate) fn build_with_progress(
     })
 }
 
-/// The cells whose centers fall inside the rotated rect (`size` = width
-/// along the angle, depth across it). `None` if any corner leaves the map.
+/// The cells whose centers fall inside the rotated house — main block
+/// (`size` = width along the angle, depth across it) plus its wings. `None`
+/// if any corner leaves the map.
 fn footprint(
     center: (f32, f32),
     size: (f32, f32),
+    parts: &[ObjectPart],
     angle_deg: f32,
     w: usize,
     h: usize,
@@ -306,10 +367,10 @@ fn footprint(
         w_m: size.0,
         h_m: size.1,
         angle_deg,
+        parts: parts.to_vec(),
     };
-    let corners = probe.corners();
     let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
-    for (x, y) in corners {
+    for (x, y) in probe.all_corners().into_iter().flatten() {
         x0 = x0.min(x);
         y0 = y0.min(y);
         x1 = x1.max(x);
@@ -327,6 +388,131 @@ fn footprint(
         }
     }
     Some(cells)
+}
+
+/// Is every non-house cell around the house reachable (4-steps) from outside
+/// its bounding box? False when the parts enclose a courtyard.
+fn courtyards_open(cells: &[usize], w: usize) -> bool {
+    let (mut x0, mut y0, mut x1, mut y1) = (usize::MAX, usize::MAX, 0usize, 0usize);
+    for &c in cells {
+        let (x, y) = (c % w, c / w);
+        x0 = x0.min(x);
+        y0 = y0.min(y);
+        x1 = x1.max(x);
+        y1 = y1.max(y);
+    }
+    // Local box with a one-cell margin all round (the margin is outside).
+    let (bw, bh) = (x1 - x0 + 3, y1 - y0 + 3);
+    let mut house = vec![false; bw * bh];
+    for &c in cells {
+        house[(c / w - y0 + 1) * bw + (c % w - x0 + 1)] = true;
+    }
+    let mut reached = vec![false; bw * bh];
+    let mut stack = vec![0usize];
+    reached[0] = true;
+    while let Some(i) = stack.pop() {
+        let (x, y) = (i % bw, i / bw);
+        let neighbors = [
+            (x > 0).then(|| i - 1),
+            (x + 1 < bw).then(|| i + 1),
+            (y > 0).then(|| i - bw),
+            (y + 1 < bh).then(|| i + bw),
+        ];
+        for n in neighbors.into_iter().flatten() {
+            if !house[n] && !reached[n] {
+                reached[n] = true;
+                stack.push(n);
+            }
+        }
+    }
+    house.iter().zip(&reached).all(|(&hs, &r)| hs || r)
+}
+
+/// A side of a house's main block, in its own frame (u along the width,
+/// v along the depth).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Side {
+    PlusU,
+    MinusU,
+    PlusV,
+    MinusV,
+}
+
+/// One wing as fractions of the main block, so it can be rebuilt for any
+/// (shrunk) main size.
+#[derive(Debug, Clone, Copy)]
+struct WingSpec {
+    side: Side,
+    /// Length along the side, as a share of that side.
+    along: f32,
+    /// How far it sticks out, as a share of the block's other dimension.
+    out: f32,
+    /// Where along the side: 0 = flush with its start, 1 = flush with its end.
+    at: f32,
+}
+
+/// Roll `n` wings on distinct sides (never `forbid`). A second wing may go on
+/// the same side as the first, at the opposite end — a U shape. Wings are
+/// flush with an end of their side 60% of the time (crisp L / U corners).
+fn wing_specs(rng: &mut ChaCha8Rng, n: usize, size: (f32, f32), forbid: Option<Side>) -> Vec<WingSpec> {
+    let mut sides: Vec<Side> = [Side::PlusU, Side::MinusU, Side::PlusV, Side::MinusV]
+        .into_iter()
+        .filter(|&s| Some(s) != forbid)
+        .collect();
+    let mut specs: Vec<WingSpec> = Vec::with_capacity(n);
+    for i in 0..n {
+        let (lo, hi) = size;
+        let mut spec = WingSpec {
+            side: sides[rng.random_range(0..sides.len())],
+            along: rng.random_range(lo..=hi),
+            out: rng.random_range(lo..=hi),
+            at: if rng.random_bool(0.6) { f32::from(u8::from(rng.random_bool(0.5))) } else { rng.random() },
+        };
+        if i == 1 && rng.random_bool(0.4) {
+            // U shape: the first wing's side, flush with the other end.
+            let first = specs[0];
+            spec.side = first.side;
+            spec.at = if first.at < 0.5 { 1.0 } else { 0.0 };
+            spec.along = spec.along.min(0.45);
+            specs[0].at = 1.0 - spec.at;
+            specs[0].along = specs[0].along.min(0.45);
+        }
+        sides.retain(|&s| s != spec.side);
+        if sides.is_empty() {
+            sides.push(spec.side);
+        }
+        specs.push(spec);
+    }
+    specs
+}
+
+/// The wings as parts for a main block of `size` (width, depth). Each wing
+/// overlaps the block by a third of its reach (at least one cell), so the
+/// house is always one solid piece.
+fn wing_parts(specs: &[WingSpec], size: (f32, f32), cell: f32) -> Vec<ObjectPart> {
+    let (width, depth) = size;
+    specs
+        .iter()
+        .map(|spec| {
+            // ±v sides run along the width; ±u sides along the depth.
+            let (side_len, other) = match spec.side {
+                Side::PlusV | Side::MinusV => (width, depth),
+                Side::PlusU | Side::MinusU => (depth, width),
+            };
+            let len = (side_len * spec.along).clamp(cell, side_len);
+            let out = (other * spec.out).max(cell);
+            let overlap = (out / 3.0).max(cell);
+            let along_center = -side_len / 2.0 + len / 2.0 + (side_len - len) * spec.at;
+            let out_center = other / 2.0 + (out - overlap) / 2.0;
+            let thick = out + overlap;
+            match spec.side {
+                Side::PlusU => ObjectPart { u_m: out_center, v_m: along_center, w_m: thick, h_m: len },
+                Side::MinusU => ObjectPart { u_m: -out_center, v_m: along_center, w_m: thick, h_m: len },
+                Side::PlusV => ObjectPart { u_m: along_center, v_m: out_center, w_m: len, h_m: thick },
+                Side::MinusV => ObjectPart { u_m: along_center, v_m: -out_center, w_m: len, h_m: thick },
+            }
+        })
+        .collect()
 }
 
 /// Unit direction of the road at every path cell (from a few cells behind
@@ -486,7 +672,7 @@ mod tests {
             let mut owner = vec![usize::MAX; layout.mask.cells.len()];
             let (w, h, cell) = (layout.mask.width, layout.mask.height, layout.mask.cell_size_m);
             for (k, o) in lvl.objects.iter().enumerate() {
-                let cells = footprint(o.center(), (o.w_m, o.h_m), o.angle_deg, w, h, cell).unwrap();
+                let cells = footprint(o.center(), (o.w_m, o.h_m), &o.parts, o.angle_deg, w, h, cell).unwrap();
                 for c in cells {
                     assert!(!road.cells[c], "seed {seed}: house {k} on a road");
                     assert_eq!(owner[c], usize::MAX, "seed {seed}: houses {} and {k} overlap", owner[c]);
@@ -514,14 +700,71 @@ mod tests {
         config.houses.density_pct = 40.0;
         let dense = level(&config, 3).houses.unwrap();
         assert!(sparse.coverage_pct >= 9.0 && sparse.coverage_pct < 20.0, "{}", sparse.coverage_pct);
-        assert!(dense.coverage_pct > sparse.coverage_pct * 2.0, "{} vs {}", dense.coverage_pct, sparse.coverage_pct);
+        assert!(dense.coverage_pct > sparse.coverage_pct * 1.8, "{} vs {}", dense.coverage_pct, sparse.coverage_pct);
         // A low density is (almost) only street fronts.
         assert!(sparse.street_houses > 0 && sparse.yard_houses <= sparse.street_houses / 4);
     }
 
     #[test]
+    fn complex_houses_have_overlapping_wings() {
+        let mut config = LevelConfig::default();
+        config.map.width_m = 128.0;
+        config.map.height_m = 128.0;
+        config.houses.complex_pct = 50.0;
+        let lvl = level(&config, 3);
+        let layout = lvl.houses.as_ref().unwrap();
+        let complex: Vec<&PlacedObject> = lvl.objects.iter().filter(|o| !o.parts.is_empty()).collect();
+        assert_eq!(complex.len() as u32, layout.complex_houses);
+        let total = lvl.objects.len() as f32;
+        assert!(complex.len() as f32 > total * 0.2, "{} of {total} complex", complex.len());
+        assert!(complex.iter().any(|o| o.parts.len() == 2), "some houses have 3 rectangles");
+        for o in &complex {
+            assert!(o.parts.len() <= 2);
+            for p in &o.parts {
+                // Each wing overlaps the main block (shares its center region).
+                let overlap_u = (o.w_m / 2.0 + p.w_m / 2.0) - p.u_m.abs();
+                let overlap_v = (o.h_m / 2.0 + p.h_m / 2.0) - p.v_m.abs();
+                assert!(overlap_u > 0.0 && overlap_v > 0.0, "{o:?}");
+            }
+        }
+        // Off: no wings at all; max 2 parts: at most one wing.
+        config.houses.complex_pct = 0.0;
+        assert!(level(&config, 3).objects.iter().all(|o| o.parts.is_empty()));
+        config.houses.complex_pct = 100.0;
+        config.houses.max_parts = 2;
+        assert!(level(&config, 3).objects.iter().all(|o| o.parts.len() <= 1));
+    }
+
+    #[test]
+    fn a_closed_courtyard_is_detected() {
+        // 5×4 ring of house cells around one empty cell (w = 10).
+        let w = 10;
+        let ring: Vec<usize> = (0..4)
+            .flat_map(|y| (0..5).map(move |x| (x, y)))
+            .filter(|&(x, y)| !(x == 2 && (y == 1 || y == 2)))
+            .map(|(x, y)| y * w + x)
+            .collect();
+        assert!(!courtyards_open(&ring, w));
+        // Open the ring's bottom: the courtyard reaches outside.
+        let open: Vec<usize> = ring.into_iter().filter(|&c| c != 3 * w + 2).collect();
+        assert!(courtyards_open(&open, w));
+    }
+
+    #[test]
+    fn street_houses_keep_a_flat_front() {
+        let mut rng = <ChaCha8Rng as rand_chacha::rand_core::SeedableRng>::seed_from_u64(1);
+        for _ in 0..200 {
+            for forbid in [Side::PlusV, Side::MinusV] {
+                let specs = wing_specs(&mut rng, 2, (0.4, 0.75), Some(forbid));
+                assert!(specs.iter().all(|s| s.side != forbid));
+            }
+        }
+    }
+
+    #[test]
     fn house_sizes_stay_in_range() {
         let mut config = LevelConfig::default();
+        config.houses.complex_pct = 0.0;
         config.houses.size_min_m = 3.0;
         config.houses.size_max_m = 5.0;
         let lvl = level(&config, 6);

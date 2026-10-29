@@ -516,8 +516,18 @@ regions get more. More junctions: a denser street network with shorter roads.";
 const TIP_DENSITY: &str = "Road junctions per 1000 m² of town area (0.5 m cells: 4000 \
 cells = 1000 m²). Never fewer than one per region, at most 64 in total.";
 
-const TIP_WIDTH: &str = "Road width in meters, rounded to whole cells (at least one). \
-Also the width of the future gaps in the walls between regions.";
+const TIP_WIDTH: &str = "Width of the main roads in meters — the widest a road gets \
+(rounded to whole cells, at least one). Wall gaps follow each road's own width.";
+
+const TIP_MIN_WIDTH: &str = "Width of the quietest roads (dead-end alleys) in meters. \
+Roads get wider with the traffic they carry: every pair of junctions is joined by its \
+shortest route, and each road counts the routes that use it. Set equal to Max width for \
+roads all the same width. If it is bigger than Max width the two are swapped.";
+
+const TIP_MAIN: &str = "Share of the roads that count as main roads — the busiest ones — \
+and get the full Max width. The rest narrow with their traffic toward Min width. 100%: \
+every road at Max width. 0%: only the single busiest road is full width. NO EFFECT when Min \
+width equals Max width.";
 
 const TIP_WIGGLE: &str = "How much each road bends away from the straight line, following \
 a smooth noise field. 0%: straight (only bent around obstacles like bays). 30–50%: gentle \
@@ -541,13 +551,24 @@ fn node_roads(ui: &mut egui::Ui, app: &mut MapGenApp) {
             .num_columns(2)
             .spacing([10.0, 3.0])
             .show(ui, |ui| {
-                param_row(ui, "Road width", TIP_WIDTH, |ui| {
+                param_row(ui, "Max width", TIP_WIDTH, |ui| {
                     ui.add(
                         egui::DragValue::new(&mut roads.width_m)
                             .range(0.5..=12.0)
                             .speed(0.1)
                             .suffix(" m"),
                     )
+                });
+                param_row(ui, "Min width", TIP_MIN_WIDTH, |ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut roads.min_width_m)
+                            .range(0.5..=12.0)
+                            .speed(0.1)
+                            .suffix(" m"),
+                    )
+                });
+                param_row(ui, "Main roads", TIP_MAIN, |ui| {
+                    ui.add(egui::Slider::new(&mut roads.main_roads_pct, 0.0..=100.0).suffix(" %"))
                 });
                 param_row(ui, "Wiggle", TIP_WIGGLE, |ui| {
                     ui.add(egui::Slider::new(&mut roads.wiggle_pct, 0.0..=100.0).suffix(" %"))
@@ -601,6 +622,8 @@ fn node_roads(ui: &mut egui::Ui, app: &mut MapGenApp) {
                 roads.node_count = rng.random_range(min_nodes..=24.max(min_nodes));
                 roads.nodes_per_1000m2 = rng.random_range(0.5..=10.0);
                 roads.width_m = rng.random_range(0.5..=6.0);
+                roads.min_width_m = rng.random_range(0.5..=6.0);
+                roads.main_roads_pct = rng.random_range(0.0..=100.0);
                 roads.wiggle_pct = rng.random_range(0.0..=100.0);
                 roads.extra_links_pct = rng.random_range(0.0..=100.0);
             }
@@ -608,9 +631,11 @@ fn node_roads(ui: &mut egui::Ui, app: &mut MapGenApp) {
         });
         if let Some(net) = app.generated.as_ref().and_then(|l| l.roads.as_ref()) {
             let cells = net.mask.count_true();
+            let main = net.links.iter().filter(|l| l.width_cells == net.width_cells).count();
             ui.weak(format!(
-                "generated: {} roads, {:.0} m² of road, {} region crossings",
+                "generated: {} roads ({} at max width), {:.0} m² of road, {} region crossings",
                 net.links.len(),
+                main,
                 cells as f32 * net.mask.cell_size_m * net.mask.cell_size_m,
                 net.passages.len()
             ));
@@ -732,6 +757,17 @@ face the nearest road, with a few degrees of jitter. The rest get a random angle
 organic old town. 100%: everything lines up with the streets. Street-front houses always \
 face their road.";
     const TIP_COLOR: &str = "House color on the map image, the preview and the legend.";
+    const TIP_COMPLEX: &str = "Share of houses built from more than one rectangle: a main \
+block plus 1–2 overlapping wings, giving L, T, U, Z and cross shapes. Street houses never \
+get a wing on their road side, so their front stays on the street. A complex house that \
+does not fit a spot falls back to a plain block. 0%: every house is one rectangle.";
+    const TIP_PARTS: &str = "Most rectangles in one complex house. 2: main block + one wing \
+(L and T shapes). 3: up to two wings (also U, Z and cross shapes). NO EFFECT at 0% complex.";
+    const TIP_WING_MIN: &str = "Smallest wing, as a share of the main block's side: how far \
+along the block a wing runs, and how far it sticks out. Wings make a house bigger than Size \
+max (which is the main block). NO EFFECT at 0% complex.";
+    const TIP_WING_MAX: &str = "Largest wing, as a share of the main block's side. If it is \
+smaller than the minimum the two are swapped. NO EFFECT at 0% complex.";
     node(ui, "7 · Houses", |ui| {
         ui.weak("input: town minus walls and roads · output: houses (town only)");
         egui::Grid::new("houses_node_grid")
@@ -777,6 +813,18 @@ face their road.";
                 param_row(ui, "Face the road", TIP_FACE, |ui| {
                     ui.add(egui::Slider::new(&mut houses.face_road_pct, 0.0..=100.0).suffix(" %"))
                 });
+                param_row(ui, "Complex houses", TIP_COMPLEX, |ui| {
+                    ui.add(egui::Slider::new(&mut houses.complex_pct, 0.0..=100.0).suffix(" %"))
+                });
+                param_row(ui, "Rectangles max", TIP_PARTS, |ui| {
+                    ui.add(egui::DragValue::new(&mut houses.max_parts).range(2..=3).speed(0.05))
+                });
+                param_row(ui, "Wing size min", TIP_WING_MIN, |ui| {
+                    ui.add(egui::Slider::new(&mut houses.wing_min_pct, 10.0..=100.0).suffix(" %"))
+                });
+                param_row(ui, "Wing size max", TIP_WING_MAX, |ui| {
+                    ui.add(egui::Slider::new(&mut houses.wing_max_pct, 10.0..=100.0).suffix(" %"))
+                });
                 param_row(ui, "Color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut houses.color));
             });
         ui.horizontal(|ui| {
@@ -796,15 +844,20 @@ face their road.";
                 houses.spacing_m = rng.random_range(0.0..=3.0);
                 houses.setback_m = rng.random_range(0.0..=3.0);
                 houses.face_road_pct = rng.random_range(0.0..=100.0);
+                houses.complex_pct = rng.random_range(0.0..=100.0);
+                houses.max_parts = rng.random_range(2..=3);
+                houses.wing_min_pct = rng.random_range(10.0..=100.0);
+                houses.wing_max_pct = rng.random_range(10.0..=100.0);
             }
             ui.weak("Changes apply on ⚙ Generate");
         });
         if let Some(h) = app.generated.as_ref().and_then(|l| l.houses.as_ref()) {
             ui.weak(format!(
-                "generated: {} houses ({} on streets, {} in yards), {:.0}% of the buildable ground (asked {:.0}%)",
+                "generated: {} houses ({} on streets, {} in yards, {} complex), {:.0}% of the buildable ground (asked {:.0}%)",
                 h.street_houses + h.yard_houses,
                 h.street_houses,
                 h.yard_houses,
+                h.complex_houses,
                 h.coverage_pct,
                 h.target_pct
             ));

@@ -83,7 +83,7 @@ pub struct ExportRegion {
     pub cells: u32,
 }
 
-/// The roads: each one as a centerline polyline, plus the points where they
+/// The roads: each one as a centerline polyline with its width, plus the points where they
 /// cross between regions — all in meters from the map's top-left corner.
 #[derive(Debug, Serialize)]
 pub struct ExportRoads {
@@ -95,6 +95,8 @@ pub struct ExportRoads {
 
 #[derive(Debug, Serialize)]
 pub struct ExportRoad {
+    /// This road's width (main roads widest, alleys narrowest).
+    pub width_m: f32,
     pub length_m: f32,
     /// Centerline points every ~1 m, end to end.
     pub path_m: Vec<[f32; 2]>,
@@ -129,7 +131,7 @@ impl ExportRoads {
                     if pts.len() > 1 && !(pts.len() - 1).is_multiple_of(every) {
                         path_m.push(pts[pts.len() - 1]);
                     }
-                    ExportRoad { length_m, path_m }
+                    ExportRoad { width_m: l.width_cells.max(1) as f32 * cs, length_m, path_m }
                 })
                 .collect(),
             passages: net
@@ -299,6 +301,7 @@ mod tests {
                     w_m: 3.0,
                     h_m: 3.0,
                     angle_deg: 0.0,
+                    parts: Vec::new(),
                 },
                 PlacedObject {
                     category: Category::Structure,
@@ -309,6 +312,7 @@ mod tests {
                     w_m: 3.0,
                     h_m: 3.0,
                     angle_deg: 0.0,
+                    parts: Vec::new(),
                 },
             ],
             shape: None,
