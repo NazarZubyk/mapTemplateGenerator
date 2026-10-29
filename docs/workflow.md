@@ -64,6 +64,10 @@ Right now:
    hidden for other kinds; the generator skips it). Finished (step 6).
 8. **Props** — input: free ground left over · output: prop objects
    (`Category::Prop`) + footprint mask. Every map kind. Finished (step 8).
+9. **Interactive objects** — input: free ground after props · output: a
+   list of object types (herbs, chests...) placed in groups
+   (`Category::Interactive`) + groups + footprint mask. Every map kind.
+   Finished (step 9).
 
 - **Action bar** (`src/ui/app.rs`): seed + Generate + Re-roll. Generation
   runs on a background thread (`MapGenApp::job`); the bar shows a progress
@@ -71,8 +75,8 @@ Right now:
   disabled until it finishes. Phases report through
   `generator::generate_with_progress` (`Progress` callback, `Stage` maps a
   phase's 0..1 into its slice of the whole: shape 0–55%, wall 55–65%,
-  regions 65–85%, roads 85–90%, region walls 90–93%, houses 93–97%,
-  props 97–99%). New phases must report too.
+  regions 65–85%, roads 85–90%, region walls 90–93%, houses 93–96%,
+  props 96–98%, interactive 98–99%). New phases must report too.
 - **Preview** (`src/ui/preview.rs`): draws the generated level (rect objects,
   circle mob spawns/gates, legend) plus the bench texture layer (noise
   texture or town shape — toggle lives in the bench).
@@ -106,6 +110,7 @@ src/
 │   ├── houses.rs      # step 6: street-front + yard houses (town only)
 │   ├── placement.rs   # shared: rotated footprints, dilation, road tangents
 │   ├── props.rs       # step 8: props near houses / roadside / scattered
+│   ├── interactive.rs # step 9: interactive object types in groups
 │   ├── grid.rs        # CellMask algorithms: components, speckle removal,
 │   │                  # bridge closest pair (multi-source BFS), hole fill
 │   ├── shape.rs       # step 1: noise → coverage cut → despeckle → bridges
@@ -204,8 +209,10 @@ Rules that carried over from the old build (keep them in every section):
 - [x] **Step 8 — props** (every kind): quantity + density cap + size range,
       placed against houses / at road edges / scattered. Node 8. (done —
       see "Step 8 notes")
-- [ ] **Step 9 — interactive objects**: types with size, quantity and group
-      size (reference `interactives.rs`).
+- [x] **Step 9 — interactive objects** (every kind): a list of types, each
+      with name, size range, quantity, group size range, group spread, spot
+      (anywhere / along walls / open ground) and color. Node 9. (done — see
+      "Step 9 notes")
 - [ ] **Step 10 — hidden rooms**: rooms + BFS access paths (reference
       `hidden_rooms.rs`).
 - [ ] **Step 11 — mobs**: budget/combos/balance packs (reference `mobs.rs`).
@@ -586,6 +593,39 @@ helpers (`footprint`, `dilate`, `within`, `path_tangents`,
 Tests: quantity placed with room, density cap + note, no overlap with
 roads/walls/houses/each other, walkable ground one piece, near-house props
 hug houses, non-town maps scatter, determinism.
+
+## Step 9 notes — interactive objects
+
+`generator/interactive.rs`, every map kind (node 9). Settings are
+`config.interactive: Vec<InteractiveType>` (default: one "Herb", 30 objects,
+0.3–0.5 m, groups of 2–5, 2 m spread, anywhere, light green). The node
+lists the types as collapsible cards with ➕ Add type / 🗑 Remove type.
+
+1. **Free ground** — town minus walls, roads, houses and props, minus a
+   one-cell (Chebyshev) ring around every obstacle; every placed object
+   blocks its footprint + ring too. Obstacles never touch, so the walkable
+   ground stays one piece (same rule as props). An object smaller than a
+   cell blocks the cell under its center.
+2. **Types in config order**, each placing `quantity` objects in groups:
+   every group rolls `group_min..=group_max` (capped by what is left).
+3. **Group center** by the type's spot, from candidates built once per type
+   (taken cells dropped lazily): *anywhere* = any free cell; *along walls* =
+   within 2 cells of a wall / house / prop / the town edge; *open ground* =
+   at least 3 m from every obstacle and road. No candidate left → the rest
+   fall back to anywhere, with a note.
+4. **Members**: the first stands on the center, the others are tried (25×
+   each) at a uniform random point within `spread_m`. Random angle 0–90°,
+   square, side rolled in the size range. The layout is tentative: if fewer
+   than `min(group_min, left)` fit, the group is dropped and another center
+   tried (40 per group). If that fails too, the type stops with a "placed X
+   of Y" note.
+
+`InteractiveLayout` keeps the mask, the groups (`type_index`, name, center,
+member indices into `GeneratedLevel::objects`, shifted in `generate`) and
+per-type requested / placed / groups. spec.json gets `interactive_groups`.
+Tests: quantity in allowed groups, spread respected, no overlap with
+roads/walls/houses/props/each other, walkable ground one piece, along-walls
+groups start by an obstacle, overflow note, non-town maps, determinism.
 
 ## Done-ness checklist for every step
 

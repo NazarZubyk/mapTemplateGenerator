@@ -59,6 +59,9 @@ pub struct LevelConfig {
     pub houses: HouseSettings,
     /// Decorative, non-interactive props (step 8, every map kind).
     pub props: PropSettings,
+    /// Interactive object types (step 9, every map kind) — herbs to gather,
+    /// chests to open... each type placed in groups.
+    pub interactive: Vec<InteractiveType>,
     pub cell_size_m: f32,
     pub seed: u64,
 }
@@ -75,6 +78,7 @@ impl Default for LevelConfig {
             region_walls: RegionWallSettings::default(),
             houses: HouseSettings::default(),
             props: PropSettings::default(),
+            interactive: vec![InteractiveType::default()],
             cell_size_m: 0.5,
             seed: 0,
         }
@@ -167,6 +171,70 @@ impl Default for PropSettings {
             near_houses_pct: 50.0,
             roadside_pct: 25.0,
             color: [92, 110, 140],
+        }
+    }
+}
+
+/// Where the groups of an interactive type go.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InteractiveSpot {
+    /// Any free ground.
+    Anywhere,
+    /// Groups start next to an obstacle: an outer or region wall, a house.
+    AlongWalls,
+    /// Groups start away from every obstacle and road (meadows, squares).
+    OpenGround,
+}
+
+impl InteractiveSpot {
+    pub const ALL: [InteractiveSpot; 3] =
+        [InteractiveSpot::Anywhere, InteractiveSpot::AlongWalls, InteractiveSpot::OpenGround];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            InteractiveSpot::Anywhere => "Anywhere",
+            InteractiveSpot::AlongWalls => "Along walls",
+            InteractiveSpot::OpenGround => "Open ground",
+        }
+    }
+}
+
+/// One interactive object type of the interactive node (docs/workflow.md,
+/// step 9): e.g. a plant that can be gathered.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct InteractiveType {
+    /// Display name (map legend, spec.json).
+    pub name: String,
+    /// Object side in meters, rolled per object between min and max.
+    pub size_min_m: f32,
+    pub size_max_m: f32,
+    /// Total objects of this type on the map.
+    pub quantity: u32,
+    /// Objects in one group, rolled per group between min and max.
+    pub group_min: u32,
+    pub group_max: u32,
+    /// How far, meters, the members of a group may stand from its center.
+    pub spread_m: f32,
+    /// Where the groups go.
+    pub spot: InteractiveSpot,
+    /// Color on map.png, the preview and the legend.
+    pub color: [u8; 3],
+}
+
+impl Default for InteractiveType {
+    fn default() -> Self {
+        Self {
+            name: "Herb".to_owned(),
+            size_min_m: 0.3,
+            size_max_m: 0.5,
+            quantity: 30,
+            group_min: 2,
+            group_max: 5,
+            spread_m: 2.0,
+            spot: InteractiveSpot::Anywhere,
+            color: [120, 200, 80],
         }
     }
 }

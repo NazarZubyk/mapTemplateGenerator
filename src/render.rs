@@ -202,6 +202,7 @@ mod tests {
             region_walls: None,
             houses: None,
             props: None,
+            interactive: None,
             regions: None,
             noise_preview: None,
             notes: Vec::new(),

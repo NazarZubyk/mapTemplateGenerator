@@ -102,10 +102,10 @@ region palette colors).
 
 ## Current state
 
-Steps 0–6 and 8 are done and live in their nodes (shape, outer walls,
+Steps 0–6, 8 and 9 are done and live in their nodes (shape, outer walls,
 regions, roads with width hierarchy, region walls, houses — town only, with
-compound L/T/U shapes — and props). The bench is empty. Next: step 9
-(interactive objects) — see the step list in docs/workflow.md. Step 7
-(walkable budget) is still open. The user prefers new steps built straight
+compound L/T/U shapes — props, and interactive object types in groups). The
+bench is empty. Next: step 10 (hidden rooms) — see the step list in
+docs/workflow.md. Step 7 (walkable budget) is still open. The user prefers new steps built straight
 into their left-panel node, not in the bench, and wants the map to show only
 finished things.

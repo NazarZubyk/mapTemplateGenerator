@@ -1,7 +1,7 @@
 use eframe::egui;
 use rand::Rng;
 
-use crate::model::{LevelConfig, MapKind, NodeAmount, ShapeSettings};
+use crate::model::{InteractiveSpot, InteractiveType, LevelConfig, MapKind, NodeAmount, ShapeSettings};
 use crate::ui::app::{ConfigStatus, MapGenApp};
 use crate::ui::widgets::param_row;
 
@@ -40,6 +40,8 @@ fn generation_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     }
     flow_arrow(ui, "free ground left over");
     node_props(ui, app);
+    flow_arrow(ui, "free ground after props");
+    node_interactive(ui, app);
     ui.weak("Next nodes appear here as sections finish; which nodes exist depends on the map kind (docs/workflow.md).");
     ui.add_space(4.0);
     ui.separator();
@@ -957,6 +959,136 @@ over open ground at random angles.";
                 p.requested,
                 p.density_cap
             ));
+        }
+    });
+}
+
+/// Node 9: interactive object types placed in groups, every map kind (see
+/// step 9 notes in docs/workflow.md).
+fn node_interactive(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_NAME: &str = "Type name — shown in the map legend and spec.json (e.g. Herb, \
+Chest, Mushroom). Objects of different types never share a group.";
+    const TIP_QUANTITY: &str = "Total objects of this type on the map. A note tells you if \
+the free ground ran out first.";
+    const TIP_GROUP_MIN: &str = "Fewest objects in one group, e.g. 2 herbs growing together. \
+The last group may be smaller when fewer are left to place. Set min and max to 1 for single \
+objects (chests).";
+    const TIP_GROUP_MAX: &str = "Most objects in one group; each group rolls its size \
+between min and max.";
+    const TIP_SPREAD: &str = "How far, meters, a group member may stand from the group \
+center. Members still keep one free cell between each other, so a very small spread can \
+shrink groups.";
+    const TIP_SIZE_MIN: &str = "Smallest object side in meters, rolled per object. Objects \
+smaller than a cell still block the cell under them.";
+    const TIP_SIZE_MAX: &str = "Largest object side in meters. If max is smaller than min the \
+two are swapped.";
+    const TIP_SPOT: &str = "Where groups start. Anywhere: any free ground. Along walls: next \
+to a wall, house or prop. Open ground: at least 3 m from every obstacle and road. If no spot \
+of that kind is left, the rest go anywhere (with a note).";
+    const TIP_COLOR: &str = "Color of this type on the map image, the preview and the legend.";
+    node(ui, "9 · Interactive objects", |ui| {
+        ui.weak("input: free ground after props · output: interactive objects in groups (every map kind)");
+        let mut remove = None;
+        for (i, it) in app.config.interactive.iter_mut().enumerate() {
+            let title = crate::generator::interactive::type_name(it, i);
+            egui::CollapsingHeader::new(title)
+                .id_salt(("interactive_type", i))
+                .default_open(true)
+                .show(ui, |ui| {
+                    egui::Grid::new(("interactive_type_grid", i))
+                        .num_columns(2)
+                        .spacing([10.0, 3.0])
+                        .show(ui, |ui| {
+                            param_row(ui, "Name", TIP_NAME, |ui| {
+                                ui.add(egui::TextEdit::singleline(&mut it.name).desired_width(120.0))
+                            });
+                            param_row(ui, "Quantity", TIP_QUANTITY, |ui| {
+                                ui.add(egui::DragValue::new(&mut it.quantity).range(0..=2000).speed(0.5))
+                            });
+                            param_row(ui, "Group min", TIP_GROUP_MIN, |ui| {
+                                ui.add(egui::DragValue::new(&mut it.group_min).range(1..=50).speed(0.1))
+                            });
+                            param_row(ui, "Group max", TIP_GROUP_MAX, |ui| {
+                                ui.add(egui::DragValue::new(&mut it.group_max).range(1..=50).speed(0.1))
+                            });
+                            param_row(ui, "Group spread", TIP_SPREAD, |ui| {
+                                ui.add(
+                                    egui::DragValue::new(&mut it.spread_m)
+                                        .range(0.0..=20.0)
+                                        .speed(0.05)
+                                        .suffix(" m"),
+                                )
+                            });
+                            param_row(ui, "Size min", TIP_SIZE_MIN, |ui| {
+                                ui.add(
+                                    egui::DragValue::new(&mut it.size_min_m)
+                                        .range(0.05..=5.0)
+                                        .speed(0.02)
+                                        .suffix(" m"),
+                                )
+                            });
+                            param_row(ui, "Size max", TIP_SIZE_MAX, |ui| {
+                                ui.add(
+                                    egui::DragValue::new(&mut it.size_max_m)
+                                        .range(0.05..=5.0)
+                                        .speed(0.02)
+                                        .suffix(" m"),
+                                )
+                            });
+                            param_row(ui, "Spot", TIP_SPOT, |ui| {
+                                egui::ComboBox::from_id_salt(("interactive_spot", i))
+                                    .selected_text(it.spot.label())
+                                    .show_ui(ui, |ui| {
+                                        for spot in InteractiveSpot::ALL {
+                                            ui.selectable_value(&mut it.spot, spot, spot.label());
+                                        }
+                                    })
+                                    .response
+                            });
+                            param_row(ui, "Color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut it.color));
+                        });
+                    if ui.button("🗑 Remove type").clicked() {
+                        remove = Some(i);
+                    }
+                });
+        }
+        if let Some(i) = remove {
+            app.config.interactive.remove(i);
+        }
+        ui.horizontal(|ui| {
+            if ui.button("➕ Add type").clicked() {
+                let n = app.config.interactive.len() + 1;
+                app.config.interactive.push(InteractiveType {
+                    name: format!("Interactive #{n}"),
+                    ..InteractiveType::default()
+                });
+            }
+            if ui
+                .button("🎲 Random params")
+                .on_hover_text(
+                    "Rolls quantity, group size, spread, size and spot of every type \
+                     independently — they may contradict each other. Keeps names and colors. \
+                     Set values only; press Generate.",
+                )
+                .clicked()
+            {
+                let mut rng = rand::rng();
+                for it in &mut app.config.interactive {
+                    it.quantity = rng.random_range(0..=120);
+                    it.group_min = rng.random_range(1..=4);
+                    it.group_max = rng.random_range(1..=8);
+                    it.spread_m = rng.random_range(0.5..=5.0);
+                    it.size_min_m = rng.random_range(0.2..=1.0);
+                    it.size_max_m = rng.random_range(0.3..=1.5);
+                    it.spot = InteractiveSpot::ALL[rng.random_range(0..InteractiveSpot::ALL.len())];
+                }
+            }
+        });
+        ui.weak("Changes apply on ⚙ Generate");
+        if let Some(l) = app.generated.as_ref().and_then(|l| l.interactive.as_ref()) {
+            for t in &l.types {
+                ui.weak(format!("generated: {} — {} of {} in {} groups", t.name, t.placed, t.requested, t.groups));
+            }
         }
     });
 }

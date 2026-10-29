@@ -329,6 +329,36 @@ pub struct PropLayout {
     pub density_cap: u32,
 }
 
+/// The interactive node's output: footprint, groups and per-type counts.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct InteractiveLayout {
+    /// Cells covered by interactive objects.
+    pub mask: CellMask,
+    pub groups: Vec<InteractiveGroup>,
+    /// One entry per configured type, in config order.
+    pub types: Vec<InteractiveTypeStats>,
+}
+
+/// One group of identical interactive objects.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct InteractiveGroup {
+    /// Index of the type in `config.interactive`.
+    pub type_index: usize,
+    pub type_name: String,
+    /// Group center in meters (the first member stands on it).
+    pub center_m: [f32; 2],
+    /// Indices of the members in `GeneratedLevel::objects`.
+    pub members: Vec<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct InteractiveTypeStats {
+    pub name: String,
+    pub requested: u32,
+    pub placed: u32,
+    pub groups: u32,
+}
+
 /// An opening in a region wall where a road passes through.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct WallGap {
@@ -379,6 +409,9 @@ pub struct GeneratedLevel {
     /// The props node's footprint and stats.
     #[serde(default)]
     pub props: Option<PropLayout>,
+    /// The interactive node's groups and stats.
+    #[serde(default)]
+    pub interactive: Option<InteractiveLayout>,
     /// Raw noise field behind the region shape, for the bench "noise texture"
     /// view.
     pub noise_preview: Option<NoiseTexture>,

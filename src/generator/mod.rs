@@ -10,6 +10,7 @@ use crate::model::LevelConfig;
 
 pub mod grid;
 pub mod houses;
+pub mod interactive;
 pub mod noise;
 pub mod placement;
 pub mod props;
@@ -120,7 +121,7 @@ pub fn generate_with_progress(
                 region_walls: region_walls.as_ref().map(|w| &w.mask),
                 roads: roads.as_ref(),
             };
-            houses::build_with_progress(config, &mut rng, &ground, &stage(0.93, 0.97)).map(|built| {
+            houses::build_with_progress(config, &mut rng, &ground, &stage(0.93, 0.96)).map(|built| {
                 notes.extend(built.notes);
                 objects.extend(built.objects);
                 built.layout
@@ -140,13 +141,38 @@ pub fn generate_with_progress(
             house_mask: houses.as_ref().map(|h| &h.mask),
             houses: &objects,
         };
-        let built = props::build_with_progress(config, &mut rng, &ground, &stage(0.97, 0.99))?;
+        let built = props::build_with_progress(config, &mut rng, &ground, &stage(0.96, 0.98))?;
         notes.extend(built.notes);
         Some((built.layout, built.objects))
     });
     let props = props.map(|(layout, placed)| {
         objects.extend(placed);
         layout
+    });
+
+    // Step 9: interactive objects (every map kind) — groups per type.
+    let interactive = regions.as_ref().and_then(|split| {
+        let ground = interactive::Ground {
+            regions: &split.map,
+            outer_wall: walls.as_ref().map(|w| &w.mask),
+            region_walls: region_walls.as_ref().map(|w| &w.mask),
+            roads: roads.as_ref(),
+            house_mask: houses.as_ref().map(|h| &h.mask),
+            prop_mask: props.as_ref().map(|p| &p.mask),
+        };
+        interactive::build_with_progress(config, &mut rng, &ground, &stage(0.98, 0.99))
+    });
+    let interactive = interactive.map(|mut built| {
+        notes.extend(built.notes);
+        // Group members index into the level's object list.
+        let offset = objects.len();
+        for g in &mut built.layout.groups {
+            for m in &mut g.members {
+                *m += offset;
+            }
+        }
+        objects.extend(built.objects);
+        built.layout
     });
 
     let total = region_mask.width * region_mask.height;
@@ -168,6 +194,7 @@ pub fn generate_with_progress(
         region_walls,
         houses,
         props,
+        interactive,
         noise_preview: Some(built.noise_preview),
         notes,
     }

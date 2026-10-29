@@ -69,6 +69,9 @@ pub struct ExportSpec {
     pub roads: Option<ExportRoads>,
     /// The walls between regions and their road openings.
     pub region_walls: Option<ExportRegionWalls>,
+    /// Groups of interactive objects: type, center and member indices into
+    /// `objects`.
+    pub interactive_groups: Option<Vec<crate::level::InteractiveGroup>>,
     /// Every placed object with position and size in meters.
     pub objects: Vec<crate::level::PlacedObject>,
 }
@@ -272,6 +275,7 @@ impl ExportSpec {
                         .collect(),
                 }
             }),
+            interactive_groups: level.interactive.as_ref().map(|l| l.groups.clone()),
             objects: level.objects.clone(),
         }
     }
@@ -321,6 +325,7 @@ mod tests {
             region_walls: None,
             houses: None,
             props: None,
+            interactive: None,
             regions: None,
             noise_preview: None,
             notes: Vec::new(),
