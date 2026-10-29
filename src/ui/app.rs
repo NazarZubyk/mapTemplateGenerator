@@ -3,7 +3,7 @@ use rand::Rng;
 
 use crate::level::GeneratedLevel;
 use crate::model::{LevelConfig, Warning};
-use crate::ui::{left_panel, preview, warnings};
+use crate::ui::{left_panel, preview, warnings, workflow};
 use crate::validate::validate;
 
 pub struct MapGenApp {
@@ -23,6 +23,8 @@ pub struct MapGenApp {
     pub export_status: Option<ConfigStatus>,
     pub preview: preview::PreviewState,
     pub warnings_open: bool,
+    /// Whether the workflow bottom panel is expanded.
+    pub workflow_open: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -45,6 +47,7 @@ impl Default for MapGenApp {
             export_status: None,
             preview: preview::PreviewState::default(),
             warnings_open: false,
+            workflow_open: true,
         }
     }
 }
@@ -68,10 +71,12 @@ impl MapGenApp {
 
 impl eframe::App for MapGenApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // The config is small: re-validate every frame so markers stay current.
+        // The config is small: re-validate every frame so warnings stay current.
         self.warnings = validate(&self.config);
         self.warnings.extend(self.gen_warnings.iter().cloned());
 
+        // Bottom panels: the first registered sits at the very bottom edge.
+        self.show_workflow_panel(ctx);
         self.show_warnings_panel(ctx);
         self.show_action_bar(ctx);
         self.show_settings_panel(ctx);
@@ -80,8 +85,8 @@ impl eframe::App for MapGenApp {
 }
 
 impl MapGenApp {
-    /// Always-visible bar with the Generate button, seed control and status,
-    /// so the user can regenerate at any time after changing values.
+    /// Always-visible bar with the Generate button and seed control, so the user
+    /// can regenerate at any time after changing values.
     fn show_action_bar(&mut self, ctx: &egui::Context) {
         let blocking = self.warnings.iter().filter(|w| w.blocking).count();
         let generated_info = self
@@ -141,6 +146,34 @@ impl MapGenApp {
             ui.add_space(4.0);
         });
     }
+
+    fn show_workflow_panel(&mut self, ctx: &egui::Context) {
+        let panel = egui::TopBottomPanel::bottom("workflow_panel")
+            .resizable(true)
+            .default_height(170.0)
+            .height_range(40.0..=400.0);
+        let panel = if self.workflow_open {
+            panel
+        } else {
+            panel.exact_height(24.0)
+        };
+        panel.show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                let arrow = if self.workflow_open { "▼" } else { "▶" };
+                if ui.small_button(arrow).clicked() {
+                    self.workflow_open = !self.workflow_open;
+                }
+                ui.strong("Current workflow");
+                ui.separator();
+                ui.weak(workflow::current_step_label());
+            });
+            if self.workflow_open {
+                ui.separator();
+                workflow::show_bench(ui, self);
+            }
+        });
+    }
+
     fn show_warnings_panel(&mut self, ctx: &egui::Context) {
         let total = self.warnings.len();
         let blocking = self.warnings.iter().filter(|w| w.blocking).count();
@@ -149,7 +182,7 @@ impl MapGenApp {
 
         let panel = egui::TopBottomPanel::bottom("warnings_panel");
         let panel = if open {
-            panel.resizable(true).default_height(170.0).height_range(60.0..=420.0)
+            panel.resizable(true).default_height(150.0).height_range(60.0..=420.0)
         } else {
             panel.exact_height(30.0)
         };

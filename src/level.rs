@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use crate::model::{ColorRgb, LevelConfig, TemplateKind};
+use crate::model::LevelConfig;
 
-/// Object category — doubles as the layer id in the exported layer PNG (Phase 3).
+/// Object category — doubles as the layer id in the exported layer PNG. The
+/// category set grows back as the generator sections land (docs/workflow.md).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Category {
     Structure,
@@ -27,49 +28,35 @@ impl Category {
             Category::Gate => 7,
         }
     }
+
+    pub const ALL: [Category; 7] = [
+        Category::Structure,
+        Category::Prop,
+        Category::Interactive,
+        Category::HiddenRoom,
+        Category::HiddenRoomPath,
+        Category::MobSpawn,
+        Category::Gate,
+    ];
 }
 
-/// Type-specific details carried into the exported specification (Phase 3).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum ObjectDetails {
-    Structure { template: TemplateKind },
-    Prop,
-    Interactive { group_id: u32, group_size: u32 },
-    HiddenRoom { room_id: u32 },
-    HiddenRoomPath { room_id: u32 },
-    /// One spawn point; members are (mob type name, count).
-    MobSpawn { members: Vec<(String, u32)> },
-    Gate { direction_deg: f32 },
-}
-
+/// One placed object: an axis-aligned rect in meters. (x, y) is the top-left
+/// corner, origin at the map's top-left, +y pointing down the map.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlacedObject {
     pub category: Category,
     pub type_name: String,
-    pub color: ColorRgb,
-    /// Axis-aligned footprint in meters; (x, y) is the top-left corner,
-    /// origin at the map's top-left, +y pointing down the map.
+    /// RGB color used on map.png and in the legend.
+    pub color: [u8; 3],
     pub x_m: f32,
     pub y_m: f32,
     pub w_m: f32,
     pub h_m: f32,
-    pub details: ObjectDetails,
 }
 
-impl PlacedObject {
-    pub fn rect(&self) -> crate::generator::grid::RectM {
-        crate::generator::grid::RectM {
-            x: self.x_m,
-            y: self.y_m,
-            w: self.w_m,
-            h: self.h_m,
-        }
-    }
-}
-
+/// A generated level: the config snapshot it came from plus everything placed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GeneratedLevel {
-    /// Snapshot of the config used, so exports (Phase 3) are self-contained.
     pub config: LevelConfig,
     pub seed: u64,
     pub objects: Vec<PlacedObject>,

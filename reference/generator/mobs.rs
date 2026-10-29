@@ -6,6 +6,8 @@ use crate::model::LevelConfig;
 
 const MAX_PACK: u32 = 3;
 const CELL_ATTEMPTS: usize = 100;
+/// Give up after this many spawns rejected for sealing off a walkable pocket.
+const MAX_REJECTED_SPAWNS: u32 = 60;
 
 /// Spend the mob budget greedily: spawn points on free ground, packs (1..=3 mobs)
 /// chosen by balance weights among types allowed by the combination rules. Stops on
@@ -42,6 +44,8 @@ pub fn place(
     let mut remaining_budget = mobs.budget;
     let mut entities: u32 = 0;
     let mut spawn_points: u32 = 0;
+    let mut rejected: u32 = 0;
+    let regions_before = grid.connected_walkable_components(1);
     let stop_reason;
 
     'outer: loop {
@@ -108,7 +112,6 @@ pub fn place(
             stop_reason = "budget exhausted";
             break 'outer;
         }
-        remaining_budget -= pack_budget;
 
         // Footprint sized by the biggest mob in the pack; falls back to one cell.
         let size = members
@@ -119,7 +122,18 @@ pub fn place(
         if !grid.area_free(rect) {
             rect = cell;
         }
-        grid.mark(rect);
+        // A spawn must never seal off a street or a walkable pocket; on success
+        // the rect is already marked on the grid.
+        if !grid.placement_keeps_regions(rect, regions_before) {
+            rejected += 1;
+            entities -= members.iter().map(|(_, c)| c).sum::<u32>();
+            if rejected >= MAX_REJECTED_SPAWNS {
+                stop_reason = "no free space";
+                break 'outer;
+            }
+            continue 'outer;
+        }
+        remaining_budget -= pack_budget;
         spawn_points += 1;
 
         let (first, _) = members[0];
@@ -131,6 +145,7 @@ pub fn place(
             y_m: rect.y,
             w_m: rect.w,
             h_m: rect.h,
+            angle_deg: 0.0,
             details: ObjectDetails::MobSpawn {
                 members: members
                     .into_iter()

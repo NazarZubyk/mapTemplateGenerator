@@ -57,18 +57,20 @@ pub fn structure_name(kind: TemplateKind) -> &'static str {
     }
 }
 
-/// Estimate of how many structures fill `density_pct` of the zone: coverage divided
-/// by the average structure footprint.
-fn target_count(zone: &Zone, settings: &StructureSettings) -> usize {
+/// Estimate of how many structures fill `density_pct` of the buildable ground:
+/// coverage divided by the average structure footprint.
+fn target_count(buildable_area: f32, settings: &StructureSettings) -> usize {
     let avg = ((settings.size.min_m + settings.size.max_m) * 0.5).max(0.01);
     let avg_area = avg * avg;
-    let coverage = zone.rect.area() * settings.density_pct.clamp(0.0, 100.0) / 100.0;
+    let coverage = buildable_area * settings.density_pct.clamp(0.0, 100.0) / 100.0;
     (coverage / avg_area).ceil() as usize
 }
 
 /// Place template structures for all zones, round-robin so both templates in a mix
-/// share the global walkable budget fairly. Overlap-free; stops early when the
-/// walkable % target or the free space is exhausted.
+/// share the global walkable budget fairly. Each structure samples random anchor
+/// cells AND angles: the first rotation that fits the tight free spot wins, which
+/// makes houses lean every which way like an organically grown town. Stops early
+/// when the walkable % target or the free space is exhausted.
 pub fn place(
     rng: &mut impl Rng,
     grid: &mut Grid,
@@ -78,12 +80,19 @@ pub fn place(
     objects: &mut Vec<PlacedObject>,
     notes: &mut Vec<String>,
 ) {
+    let regions_before = grid.connected_walkable_components(1);
     let mut work: Vec<(usize, usize)> = zones // (zone index, remaining)
         .iter()
         .enumerate()
-        .map(|(i, z)| (i, target_count(z, &z.structure(config))))
+        .map(|(i, z)| {
+            (
+                i,
+                target_count(grid.buildable_area_in(z.rect), &z.structure(config)),
+            )
+        })
         .filter(|&(_, n)| n > 0)
         .collect();
+    let initial_targets: Vec<usize> = work.iter().map(|&(_, n)| n).collect();
 
     let mut budget_exhausted = false;
     while !work.is_empty() {
@@ -95,31 +104,56 @@ pub fn place(
             let w = rng.random_range(settings.size.min_m..=settings.size.max_m.max(settings.size.min_m));
             let h = rng.random_range(settings.size.min_m..=settings.size.max_m.max(settings.size.min_m));
 
-            match grid.random_free_rect(rng, w, h, zone.rect, 200) {
+            // Try anchor cells near open ground + random angles; first fit wins
+            // (organic, tight packing).
+            let mut fit: Option<(f32, f32, f32, usize)> = None;
+            for _ in 0..400 {
+                let Some((ax, ay)) = grid.random_free_anchor(rng, zone.rect, 1) else {
+                    continue;
+                };
+                let cx = ax + rng.random_range(-w / 2.0..w / 2.0);
+                let cy = ay + rng.random_range(-h / 2.0..h / 2.0);
+                let angle = rng.random_range(0.0..360.0);
+                // Charge the EXACT area to the budget: the conservative cell
+                // marking over-covers by up to half a cell for non-overlap
+                // safety, which would otherwise starve the budget.
+                let exact_cells = ((w * h) / (grid.cell_m * grid.cell_m)).ceil() as usize;
+                if !budget.can_fit(exact_cells) {
+                    budget_exhausted = true;
+                    break;
+                }
+                if grid
+                    .place_rotated_checked((cx, cy), w, h, angle, regions_before)
+                    .is_some()
+                {
+                    fit = Some((cx, cy, angle, exact_cells));
+                    break;
+                }
+            }
+
+            match fit {
                 None => {
-                    notes.push(format!(
-                        "{}: could only place some structures (no free space left in its zone)",
-                        zone.kind
-                    ));
+                    // Organic packing rarely hits the exact target; only report
+                    // when less than half of it was achieved.
+                    if !budget_exhausted && remaining * 2 > initial_targets[zi] {
+                        notes.push(format!(
+                            "{}: could only place some structures (no fitting spot left in its zone)",
+                            zone.kind
+                        ));
+                    }
                     work.swap_remove(i);
                 }
-                Some(rect) => {
-                    let cells = grid.cell_count(rect);
-                    if !budget.can_fit(cells) {
-                        budget_exhausted = true;
-                        work.swap_remove(i);
-                        continue;
-                    }
-                    grid.mark(rect);
+                Some((cx, cy, angle, cells)) => {
                     budget.consume(cells);
                     objects.push(PlacedObject {
                         category: Category::Structure,
                         type_name: structure_name(zone.kind).to_owned(),
                         color: settings.color,
-                        x_m: rect.x,
-                        y_m: rect.y,
-                        w_m: rect.w,
-                        h_m: rect.h,
+                        x_m: cx - w / 2.0,
+                        y_m: cy - h / 2.0,
+                        w_m: w,
+                        h_m: h,
+                        angle_deg: angle,
                         details: ObjectDetails::Structure { template: zone.kind },
                     });
                     work[i] = (zi, remaining - 1);
@@ -144,6 +178,7 @@ pub fn place(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::generator::geometry;
     use rand_chacha::ChaCha8Rng;
     use rand::SeedableRng;
 
@@ -191,11 +226,25 @@ mod tests {
         assert!(!objects.is_empty());
         assert!(objects.iter().any(|o| o.type_name == "House"));
         assert!(objects.iter().any(|o| o.type_name == "Tree"));
+        // Houses come out rotated (organic town), trees may too.
+        assert!(objects.iter().any(|o| o.angle_deg.abs() > 1.0));
+        let corners = |o: &PlacedObject| {
+            geometry::rot_rect_corners(
+                (o.x_m + o.w_m / 2.0, o.y_m + o.h_m / 2.0),
+                o.w_m,
+                o.h_m,
+                o.angle_deg,
+            )
+        };
         for (i, a) in objects.iter().enumerate() {
-            assert!(a.x_m >= 0.0 && a.y_m >= 0.0 && a.x_m + a.w_m <= config.map.width_m + 0.01);
-            assert!(a.y_m + a.h_m <= config.map.height_m + 0.01);
+            assert!(a.x_m + a.w_m >= 0.0 && a.y_m + a.h_m >= 0.0);
+            assert!(a.x_m - a.w_m <= config.map.width_m + 0.01);
+            assert!(a.y_m - a.h_m <= config.map.height_m + 0.01);
             for b in objects.iter().skip(i + 1) {
-                assert!(!a.rect().overlaps(&b.rect()), "{a:?} overlaps {b:?}");
+                assert!(
+                    !geometry::rotated_rects_overlap(&corners(a), &corners(b)),
+                    "{a:?} overlaps {b:?}"
+                );
             }
         }
     }

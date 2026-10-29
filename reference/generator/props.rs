@@ -32,12 +32,18 @@ pub fn place(
     }
 
     let mut skipped = 0u32;
+    let regions_before = grid.connected_walkable_components(1);
     for _ in 0..effective {
         let w = rng.random_range(p.size.min_m..=p.size.max_m.max(p.size.min_m));
         let h = rng.random_range(p.size.min_m..=p.size.max_m.max(p.size.min_m));
         match grid.random_free_rect(rng, w, h, map, 50) {
             Some(rect) => {
-                grid.mark(rect);
+                // Props must not seal off a street or pocket; on success the
+                // rect is already marked on the grid.
+                if !grid.placement_keeps_regions(rect, regions_before) {
+                    skipped += 1;
+                    continue;
+                }
                 objects.push(PlacedObject {
                     category: Category::Prop,
                     type_name: "Prop".to_owned(),
@@ -46,6 +52,7 @@ pub fn place(
                     y_m: rect.y,
                     w_m: rect.w,
                     h_m: rect.h,
+                    angle_deg: 0.0,
                     details: ObjectDetails::Prop,
                 });
             }

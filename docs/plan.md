@@ -1,5 +1,9 @@
 # Execution Plan — MapTemplateGenerator MVP
 
+> **Outdated.** This plan described the first (monolithic) build, which was moved
+> to `reference/`. The active process is now the incremental rebuild described in
+> [workflow.md](workflow.md). Kept for historical context only.
+
 Read [goals.md](goals.md) first; this plan describes **how** we build it. Requirements in
 goals.md always win over this plan if they conflict.
 
@@ -30,7 +34,8 @@ src/
 ├── gen/               # deterministic generation engine (one file per concern)
 │   ├── mod.rs         #   generate(config, seed) -> GeneratedLevel
 │   ├── grid.rs        #   occupancy/walkable masks, rect placement helpers
-│   ├── structures.rs, props.rs, interactives.rs, hidden_rooms.rs, mobs.rs, gates.rs
+│   ├── geometry.rs, structures.rs, walls.rs, sections.rs, roads.rs, props.rs,
+│   ├── interactives.rs, hidden_rooms.rs, mobs.rs, gates.rs
 ├── render.rs          # level -> map.png / layer.png pixel buffers
 ├── export.rs          # config save/load (JSON), export bundle writer
 └── ui/
@@ -80,19 +85,29 @@ fn generate(config: &LevelConfig, seed: u64) -> GeneratedLevel  // pure & determ
 
 1. **Zones for mixes**: split the map by a vertical or horizontal line at a seed-random
    35–65 % position; each zone uses its template's structure rules.
-2. **Structures**: density % → target coverage; place axis-aligned rects sized within the
+2. **Walls (organic town)**: walled template kinds (towns by default) get a smooth
+   polar-noise blob covering most of the zone (a few deep notches on big maps); ground
+   outside it is blocked. A perimeter wall follows the blob boundary, with gate plazas
+   punched through and, in a mix, one road continuing to the neighboring zone.
+   Recursive polygon partition cuts the interior into sections of decreasing area;
+   every cut chord becomes a wall with one street-wide gap. A road web (gates + gap
+   midpoints + per-section crossroads, minimum spanning tree of gently curved beziers)
+   is stamped as open walkable cells: buildings avoid roads, props may stand on them.
+3. **Structures**: density % → target coverage; place axis-aligned rects sized within the
    allowed range, overlap-free (bounded retry sampling), marking cells occupied; stop early
    with a warning if the walkable target would be violated.
-3. **Props / interactives**: scatter on free ground, overlap-free; interactives are placed
+4. **Props / interactives**: scatter on free ground, overlap-free; interactives are placed
    as clusters whose sizes sum to the quantity, each cluster within the group-size range.
-4. **Hidden rooms**: rect rooms (size range) placed overlap-free, each connected to the
+5. **Hidden rooms**: rect rooms (size range) placed overlap-free, each connected to the
    main walkable area by one L-shaped path of player-passable width; mobs path-blocking is
    a per-level flag.
-5. **Mobs**: spend the budget greedily — pick spawn points on free walkable ground; at each
+6. **Mobs**: spend the budget greedily — pick spawn points on free walkable ground; at each
    point fill a combination (respecting the allowed-combination rules) chosen by balance
    weights; stop at budget exhaustion, entity cap, or no space.
-6. **Gates**: point on the map border at the configured angle from the center.
-7. Determinism: same (config, seed) ⇒ identical `GeneratedLevel`. Re-roll = new seed.
+7. **Gates**: point on the map border at the configured angle from the center.
+8. Determinism: same (config, seed) ⇒ identical `GeneratedLevel`. Re-roll = new seed.
+   Every placement phase re-checks connectivity: nothing may seal off a walkable pocket
+   (the map always stays one connected region).
 
 ## Validation (phase 1 core, extended in phase 2)
 

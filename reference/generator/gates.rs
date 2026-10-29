@@ -1,4 +1,5 @@
 use crate::generator::grid::{Grid, RectM};
+use crate::generator::walls::TownBlob;
 use crate::level::{Category, ObjectDetails, PlacedObject};
 use crate::model::LevelConfig;
 
@@ -21,11 +22,13 @@ pub fn border_point(map_w: f32, map_h: f32, deg: f32) -> (f32, f32) {
     (cx + t * dx, cy + t * dy)
 }
 
-/// Place gate markers: 1 m squares centered on the border point. Gates are pure
-/// points on the layout (per goals.md), so they don't occupy grid cells.
+/// Place gate markers: 1 m squares. Walled maps put every gate ON the town wall
+/// (measured from the town center); open maps keep them on the map border. Gates
+/// are pure points on the layout (per goals.md), so they don't occupy grid cells.
 pub fn place(
     grid: &Grid,
     config: &LevelConfig,
+    blobs: &[TownBlob],
     objects: &mut Vec<PlacedObject>,
     notes: &mut Vec<String>,
 ) {
@@ -33,16 +36,37 @@ pub fn place(
     let map_h = config.map.height_m;
     let size = 1.0_f32.min(map_w).min(map_h);
     for (i, gate) in config.gates.iter().enumerate() {
-        let (px, py) = border_point(map_w, map_h, gate.direction_deg);
+        let (px, py) = match blobs.first() {
+            Some(blob) => {
+                let p = blob.boundary_point(gate.direction_deg);
+                (p.0, p.1)
+            }
+            None => border_point(map_w, map_h, gate.direction_deg),
+        };
         let rect = RectM::new(
             (px - size / 2.0).clamp(0.0, map_w - size),
             (py - size / 2.0).clamp(0.0, map_h - size),
             size,
             size,
         );
-        if !grid.area_free(rect) {
+        // Walled templates carve a reserved (but walkable) opening at each gate.
+        // Only SOLID cells (walls, houses — not mobs or props standing on the
+        // open plaza) count as blocked.
+        let blocked = {
+            let (c0, r0, c1, r1) = grid.cell_range(rect);
+            let mut hit = false;
+            for r in r0..r1 {
+                for c in c0..c1 {
+                    if !grid.is_free(c, r) && !grid.is_path(c, r) && !grid.is_road(c, r) {
+                        hit = true;
+                    }
+                }
+            }
+            hit
+        };
+        if blocked {
             notes.push(format!(
-                "Gate #{} overlaps a placed object at the map border",
+                "Gate #{} overlaps a solid object",
                 i + 1
             ));
         }
@@ -54,6 +78,7 @@ pub fn place(
             y_m: rect.y,
             w_m: rect.w,
             h_m: rect.h,
+            angle_deg: 0.0,
             details: ObjectDetails::Gate {
                 direction_deg: gate.direction_deg,
             },

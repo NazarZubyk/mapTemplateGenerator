@@ -1,7 +1,7 @@
 use eframe::egui;
 use egui::{Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Vec2};
 
-use crate::level::{Category, GeneratedLevel, ObjectDetails};
+use crate::level::GeneratedLevel;
 use crate::model::LevelConfig;
 
 /// Pixels per meter; clamped so the map can never get lost off-screen entirely.
@@ -129,7 +129,6 @@ fn color32(rgb: [u8; 3]) -> Color32 {
 fn draw_level(painter: &egui::Painter, map_rect: Rect, zoom: f32, level: &GeneratedLevel) {
     let clipped = painter.with_clip_rect(map_rect);
     for o in &level.objects {
-        let color = color32(o.color);
         match o.category {
             Category::MobSpawn => {
                 let center = to_screen(
@@ -139,38 +138,32 @@ fn draw_level(painter: &egui::Painter, map_rect: Rect, zoom: f32, level: &Genera
                     o.y_m + o.h_m / 2.0,
                 );
                 let r = (o.w_m.min(o.h_m) * zoom / 2.0).max(3.0);
+                let color = color32(o.color);
                 clipped.circle_filled(center, r, color);
                 clipped.circle_stroke(center, r, Stroke::new(1.0_f32, Color32::BLACK));
             }
             Category::Gate => {
                 let center = to_screen(map_rect, zoom, o.x_m + o.w_m / 2.0, o.y_m + o.h_m / 2.0);
                 let r = (o.w_m * zoom / 2.0).max(4.0);
+                let color = color32(o.color);
                 clipped.circle_filled(center, r, color);
-                // Direction tick: the angle the gate points at (0° east, 90° north).
-                if let ObjectDetails::Gate { direction_deg } = &o.details {
-                    let rad = direction_deg.to_radians();
-                    let dir = Vec2::new(rad.cos(), -rad.sin());
-                    clipped.line_segment(
-                        [center, center + dir * (r + 7.0)],
-                        Stroke::new(2.0_f32, color),
-                    );
-                }
             }
             _ => {
                 let min = to_screen(map_rect, zoom, o.x_m, o.y_m);
                 let max = to_screen(map_rect, zoom, o.x_m + o.w_m, o.y_m + o.h_m);
                 let rect = Rect::from_min_max(min, max);
+                let color = color32(o.color);
                 clipped.rect_filled(rect, 0.0, color);
-                clipped.rect_stroke(rect, 0.0, Stroke::new(1.0_f32, color32(darker(o.color))), egui::StrokeKind::Inside);
+                clipped.rect_stroke(rect, 0.0, Stroke::new(1.0_f32, darker(o.color)), egui::StrokeKind::Inside);
             }
         }
     }
 }
 
-fn darker(rgb: [u8; 3]) -> [u8; 3] {
+fn darker(rgb: [u8; 3]) -> Color32 {
     // u16 math: u8 * 2 would overflow (and panic in debug builds) for values >= 128.
     let d = |v: u8| (v as u16 * 2 / 3) as u8;
-    [d(rgb[0]), d(rgb[1]), d(rgb[2])]
+    color32([d(rgb[0]), d(rgb[1]), d(rgb[2])])
 }
 
 /// Small color -> name legend in the top-right corner of the canvas.
@@ -255,19 +248,18 @@ fn draw_grid(painter: &egui::Painter, map_rect: Rect, zoom: f32, width_m: f32, h
     }
 }
 
+use crate::level::Category;
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn darker_never_overflows_and_stays_below_input() {
+    fn darker_never_exceeds_input() {
         for v in 0..=255u8 {
             let out = darker([v, 0, 0]);
-            assert!(out[0] <= v, "darker({v}) = {}", out[0]);
+            assert!(out.r() <= v, "darker({v}) = {out:?}");
         }
-        // The default palette must survive too (this panicked before the u16 fix).
-        let _ = darker([165, 120, 75]);
         let _ = darker([255, 255, 255]);
     }
 }
-

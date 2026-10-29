@@ -1,5 +1,7 @@
 use rand::Rng;
 
+use crate::generator::geometry;
+
 /// Axis-aligned rectangle in meters, origin at the map's top-left (+y down).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RectM {
@@ -43,6 +45,12 @@ pub struct Grid {
     /// Cells carved by hidden-room access paths: reserved (nothing else may build
     /// here) but still walkable — they are passages, not obstacles.
     path: Vec<bool>,
+    /// Road cells: walkable open ground where buildings may NOT stand, but props,
+    /// interactive plants and mobs may. Roads never block anything.
+    road: Vec<bool>,
+    /// Wall cells (perimeter/section walls): solid, but hidden-room access paths
+    /// may tunnel through them as secret passages.
+    wall: Vec<bool>,
 }
 
 impl Grid {
@@ -57,6 +65,8 @@ impl Grid {
             rows,
             occupied: vec![false; n],
             path: vec![false; n],
+            road: vec![false; n],
+            wall: vec![false; n],
         }
     }
 
@@ -106,6 +116,89 @@ impl Grid {
         (r0..r1).all(|r| (c0..c1).all(|c| self.is_free(c, r)))
     }
 
+    /// Like `area_free`, but reserved path cells (hidden-room access paths, gate
+    /// and street openings) count as available: they are walkable passages.
+    pub fn area_walkable(&self, rect: RectM) -> bool {
+        let (c0, r0, c1, r1) = self.cell_range(rect);
+        (r0..r1)
+            .all(|r| (c0..c1).all(|c| self.is_free(c, r) || self.is_path(c, r)))
+    }
+
+    /// Like `area_free`, but road cells also block: used by things that must not
+    /// stand on roads (buildings, hidden rooms).
+    pub fn area_free_for_building(&self, rect: RectM) -> bool {
+        let (c0, r0, c1, r1) = self.cell_range(rect);
+        (r0..r1).all(|r| {
+            (c0..c1).all(|c| {
+                let i = self.idx(c, r);
+                !self.occupied[i] && !self.road[i]
+            })
+        })
+    }
+
+    /// `random_free_rect` variant that also avoids road cells.
+    pub fn random_free_building_rect(
+        &self,
+        rng: &mut impl Rng,
+        w_m: f32,
+        h_m: f32,
+        zone: RectM,
+        attempts: usize,
+    ) -> Option<RectM> {
+        for _ in 0..attempts {
+            // Anchor on a free, road-free cell so candidates land where there
+            // is actually space, then jitter the rect around it.
+            let (ax, ay) = self.random_free_anchor(rng, zone, 1)?;
+            let px = ax - w_m / 2.0 + rng.random_range(-w_m / 2.0..w_m / 2.0);
+            let py = ay - h_m / 2.0 + rng.random_range(-h_m / 2.0..h_m / 2.0);
+            let rect = Self::snap(px.max(zone.x), py.max(zone.y), w_m, h_m, self.cell_m);
+            if self.area_free_for_building(rect) {
+                return Some(rect);
+            }
+        }
+        None
+    }
+
+    /// Center of a random free, road-free cell inside `zone` — an anchor point
+    /// for placement sampling in built-up maps.
+    pub fn random_free_anchor(
+        &self,
+        rng: &mut impl Rng,
+        zone: RectM,
+        attempts: usize,
+    ) -> Option<(f32, f32)> {
+        let (c0, r0, c1, r1) = self.cell_range(zone);
+        if c1 <= c0 || r1 <= r0 {
+            return None;
+        }
+        for _ in 0..attempts {
+            let c = rng.random_range(c0..c1);
+            let r = rng.random_range(r0..r1);
+            let i = self.idx(c, r);
+            if !self.occupied[i] && !self.road[i] {
+                return Some(((c as f32 + 0.5) * self.cell_m, (r as f32 + 0.5) * self.cell_m));
+            }
+        }
+        None
+    }
+
+    /// Buildable ground (free, road-free) inside `rect` in m². Walled towns
+    /// exclude the forest ring and walls, so content targets scale to the space
+    /// that actually exists instead of the raw zone rectangle.
+    pub fn buildable_area_in(&self, rect: RectM) -> f32 {
+        let (c0, r0, c1, r1) = self.cell_range(rect);
+        let mut n = 0usize;
+        for r in r0..r1 {
+            for c in c0..c1 {
+                let i = self.idx(c, r);
+                if !self.occupied[i] && !self.road[i] {
+                    n += 1;
+                }
+            }
+        }
+        n as f32 * self.cell_m * self.cell_m
+    }
+
     pub fn mark(&mut self, rect: RectM) {
         let (c0, r0, c1, r1) = self.cell_range(rect);
         for r in r0..r1 {
@@ -116,10 +209,164 @@ impl Grid {
         }
     }
 
+    /// Undo `mark` (reserved path cells stay occupied). Used for tentative checks.
+    pub fn unmark(&mut self, rect: RectM) {
+        let (c0, r0, c1, r1) = self.cell_range(rect);
+        for r in r0..r1 {
+            for c in c0..c1 {
+                let i = r * self.cols + c;
+                if !self.path[i] {
+                    self.occupied[i] = false;
+                }
+            }
+        }
+    }
+
+    /// Tentatively mark `rect` and keep it only when the walkable area does not
+    /// split into more connected components than `regions_before` — placements
+    /// must never seal off a walkable pocket (streets stay passable). Unmarks
+    /// and returns false when the placement would fragment the map.
+    pub fn placement_keeps_regions(&mut self, rect: RectM, regions_before: usize) -> bool {
+        self.mark(rect);
+        let ok = self.connected_walkable_components(1) <= regions_before;
+        if !ok {
+            self.unmark(rect);
+        }
+        ok
+    }
+
     /// Cell-count footprint of a rect (what the walkable budget is charged).
     pub fn cell_count(&self, rect: RectM) -> usize {
         let (c0, r0, c1, r1) = self.cell_range(rect);
         (c1 - c0) * (r1 - r0)
+    }
+
+    /// Block a single cell (e.g. ground outside the town blob).
+    pub fn mark_cell(&mut self, c: usize, r: usize) {
+        let i = self.idx(c, r);
+        self.occupied[i] = true;
+    }
+
+    /// Carve a road cell: open walkable ground where buildings may not stand.
+    /// Roads may punch passages through walls where the web crosses them.
+    pub fn mark_road_cell(&mut self, c: usize, r: usize) {
+        let i = self.idx(c, r);
+        self.occupied[i] = false;
+        self.path[i] = false;
+        self.road[i] = true;
+    }
+
+    pub fn is_road(&self, c: usize, r: usize) -> bool {
+        self.road[self.idx(c, r)]
+    }
+
+    /// Cells (col, row) whose centers lie inside the rotated rect.
+    pub fn rotated_rect_cells(
+        &self,
+        center: geometry::Vec2,
+        w_m: f32,
+        h_m: f32,
+        angle_deg: f32,
+    ) -> Vec<(usize, usize)> {
+        let corners = geometry::rot_rect_corners(center, w_m, h_m, angle_deg);
+        let xs = corners.map(|p| p.0);
+        let ys = corners.map(|p| p.1);
+        let (c0, r0, c1, r1) = self.cell_range(RectM::new(
+            xs.iter().copied().fold(f32::INFINITY, f32::min),
+            ys.iter().copied().fold(f32::INFINITY, f32::min),
+            xs.iter().copied().fold(f32::NEG_INFINITY, f32::max)
+                - xs.iter().copied().fold(f32::INFINITY, f32::min),
+            ys.iter().copied().fold(f32::NEG_INFINITY, f32::max)
+                - ys.iter().copied().fold(f32::INFINITY, f32::min),
+        ));
+        let (s, c_) = angle_deg.to_radians().sin_cos();
+        let (hw, hh) = (w_m / 2.0, h_m / 2.0);
+        // Conservative rasterization: a cell counts as covered when it INTERSECTS
+        // the rect (square's half-extent on the rect's local axes). Grid-disjoint
+        // placements are then guaranteed geometrically disjoint — cell-center
+        // marking would let two rotated rects slip between cell centers.
+        let margin = self.cell_m / 2.0 * (c_.abs() + s.abs());
+        let mut cells = Vec::new();
+        for r in r0..r1 {
+            for c in c0..c1 {
+                let p = ((c as f32 + 0.5) * self.cell_m, (r as f32 + 0.5) * self.cell_m);
+                let dx = p.0 - center.0;
+                let dy = p.1 - center.1;
+                let lx = dx * c_ + dy * s;
+                let ly = -dx * s + dy * c_;
+                if lx.abs() <= hw + margin && ly.abs() <= hh + margin {
+                    cells.push((c, r));
+                }
+            }
+        }
+        cells
+    }
+
+    fn cells_blocked_for_building(&self, cells: &[(usize, usize)]) -> bool {
+        cells
+            .iter()
+            .any(|&(c, r)| self.occupied[self.idx(c, r)] || self.road[self.idx(c, r)])
+    }
+
+    fn mark_cells(&mut self, cells: &[(usize, usize)]) {
+        for &(c, r) in cells {
+            let i = self.idx(c, r);
+            self.occupied[i] = true;
+        }
+    }
+
+    fn unmark_cells(&mut self, cells: &[(usize, usize)]) {
+        for &(c, r) in cells {
+            let i = self.idx(c, r);
+            // Reserved path/road cells stay reserved; plain wall/blocked cells
+            // only ever come from this tentative marking.
+            if !self.path[i] && !self.road[i] {
+                self.occupied[i] = false;
+            }
+        }
+    }
+
+    /// Try to place a rotated building rect: every covered cell must be free and
+    /// road-free, and the placement must not split the walkable area into more
+    /// connected components than `regions_before`. Marks the cells on success and
+    /// returns their count (for the walkable budget); `None` marks nothing.
+    pub fn place_rotated_checked(
+        &mut self,
+        center: geometry::Vec2,
+        w_m: f32,
+        h_m: f32,
+        angle_deg: f32,
+        regions_before: usize,
+    ) -> Option<usize> {
+        let cells = self.rotated_rect_cells(center, w_m, h_m, angle_deg);
+        if cells.is_empty() || self.cells_blocked_for_building(&cells) {
+            return None;
+        }
+        self.mark_cells(&cells);
+        if self.connected_walkable_components(1) > regions_before {
+            self.unmark_cells(&cells);
+            return None;
+        }
+        Some(cells.len())
+    }
+
+    /// Mark a rotated rect as solid (walls) without any checks.
+    pub fn mark_rotated(&mut self, center: geometry::Vec2, w_m: f32, h_m: f32, angle_deg: f32) {
+        let cells = self.rotated_rect_cells(center, w_m, h_m, angle_deg);
+        for &(c, r) in &cells {
+            let i = self.idx(c, r);
+            self.occupied[i] = true;
+            self.wall[i] = true;
+        }
+    }
+
+    pub fn is_wall(&self, c: usize, r: usize) -> bool {
+        self.wall[self.idx(c, r)]
+    }
+
+    /// Number of cells the rotated rect would cover (for budget estimates).
+    pub fn rotated_cell_count(&self, center: geometry::Vec2, w_m: f32, h_m: f32, angle_deg: f32) -> usize {
+        self.rotated_rect_cells(center, w_m, h_m, angle_deg).len()
     }
 
     /// Find a free spot for a `w_m x h_m` rect inside `zone`, snapping the top-left

@@ -13,6 +13,7 @@ pub fn place(
     notes: &mut Vec<String>,
 ) {
     let map = RectM::new(0.0, 0.0, config.map.width_m, config.map.height_m);
+    let regions_before = grid.connected_walkable_components(1);
 
     for (type_idx, it) in config.interactive.iter().enumerate() {
         let name = if it.name.is_empty() {
@@ -26,6 +27,7 @@ pub fn place(
 
         let mut group_id: u32 = 0;
         let mut remaining = it.quantity;
+        let mut rejected = 0u32;
         while remaining > 0 {
             let want = rng.random_range(gmin..=gmax).round().max(1.0) as u32;
             let k = want.min(remaining);
@@ -39,7 +41,25 @@ pub fn place(
                 map,
                 50,
             ) {
-                Some(b) => b,
+                Some(b) => {
+                    // A cluster must not seal off a street or pocket; on success
+                    // the whole bbox is already marked on the grid.
+                    if grid.placement_keeps_regions(b, regions_before) {
+                        b
+                    } else {
+                        rejected += 1;
+                        if rejected > 100 {
+                            let placed = it.quantity - remaining;
+                            notes.push(format!(
+                                "Interactive '{name}': placed {placed} of {} (free spots \
+                                 would seal the map)",
+                                it.quantity
+                            ));
+                            break;
+                        }
+                        continue;
+                    }
+                }
                 None => {
                     let placed = it.quantity - remaining;
                     notes.push(format!(
@@ -57,7 +77,6 @@ pub fn place(
                     size,
                     size,
                 );
-                grid.mark(rect);
                 objects.push(PlacedObject {
                     category: Category::Interactive,
                     type_name: name.clone(),
@@ -66,6 +85,7 @@ pub fn place(
                     y_m: rect.y,
                     w_m: rect.w,
                     h_m: rect.h,
+                    angle_deg: 0.0,
                     details: ObjectDetails::Interactive { group_id, group_size: k },
                 });
             }

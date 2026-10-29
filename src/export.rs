@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::level::{Category, GeneratedLevel, ObjectDetails, PlacedObject};
+use crate::level::GeneratedLevel;
 use crate::render;
 
 #[derive(Debug, Clone)]
@@ -46,7 +46,7 @@ pub fn export_bundle(
 }
 
 /// Machine-readable legend + every placed object. Designed so an AI agent can
-/// reconstruct the level from spec.json + layer.png alone (goals.md "Export").
+/// reconstruct the level from spec.json + layer.png alone.
 #[derive(Debug, Serialize)]
 pub struct ExportSpec {
     pub format_version: u32,
@@ -56,11 +56,13 @@ pub struct ExportSpec {
     pub map_size_m: [f32; 2],
     pub cell_size_m: f32,
     pub px_per_m: f32,
-    /// One entry per unique (color, object type) — the human- and machine-readable
-    /// meaning of every color on map.png.
+    /// One entry per unique (color, object type) — the meaning of every color
+    /// on map.png.
     pub legend: Vec<LegendEntry>,
+    /// Category names indexed by the layer.png R-channel value (index 0 = ground).
+    pub layer_categories: Vec<&'static str>,
     /// Every placed object with position and size in meters.
-    pub objects: Vec<PlacedObject>,
+    pub objects: Vec<crate::level::PlacedObject>,
 }
 
 #[derive(Debug, Serialize)]
@@ -68,7 +70,6 @@ pub struct LegendEntry {
     pub color: String,
     pub name: String,
     pub category: &'static str,
-    pub details: String,
 }
 
 impl ExportSpec {
@@ -85,7 +86,6 @@ impl ExportSpec {
                 color: color_hex(o.color),
                 name: o.type_name.clone(),
                 category: render::category_name(o.category),
-                details: details_text(level, o),
             });
         }
         Self {
@@ -96,6 +96,7 @@ impl ExportSpec {
             cell_size_m: level.config.cell_size_m,
             px_per_m,
             legend,
+            layer_categories: render::layer_categories(),
             objects: level.objects.clone(),
         }
     }
@@ -105,72 +106,38 @@ fn color_hex(c: [u8; 3]) -> String {
     format!("#{:02X}{:02X}{:02X}", c[0], c[1], c[2])
 }
 
-/// Short human-readable legend line per object type, sourced from the config snapshot.
-fn details_text(level: &GeneratedLevel, o: &PlacedObject) -> String {
-    let config = &level.config;
-    match &o.details {
-        ObjectDetails::Structure { template } => {
-            let s = config.structure(*template);
-            format!(
-                "{template} structure, density {:.0}%, size {}–{} m",
-                s.density_pct, s.size.min_m, s.size.max_m
-            )
-        }
-        ObjectDetails::Prop => format!(
-            "Uninteractive prop, size {}–{} m",
-            config.props.size.min_m, config.props.size.max_m
-        ),
-        ObjectDetails::Interactive { group_size, .. } => {
-            let it = config
-                .interactive
-                .iter()
-                .find(|i| i.name == o.type_name || i.color == o.color);
-            match it {
-                Some(it) => format!(
-                    "Interactive object, size {} m, groups of up to {group_size}",
-                    it.size_m
-                ),
-                None => format!("Interactive object, groups of up to {group_size}"),
-            }
-        }
-        ObjectDetails::HiddenRoom { .. } => {
-            "Hidden room, connected to the main area by one access path".to_owned()
-        }
-        ObjectDetails::HiddenRoomPath { .. } => {
-            format!(
-                "Access path (player-passable; mob-passable: {})",
-                if config.hidden_rooms.mob_passable { "yes" } else { "no" }
-            )
-        }
-        ObjectDetails::MobSpawn { members } => {
-            let list: Vec<String> = members
-                .iter()
-                .map(|(name, count)| format!("{count}x {name}"))
-                .collect();
-            format!("Mob spawn point: {}", list.join(", "))
-        }
-        ObjectDetails::Gate { direction_deg } => {
-            format!("Level gate at {direction_deg:.0}° from the map center")
-        }
-    }
-}
-
-/// Category name for legend/serialization helpers.
-#[allow(dead_code)]
-pub fn category_label(c: Category) -> &'static str {
-    render::category_name(c)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::generator::generate;
-    use crate::model::LevelConfig;
+    use crate::level::{Category, PlacedObject};
 
     #[test]
     fn bundle_writes_three_valid_files() {
-        let config = LevelConfig::default();
-        let level = generate(&config, 42);
+        let level = GeneratedLevel {
+            config: crate::model::LevelConfig::default(),
+            seed: 42,
+            objects: vec![
+                PlacedObject {
+                    category: Category::Structure,
+                    type_name: "House".to_owned(),
+                    color: [10, 20, 30],
+                    x_m: 1.0,
+                    y_m: 1.0,
+                    w_m: 3.0,
+                    h_m: 3.0,
+                },
+                PlacedObject {
+                    category: Category::Structure,
+                    type_name: "House".to_owned(),
+                    color: [10, 20, 30],
+                    x_m: 10.0,
+                    y_m: 10.0,
+                    w_m: 3.0,
+                    h_m: 3.0,
+                },
+            ],
+            notes: Vec::new(),
+        };
         let dir = std::env::temp_dir().join(format!("mtg_export_test_{}", std::process::id()));
 
         let result = export_bundle(&level, &dir, 8.0).unwrap();
@@ -178,24 +145,16 @@ mod tests {
         assert!(result.layer_path.is_file());
         assert!(result.spec_path.is_file());
 
-        // PNGs decode and have the right dimensions.
         let map = image::open(&result.map_path).unwrap();
-        assert_eq!(map.width(), (config.map.width_m * 8.0) as u32);
+        assert_eq!(map.width(), (level.config.map.width_m * 8.0) as u32);
 
-        // spec.json parses, carries all objects and a non-empty legend.
         let text = std::fs::read_to_string(&result.spec_path).unwrap();
         let spec: serde_json::Value = serde_json::from_str(&text).unwrap();
-        let objects = spec["objects"].as_array().unwrap();
-        assert_eq!(objects.len(), level.objects.len());
+        assert_eq!(spec["objects"].as_array().unwrap().len(), 2);
         let legend = spec["legend"].as_array().unwrap();
-        assert!(legend.len() >= 4, "legend too small: {legend:?}");
+        assert_eq!(legend.len(), 1, "same type+color merges into one legend entry");
         assert_eq!(spec["seed"].as_u64(), Some(42));
-        for l in legend {
-            let color = l["color"].as_str().unwrap();
-            assert!(color.starts_with('#') && color.len() == 7);
-            assert!(l["name"].as_str().is_some());
-            assert!(l["category"].as_str().is_some());
-        }
+        assert_eq!(spec["layer_categories"].as_array().unwrap().len(), 8);
 
         std::fs::remove_dir_all(&dir).ok();
     }

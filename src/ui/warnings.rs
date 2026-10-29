@@ -27,8 +27,8 @@ pub fn show(ui: &mut egui::Ui, warnings: &[Warning]) {
             };
             ui.label(egui::RichText::new("⚠").color(icon));
             let mut line = w.message.clone();
-            if let Some(field) = w.field {
-                line.push_str(&format!("   [{}]", field.label()));
+            if let Some(field) = &w.field {
+                line.push_str(&format!("   [{field}]"));
             }
             if w.blocking {
                 line.push_str("   (blocks generation)");
