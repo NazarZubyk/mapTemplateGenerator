@@ -1,24 +1,32 @@
 # mapTemplateGenerator
 A simple tool for generating 2D map layouts that can be used with AI to create prototype levels for ARPG games.
 
-See [docs/goals.md](docs/goals.md) for the main goals and feature requirements, and
-[docs/workflow.md](docs/workflow.md) for how the generator is being rebuilt
-(step list + per-step notes).
+Docs:
+- [docs/goals.md](docs/goals.md): goals and feature requirements.
+- [docs/workflow.md](docs/workflow.md): how the generator is built. Includes
+  the node chain, step list, per-step algorithm notes and the MCP server.
+- [docs/next-agent-prompt.md](docs/next-agent-prompt.md): a handoff prompt
+  for a fresh Claude session.
+- [docs/plan.md](docs/plan.md): the first build's plan (outdated, history
+  only).
 
 ## Status: generator rebuild in progress
 
 The first full generator grew too complex in one shot, so it was moved to
 [`reference/`](reference/README.md) (dead code, kept for reuse) and the
 generator is being rebuilt **one step at a time**. Each finished step is a
-node in the left panel. Steps 1–6 and 8–12 are done; next up are the walkable
-budget and validation.
+node in the left panel. All 12 generation nodes and the Claude MCP server
+are done. Still open: the walkable budget (`map.walkable_pct`), validation
+and export polish (feasibility pre-check, blocking duplicate colors), and
+deleting `reference/`.
 
 Generation is **deterministic**: the same config + seed always gives the same map.
 
 ## Map kinds
 
 **Town**, **Swamp**, **Forest**, **Cave**. The kind picks the shape defaults
-and which nodes run (houses are town only).
+and which nodes run (houses are town only; every other node runs for all
+kinds).
 
 ## Generation pipeline (left panel nodes)
 
@@ -68,8 +76,12 @@ body, every control has a tooltip, and changes apply on **⚙ Generate**.
     stand on roads (toggle), and inside hidden rooms only if that room's
     path is mob-passable. A gate clearance keeps spawns away from gates.
 
-Plus app features: **Export** (map.png + layer.png + spec.json) and
-**Config file** (save/load JSON; older configs keep loading).
+Plus app features:
+- **Export** writes map.png (colored map), layer.png (R = category id,
+  G/B = instance id) and spec.json (legend, every object, regions, roads,
+  wall gaps, interactive groups, hidden rooms, mobs, gates).
+- **Config file** saves and loads JSON; older configs keep loading.
+  **🔄 Live sync** reloads the file when it changes on disk.
 
 ## Claude MCP server
 
@@ -110,8 +122,9 @@ first, or turn Live sync off while editing by hand.
 
 - **Top bar**: seed, ⚙ Generate, 🎲 Re-roll. Generation runs in the
   background with a progress bar showing the current stage.
-- **Left panel**: the node chain above (some nodes have a 🎲 Random params
-  button), plus Export and Config file.
+- **Left panel**: the node chain above, plus Export and Config file (with
+  🔄 Live sync). Every setting has a hover tooltip. Most nodes have a
+  🎲 Random params button and a "generated: …" stats line.
 - **Center**: pan/zoom preview. Swipe with two fingers or drag to pan; pinch
   or Ctrl+scroll to zoom.
 - **Bottom**: warnings panel + the **Current workflow** bench (currently empty).
@@ -129,7 +142,8 @@ cargo clippy --all-targets
 
 ```
 src/
-├── main.rs              # eframe entry shim
+├── main.rs              # eframe entry shim (the app, `cargo run`)
+├── bin/mapgen-mcp.rs    # MCP server entry
 ├── lib.rs
 ├── mcp.rs               # MCP server logic (tools, JSON-RPC); bin/mapgen-mcp.rs runs it
 ├── model.rs             # serde config: per-node settings structs
@@ -152,10 +166,11 @@ src/
 │   └── placement.rs     # shared object footprint / road-angle helpers
 ├── render.rs            # map.png / layer.png rasterizers
 ├── export.rs            # export bundle writer + spec.json
-├── validate.rs          # config validation
+├── validate.rs          # config validation (early subset; step 13 extends it)
 └── ui/                  # app shell, node panel, preview, warnings, bench
 reference/               # previous full generator (dead code, copy pieces from here)
-docs/                    # goals, workflow + step notes, plan
+.mcp.json                # registers mapgen-mcp for Claude Code
+docs/                    # goals, workflow + step notes, next-agent prompt, plan
 ```
 
 Requires the usual Wayland/X11 dev libraries (already present on a stock Fedora/Linux

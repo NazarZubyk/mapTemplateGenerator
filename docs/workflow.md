@@ -3,39 +3,45 @@
 The old generator was built in one shot and became too complex to fix, so it was
 moved to `reference/` (dead code, kept for reuse, deleted when we finish). The
 generator is now rebuilt **incrementally**: one section at a time, each one
-tested in the app before it becomes official.
+built straight into its own node of the left panel and tested in the app.
+
+**Status:** steps 0–6 and 8–12 are done (12 nodes), plus the `mapgen-mcp`
+server for Claude. Open: step 7 (walkable budget), step 13 (validation &
+export polish), cleanup.
 
 ## Current app shell (what exists and stays)
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│ Action bar: ⚙ Generate · Seed · 🎲 Re-roll      (top)    │
+│ Action bar: ⚙ Generate · Seed · 🎲 Re-roll · progress   │
 ├───────────────┬──────────────────────────────────────────┤
 │ NODES (left)  │  Preview (pan/zoom canvas + legend)      │
-│  1 Template   │                                          │
-│  ↓ 2 Town     │                                          │
-│    shape      │                                          │
-│  (next nodes  │                                          │
-│   as steps    │                                          │
-│   finish)     │                                          │
+│  1 Template   │  two-finger swipe / drag = pan,          │
+│  ↓ 2 Shape    │  pinch / Ctrl+scroll = zoom              │
+│  ↓ 3 … 12     │                                          │
 │  · Export     │                                          │
 │  · Config file│                                          │
+│    (🔄 Live   │                                          │
+│     sync)     │                                          │
 ├───────────────┴──────────────────────────────────────────┤
 │ Warnings panel (validation warnings + generation notes)  │
 ├──────────────────────────────────────────────────────────┤
-│ CURRENT WORKFLOW  ← test bench; currently step 1:        │
-│ (bottom)            noise & town shape                   │
+│ CURRENT WORKFLOW bench (bottom) — empty; only the        │
+│ noise / shape preview toggle                             │
 └──────────────────────────────────────────────────────────┘
 ```
+
+Outside the app: `mapgen-mcp` (MCP server for Claude) edits the same config
+file; with 🔄 Live sync on, the app reloads it and regenerates.
 
 ## The generation is a chain of nodes
 
 The left panel shows the pipeline top-to-bottom as nodes. **The input of a
 node is the output of the previous node**; node 1 is the *Template* — the
 empty sized field (map width / height / cell size) **plus the map kind**.
-Every finished section becomes one node in this chain, with its settings in
-the node body. A section under development is built in the bench first, then
-appended as the next node.
+Every finished section is one node in this chain, with its settings in the
+node body. New sections are built straight into their node (the user does
+not want the bench stage).
 
 **The kind separates node workflows.** Which nodes exist after the shape
 depends on `MapKind` (Town / Swamp / Forest / Cave): a forest has no buildings
@@ -97,77 +103,80 @@ Right now:
   circle mob spawns/gates, legend) plus the bench texture layer (noise
   texture or town shape — toggle lives in the bench).
 - **Nodes panel** (`src/ui/left_panel.rs`): the generation node chain
-  (see above) + Export + Config file (app features, not generation).
+  (see above) + Export + Config file (app features, not generation). The
+  Config file section has **🔄 Live sync** (`MapGenApp::sync_config_file`):
+  reload the file when it changes on disk and regenerate.
 - **Warnings panel** (`src/ui/warnings.rs`): shows `Warning`s from
   `validate()` + non-blocking notes from `generate()`. Untouched.
 - **Current workflow** (`src/ui/workflow.rs` + the panel frame in `app.rs`):
-  the test bench. Currently: step 1 controls (feature size, octaves,
-  coverage, min blob, bridge width, noise/shape view toggle) and a
-  🎲 Random params button — every value picked independently inside its
-  reasonable range, so single values are sane but combinations may
-  deliberately contradict each other (stress-test for the notes path).
-  Every setting shows an explanation on hover (setting name is underlined),
-  including when the setting has NO visible effect (e.g. bridging with a
-  single piece). Changing controls never regenerates on its own — the
-  preview updates only on ⚙ Generate / 🎲 Re-roll.
+  the old test bench. Empty now ("no step in development"); it only keeps
+  the noise / shape preview toggle. Node rules that started here still hold
+  for every node: each setting explains itself on hover (underlined label),
+  including when it has NO visible effect; 🎲 Random params picks every
+  value independently inside its reasonable range (sane values, possibly
+  contradicting combinations — a deliberate stress test); controls never
+  regenerate on their own ("Changes apply on ⚙ Generate").
 
 ## The source layout right now
 
 ```
 src/
-├── main.rs            # eframe entry (unchanged)
+├── main.rs            # eframe entry (the app; `cargo run`)
+├── bin/mapgen-mcp.rs  # MCP server entry (`--bin mapgen-mcp`)
 ├── lib.rs
-├── model.rs           # LevelConfig: map, MapKind, ShapeSettings, OuterWallSettings, cell size, seed
-├── level.rs           # PlacedObject, Category, CellMask, NoiseTexture,
-│                      # LevelShape/ShapeStats, OuterWall/OuterWallStats, GeneratedLevel
+├── mcp.rs             # MCP tools + JSON-RPC over stdio (gates, mobs, patch, generate, export)
+├── model.rs           # LevelConfig + one settings struct per node (serde defaults)
+├── level.rs           # PlacedObject, Category, CellMask, RegionMap, RoadNetwork,
+│                      # per-node layouts (houses, props, interactive, hidden rooms,
+│                      # mobs, gates), GeneratedLevel
 ├── generator/
-│   ├── mod.rs         # generate(): fixed phase order, one RNG stream
-│   ├── noise.rs       # general seeded value noise + fBm (utility for everything)
-│   ├── houses.rs      # step 6: street-front + yard houses (town only)
-│   ├── placement.rs   # shared: rotated footprints, dilation, road tangents
-│   ├── props.rs       # step 8: props near houses / roadside / scattered
-│   ├── interactive.rs # step 9: interactive object types in groups
-│   ├── hidden_rooms.rs # step 10: walled rooms + one access path each
-│   ├── mobs.rs        # step 11: budgeted mob packs on spawn points
-│   ├── gates.rs       # step 12: gates on the outer wall + gate roads
+│   ├── mod.rs         # generate(): fixed phase order, one RNG stream, progress stages
+│   ├── noise.rs       # seeded value noise + fBm (utility for everything)
 │   ├── grid.rs        # CellMask algorithms: components, speckle removal,
 │   │                  # bridge closest pair (multi-source BFS), hole fill
-│   ├── shape.rs       # step 1: noise → coverage cut → despeckle → bridges
-│   │                  # → hole fill → wavy border margin
-│   ├── walls.rs       # step 2: border walk (random segment lengths) → wall
-│                      # polygon → interior fill / outside cut
-│   ├── region_walls.rs # step 5: border lines per region pair → point walk
-│   │                  # (like walls.rs) → road gaps
-│   ├── regions.rs     # step 3: smallest-first region growth, % shares
-│   └── roads.rs       # step 4: crossroad nodes → MST + extra links →
-│                      # noise-bent A* routing → passages
-├── render.rs          # map.png / layer.png rasterizer (region + wall under objects)
+│   ├── shape.rs       # step 1 / node 2: region shape
+│   ├── walls.rs       # step 2 / node 3: outer wall (border walk)
+│   ├── regions.rs     # step 3 / node 4: smallest-first region growth
+│   ├── roads.rs       # step 4 / node 5: junctions → MST + extra links → A*
+│   ├── region_walls.rs # step 5 / node 6: walls between regions, road gaps
+│   ├── gates.rs       # step 12 / node 7: gates, wall openings, gate roads
+│   ├── houses.rs      # step 6 / node 8: street + yard houses (town only)
+│   ├── props.rs       # step 8 / node 9: props near houses / roadside / scattered
+│   ├── interactive.rs # step 9 / node 10: interactive object types in groups
+│   ├── hidden_rooms.rs # step 10 / node 11: walled rooms + one access path each
+│   ├── mobs.rs        # step 11 / node 12: budgeted mob packs
+│   └── placement.rs   # shared: rotated footprints, dilation, road tangents
+├── render.rs          # map.png / layer.png rasterizer
 ├── export.rs          # export bundle: map.png + layer.png + spec.json (format v1)
-├── validate.rs        # config validation (grows per section)
-└── ui/                # app.rs, left_panel.rs, preview.rs, warnings.rs,
-                       # widgets.rs (param_row), workflow.rs
-reference/             # OLD generator + old model/level/render/export — copy from here
+├── validate.rs        # config validation (still the early subset — step 13)
+└── ui/                # app.rs (shell, job, live sync), left_panel.rs (nodes),
+                       # preview.rs, warnings.rs, widgets.rs (param_row), workflow.rs
+reference/             # OLD generator — copy small pieces from here
+.mcp.json              # registers mapgen-mcp for Claude Code
 docs/workflow.md       # this file
 ```
 
 ## The workflow loop (per section)
 
-1. **Pick the next step** from the step list below. Announce it by updating
-   `current_step_label()` in `src/ui/workflow.rs` and ticking the box here.
-2. **Build it in the bench**: implement the logic in `src/generator` (a new
-   submodule is fine) and add the section's experimental controls to
-   `workflow::show_bench()` so the behavior can be tested live with Generate.
-   Copy reusable pieces from `reference/` (small pieces, adapted to the slim
-   model — do not re-import the whole old pipeline).
-3. **Test**: unit tests for the logic + eyeball the preview with several seeds.
+1. **Pick the next step** from the step list below (the user names it).
+2. **Build it straight into its node**: logic in `src/generator/<module>.rs`
+   (copy small, adapted pieces from `reference/` when useful), settings
+   struct in `model.rs` (`#[serde(default)]`), layout/output types in
+   `level.rs`, the node in `left_panel.rs` (every control with a tooltip, 🎲
+   Random params, "Changes apply on ⚙ Generate", a "generated: …" stats
+   line), wiring + a progress slice in `generator/mod.rs`, new objects in
+   render / preview / spec.json. Show only the finished result on the map —
+   helper structure (junctions, markers) stays in the data.
+3. **Test**: unit tests for the logic + render snapshots with several seeds.
    `cargo test && cargo clippy --all-targets` stay green at every step.
-4. **Promote**: when the section works, append it as the next node in the
-   left chain (`left_panel.rs` — settings go into the node body) and add its
-   config fields to `model.rs` (with `#[serde(default)]` so old config files
-   keep loading). Keep/extend the export story if the section adds new object
-   kinds (Category, layer id, legend).
-5. **Clear the bench**: reset `show_bench()` to "nothing in development",
-   update `current_step_label()`, tick the step here. Then start the next one.
+4. **Document**: tick the step here, add a "Step N notes" section, update
+   the node list above, README.md and docs/next-agent-prompt.md. If the
+   step is often configured by Claude, add an MCP tool (`src/mcp.rs`);
+   `patch_config` covers it meanwhile.
+5. The user commits; give them a one-line commit message.
+
+The bench (`workflow::show_bench()`) is still there for experiments the
+user explicitly asks to try before they become a node.
 
 Rules that carried over from the old build (keep them in every section):
 
@@ -222,32 +231,37 @@ Rules that carried over from the old build (keep them in every section):
       Node 6. (done — see "Step 5 notes")
 - [x] **Step 6 — houses** (town only): street-front houses facing the
       roads, then yard houses; density, size range, spacing, road setback,
-      face-the-road chance, color. Node 7. (done — see "Step 6 notes")
+      face-the-road chance, color. Node 8. (done — see "Step 6 notes")
 - [ ] **Step 7 — walkable budget**: `map.walkable_pct` vs what the houses
       and later objects take (houses already keep the ground connected).
 - [x] **Step 8 — props** (every kind): quantity + density cap + size range,
-      placed against houses / at road edges / scattered. Node 8. (done —
+      placed against houses / at road edges / scattered. Node 9. (done —
       see "Step 8 notes")
 - [x] **Step 9 — interactive objects** (every kind): a list of types, each
       with name, size range, quantity, group size range, group spread, spot
-      (anywhere / along walls / open ground) and color. Node 9. (done — see
+      (anywhere / along walls / open ground) and color. Node 10. (done — see
       "Step 9 notes")
 - [x] **Step 10 — hidden rooms** (every kind): count, size range, own wall
       thickness, path width / max length, place (outside the wall / inside /
-      either), mob-passable chance, colors. Node 10. (done — see "Step 10
+      either), mob-passable chance, colors. Node 11. (done — see "Step 10
       notes")
 - [x] **Step 11 — mobs** (every kind): mob types (name, price, size,
       balance share, color), combination matrix, budget, entity cap +
       minimum (count or density — beats budget and spacing), pack
-      size range, spawn spacing, spawn on roads. Node 11. (done — see "Step
+      size range, spawn spacing, spawn on roads, gate clearance; one marker
+      per mob. Node 12. (done — see "Step
       11 notes")
 - [x] **Step 12 — gates** (every kind): list of gates with a direction
       each (0° east, 90° north), wall opening width, gate road toggle +
       width, color. Node 7 — runs right after the region walls. (done — see
       "Step 12 notes")
 - [ ] **Step 13 — validation & export polish**: feasibility pre-check,
-      duplicate colors, full spec.json details (reference `validate.rs`,
-      `export.rs`).
+      duplicate colors (blocking), warnings for the newer nodes (ranges,
+      empty mob types with a budget, gates with overlapping angles), full
+      spec.json details (reference `validate.rs`, `export.rs`).
+- [x] **MCP server** (`mapgen-mcp`): Claude configures gates, mobs and any
+      node, generates and exports; the app live-syncs the config file.
+      (done — see "MCP server")
 - [ ] **Cleanup**: delete `reference/` and this file's history notes.
 
 (The step order is a suggestion — reorder/rename as the rebuild demands, but
@@ -373,7 +387,7 @@ The user's algorithm, implemented literally in `generator/walls.rs`:
    `OuterWall` mask): town outside the wall is cut away, empty space inside
    is filled. Chords legitimately cut corner slivers off the region.
 
-Stats (points, wall cells, closed, filled/cut) show under the bench controls;
+Stats (points, wall cells, closed, filled/cut) show in node 3;
 the wall paints dark brown over the region in map.png, the preview, and the
 legend/spec ("outer wall"). Wall thickness is one cell by default
 (`outer_wall.thickness_m`); wall layer ids in layer.png come when walls
@@ -432,7 +446,7 @@ spec.json gains a `regions` array (id, color, target/actual %, cells).
 
 Result: one connected organic blob (or empty → generation note) — the raw
 possible form of the town. Stats (`raw_blobs`, bridges, speckle/hole cells,
-coverage %) are shown under the bench controls. Defaults: scale 24 m, 4
+coverage %) are shown in node 2. Defaults: scale 24 m, 4
 octaves, 60% coverage target, min blob 4, bridge 2 cells — one piece with
 deep bays at ~60% of the map.
 
@@ -451,7 +465,7 @@ walls between regions get gaps where these roads pass. Implemented in
 1. **Node budget** — `roads.amount`: `count` (`node_count`) or `density`
    (`nodes_per_1000m2` of town area). Always clamped to ≥ the regions count
    (every region gets one node; the minimum is edited only in node 4 — the
-   bench lifts `node_count` to it) and ≤ 64. The remainder goes by D'Hondt
+   roads node lifts `node_count` to it) and ≤ 64. The remainder goes by D'Hondt
    on region area: big regions get more crossroads.
 2. **Placement** — within its region, on cells at least road-radius + 2
    from the region border (or the deepest available); best of 24 random
@@ -539,7 +553,7 @@ no region cut off, ≤ 0.8 s total generation in release.
 
 ## Step 6 notes — houses
 
-`generator/houses.rs`, TOWN maps only (node 7 hidden otherwise):
+`generator/houses.rs`, TOWN maps only (node 8 hidden otherwise):
 
 1. **Buildable ground** — town cells minus outer wall, region walls and
    roads. Houses keep `spacing_m` (Chebyshev, ≥ 1 cell) from walls, the town
@@ -593,7 +607,7 @@ town is always one piece (asserted in the region-walls test).
 
 ## Step 8 notes — props
 
-`generator/props.rs`, every map kind (node 8; "Near houses" row shown for
+`generator/props.rs`, every map kind (node 9; "Near houses" row shown for
 towns only). Goals: density, allowed size range, quantity.
 
 1. **Free ground** — town minus walls, roads and houses. Props never stand
@@ -624,7 +638,7 @@ hug houses, non-town maps scatter, determinism.
 
 ## Step 9 notes — interactive objects
 
-`generator/interactive.rs`, every map kind (node 9). Settings are
+`generator/interactive.rs`, every map kind (node 10). Settings are
 `config.interactive: Vec<InteractiveType>` (default: one "Herb", 30 objects,
 0.3–0.5 m, groups of 2–5, 2 m spread, anywhere, light green). The node
 lists the types as collapsible cards with ➕ Add type / 🗑 Remove type.
@@ -657,7 +671,7 @@ groups start by an obstacle, overflow note, non-town maps, determinism.
 
 ## Step 10 notes — hidden rooms
 
-`generator/hidden_rooms.rs`, every map kind (node 10). Settings:
+`generator/hidden_rooms.rs`, every map kind (node 11). Settings:
 `config.hidden_rooms: HiddenRoomSettings` (default 2 rooms, 3–6 m floor,
 0.5 m wall, 1 m path, 12 m max path, place Either, 0% mob-passable, purple
 floor / light purple path).
@@ -697,7 +711,7 @@ flag follow settings, impossible-size note, non-town maps, determinism.
 
 ## Step 11 notes — mobs
 
-`generator/mobs.rs`, every map kind (node 11). Settings: `config.mobs:
+`generator/mobs.rs`, every map kind (node 12). Settings: `config.mobs:
 MobSettings` — budget 400, cap 60, packs 1–4, spacing 5 m, on roads ✓,
 types Goblin (10, 0.8 m, 70%) + Orc (25, 1.2 m, 30%), all combinations
 allowed. `combinations[a][b]` is kept symmetric by `set_combines`;
@@ -814,10 +828,12 @@ is used often; `patch_config` covers it meanwhile.
 ## Done-ness checklist for every step
 
 - [ ] logic lives in `src/generator`, deterministic, unit-tested
-- [ ] test controls visible in the Current workflow panel
-- [ ] preview renders the new objects correctly
-- [ ] settings promoted into the node body in the left chain + config model
-      (`serde(default)`)
-- [ ] old config files still load; export still valid
+- [ ] settings in the node body (tooltips, 🎲 Random params, stats line) +
+      config model (`serde(default)`)
+- [ ] preview + map.png + layer.png + spec.json show the new output; only
+      finished things are drawn
+- [ ] walkable ground stays one piece; solid objects never overlap
+- [ ] old config files still load
 - [ ] `cargo test`, `cargo clippy --all-targets` green
-- [ ] this file updated (step ticked, notes added)
+- [ ] this file (step ticked, notes, node list), README.md and
+      docs/next-agent-prompt.md updated; MCP tool if useful

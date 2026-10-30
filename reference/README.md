@@ -26,6 +26,15 @@ is finished** (the old code also exists in git history until then).
 | `validate.rs` | Old validation: per-field warnings, feasibility pre-check, duplicate-color blocking. |
 | `preview.rs` | egui preview with rotated polygon drawing. |
 
+## What is already rebuilt
+
+Every generation phase now has a new implementation in `src/generator/`
+(shape, walls, regions, roads, region walls, gates, houses, props,
+interactive objects, hidden rooms, mobs). What is still worth reading here:
+`validate.rs` (per-field warnings, feasibility pre-check, duplicate-color
+blocking) and `export.rs` (fuller spec.json) for step 13, and `grid.rs`'s
+`WalkBudget` for step 7 (walkable budget).
+
 ## How to use it
 
 When a workflow section needs a piece (e.g. the connectivity flood fill, the
