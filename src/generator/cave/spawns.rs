@@ -28,6 +28,7 @@ use crate::generator::cave::tunnels::distance_field;
 use crate::generator::hidden_rooms::{self, HiddenRoomBuild, RoomArea};
 use crate::generator::interactive::{self, Area, InteractiveBuild, SwampTerrain};
 use crate::generator::mobs::{self, MobArea, MobBuild};
+use crate::generator::noise::NoiseField;
 use crate::generator::placement::{dilate, footprint, TerrainSets};
 use crate::generator::props::{PropBuild, PROP_NAME, TRIES};
 use crate::generator::Stage;
@@ -46,6 +47,8 @@ const NEAR_WALL_M: f32 = 2.5;
 const NEAR_POOL_M: f32 = 2.0;
 pub const CRACKED_WALL_NAME: &str = "cracked wall";
 const CRACKED_WALL_COLOR: [u8; 3] = [230, 150, 60];
+/// Feature size of the hidden pockets' wall noise, meters.
+const POCKET_NOISE_M: f32 = 2.4;
 
 /// The cave after the layout nodes: what every spawn node starts from.
 pub struct CaveGround<'a> {
@@ -294,6 +297,7 @@ pub(crate) fn hidden_rooms(config: &LevelConfig, rng: &mut ChaCha8Rng, g: &CaveG
         max_len: (s.path_max_m / cell).round().max(1.0) as u32,
     };
     let mut built = hidden_rooms::place_rooms(config, rng, area, stage);
+    shape_pockets(&mut built, g, rng, s.path_width_m);
 
     // Cracked wall: the dug tunnel cell next to the open floor.
     let side = (s.path_width_m.max(cell) * 1.4).max(1.0);
@@ -326,6 +330,100 @@ pub(crate) fn hidden_rooms(config: &LevelConfig, rng: &mut ChaCha8Rng, g: &CaveG
         }
     }
     built
+}
+
+/// Reshapes each hidden room inside its rect: an organic pocket in natural
+/// zones (ellipse + noise), a rough hand-dug vault in hand-made ones
+/// (rectangle, walls wandering inward). A corridor from where the access
+/// tunnel enters to the middle keeps it reachable. The floor becomes one
+/// map object per horizontal run of cells, so the map shows the shape.
+fn shape_pockets(built: &mut HiddenRoomBuild, g: &CaveGround, rng: &mut ChaCha8Rng, path_width_m: f32) {
+    let (w, h, cell) = (g.w, g.h, g.cell);
+    let noise = NoiseField::new(rng.random::<u64>());
+    for (k, room) in built.layout.rooms.iter_mut().enumerate() {
+        let [rx, ry, rw, rh] = room.rect_m;
+        let (x0, y0) = ((rx / cell).round() as usize, (ry / cell).round() as usize);
+        let (x1, y1) = (((rx + rw) / cell).round() as usize, ((ry + rh) / cell).round().min(h as f32) as usize);
+        let (cx, cy) = (rx + rw / 2.0, ry + rh / 2.0);
+        let mid = ((cy / cell) as usize).min(h - 1) * w + ((cx / cell) as usize).min(w - 1);
+        let natural = g.natural[mid];
+        let salt = k as f32 * 23.7;
+        let mut keep = vec![false; w * h];
+        let mut rect = Vec::new();
+        for y in y0..y1 {
+            for x in x0..x1.min(w) {
+                let c = y * w + x;
+                rect.push(c);
+                let (px, py) = (((x as f32) + 0.5) * cell, ((y as f32) + 0.5) * cell);
+                let n = (noise.fbm(px / POCKET_NOISE_M + salt, py / POCKET_NOISE_M - salt, 2) - 0.5) * 2.0;
+                keep[c] = if natural {
+                    let (u, v) = ((px - cx) / (rw / 2.0), (py - cy) / (rh / 2.0));
+                    1.0 - (u * u + v * v) + 0.9 * n > 0.0
+                } else {
+                    // Meters inside the rect's nearest wall, walls dug by hand.
+                    let inside = (px - rx).min(rx + rw - px).min(py - ry).min(ry + rh - py);
+                    inside + 1.2 * n > 0.35
+                };
+            }
+        }
+        // Corridor from the tunnel's room end to the middle.
+        if let Some(&start) = room.path_m.first() {
+            let steps = (((start[0] - cx).hypot(start[1] - cy)) / (cell * 0.5)).ceil().max(1.0) as usize;
+            let half = (path_width_m.max(cell) / cell / 2.0).max(0.5);
+            for i in 0..=steps {
+                let t = i as f32 / steps as f32;
+                let (px, py) = (start[0] + (cx - start[0]) * t, start[1] + (cy - start[1]) * t);
+                for &c in &rect {
+                    let (qx, qy) = (((c % w) as f32 + 0.5) * cell, ((c / w) as f32 + 0.5) * cell);
+                    if (qx - px).hypot(qy - py) <= half * cell + cell * 0.5 {
+                        keep[c] = true;
+                    }
+                }
+            }
+        }
+        let kept = rect.iter().filter(|&&c| keep[c]).count();
+        if (kept as f32) < rect.len() as f32 * 0.35 {
+            continue; // too little left: keep the plain rect
+        }
+        for &c in &rect {
+            built.layout.floor_mask.cells[c] = keep[c];
+        }
+        // Floor objects: one per horizontal run.
+        let mut runs = Vec::new();
+        for y in y0..y1 {
+            let mut x = x0;
+            while x < x1.min(w) {
+                if !keep[y * w + x] {
+                    x += 1;
+                    continue;
+                }
+                let start = x;
+                while x < x1.min(w) && keep[y * w + x] {
+                    x += 1;
+                }
+                runs.push((start, y, x - start));
+            }
+        }
+        let Some(&first) = room.objects.first() else { continue };
+        let template = built.objects[first].clone();
+        let run_obj = |(x, y, n): (usize, usize, usize)| PlacedObject {
+            x_m: x as f32 * cell,
+            y_m: y as f32 * cell,
+            w_m: n as f32 * cell,
+            h_m: cell,
+            ..template.clone()
+        };
+        let mut extra = Vec::new();
+        for (i, run) in runs.into_iter().enumerate() {
+            if i == 0 {
+                built.objects[first] = run_obj(run);
+            } else {
+                built.objects.push(run_obj(run));
+                extra.push(built.objects.len() - 1);
+            }
+        }
+        room.objects.splice(1..1, extra);
+    }
 }
 
 /// Cave interactive objects: the shared core on cave ground, with terrain
@@ -516,10 +614,25 @@ mod tests {
         let rooms = l.hidden_rooms.as_ref().unwrap();
         assert!(!rooms.rooms.is_empty());
         for r in &rooms.rooms {
-            let room = &l.objects[r.objects[0]];
-            for k in cells_of(&l, room) {
-                assert!(!f.cells[k], "room {} on the cave floor", r.id);
+            for &i in &r.objects {
+                if l.objects[i].category != Category::HiddenRoom {
+                    continue;
+                }
+                for k in cells_of(&l, &l.objects[i]) {
+                    assert!(!f.cells[k], "room {} on the cave floor", r.id);
+                    assert!(rooms.floor_mask.cells[k], "room {} object off its floor", r.id);
+                }
             }
+            // Not a plain rectangle any more.
+            let [x, y, w, h] = r.rect_m;
+            let rect_cells = ((w / 0.5).round() * (h / 0.5).round()) as usize;
+            let floor_in_rect = (0..rooms.floor_mask.cells.len())
+                .filter(|&k| {
+                    let (px, py) = ((k % f.width) as f32 * 0.5 + 0.25, (k / f.width) as f32 * 0.5 + 0.25);
+                    rooms.floor_mask.cells[k] && px > x && px < x + w && py > y && py < y + h
+                })
+                .count();
+            assert!(floor_in_rect < rect_cells, "room {} is still a full rect", r.id);
             assert!(
                 r.objects.iter().any(|&i| l.objects[i].type_name == super::CRACKED_WALL_NAME),
                 "room {} has no cracked wall",

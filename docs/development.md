@@ -131,7 +131,8 @@ Town for the tests.
 
 Export: map.png (colored map), layer.png (objects: R = category id 1–7,
 G/B = instance id; swamp ground: R = ground id 8–14, G = depth, B =
-island id — spelled out in spec.json `layer_encoding`), spec.json
+island id; cave ground: R = ground id 15–23, G = style zone id, B =
+chamber id — spelled out in spec.json `layer_encoding`), spec.json
 (format v2) (legend, every object, regions, roads, wall gaps, interactive
 groups, hidden rooms, mobs, gates; swamp: `gate_anchors`, `islands`,
 `paths`, `gate_bridges`, `water`; cave: `cave_zones`, `chambers`, `tunnels`, `junctions`, `cave_gates`, `cave_floor`, `hazards`).

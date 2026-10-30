@@ -103,6 +103,9 @@ pub fn validate(config: &LevelConfig) -> Vec<Warning> {
     if config.kind == MapKind::Swamp {
         swamp(config, &mut warnings);
     }
+    if config.kind == MapKind::Cave {
+        cave(config, &mut warnings);
+    }
     warnings
 }
 
@@ -195,6 +198,76 @@ fn swamp(config: &LevelConfig, out: &mut Vec<Warning>) {
     }
 }
 
+/// Cave settings that cannot work as asked (the generator still runs and
+/// clamps / skips, with notes).
+fn cave(config: &LevelConfig, out: &mut Vec<Warning>) {
+    let cv = &config.cave;
+    let side = config.map.width_m.min(config.map.height_m);
+    let ranges = [
+        ("cave.chambers.hall_max_m", "Hall size", cv.chambers.hall_min_m, cv.chambers.hall_max_m),
+        ("cave.chambers.grotto_max_m", "Grotto size", cv.chambers.grotto_min_m, cv.chambers.grotto_max_m),
+        ("cave.tunnels.width_max_m", "Tunnel width", cv.tunnels.width_min_m, cv.tunnels.width_max_m),
+        ("cave.tunnels.stub_max_m", "Stub length", cv.tunnels.stub_min_m, cv.tunnels.stub_max_m),
+        ("hidden_rooms.size_max_m", "Hidden room size", config.hidden_rooms.size_min_m, config.hidden_rooms.size_max_m),
+    ];
+    for (f, label, lo, hi) in ranges {
+        if hi < lo {
+            out.push(field(f, format!("{label}: max ({hi}) is smaller than min ({lo}) — the two are swapped at generation time")));
+        }
+    }
+    let inner = side - 2.0 * cv.chambers.rock_margin_m.max(0.0);
+    let hall = cv.chambers.hall_min_m.max(cv.chambers.hall_max_m);
+    if cv.chambers.hall_count > 0 && hall > inner {
+        out.push(field(
+            "cave.chambers.hall_max_m",
+            format!("Halls up to {hall:.0} m do not fit inside the {inner:.0} m between the rock margins — they get shrunk or skipped"),
+        ));
+    }
+    if cv.tunnels.squeeze_pct > 0.0 && cv.tunnels.squeeze_width_m >= cv.tunnels.width_max_m.max(cv.tunnels.width_min_m) {
+        out.push(field(
+            "cave.tunnels.squeeze_width_m",
+            format!(
+                "Squeezes of {:.1} m are not narrower than the widest tunnel ({:.1} m) — no tunnel gets one",
+                cv.tunnels.squeeze_width_m,
+                cv.tunnels.width_max_m.max(cv.tunnels.width_min_m)
+            ),
+        ));
+    }
+    let pct = cv.style.natural_pct;
+    if pct <= 0.0 || pct >= 100.0 {
+        let only = if pct <= 0.0 { "hand-made" } else { "natural" };
+        out.push(field("cave.style.mixing_pct", format!("Natural {pct:.0}%: the whole cave is {only} — Mixing has no effect")));
+    }
+    if config.gates.gates.is_empty() {
+        out.push(field("gates.gates", "No gates: the cave has no way in from the map edge".to_owned()));
+    }
+    // Spawn terrains that exist in a cave (mud does not).
+    let cave_any = |f: crate::model::SpawnOn| (f.land || f.path || f.shallow || f.hidden_room) && (f.natural || f.hand_made);
+    for t in &config.mobs.types {
+        if !cave_any(t.spawn_on) {
+            out.push(field(
+                "mobs.types.spawn_on",
+                format!("Mob type '{}' has no cave spawn terrain or style ticked — it is never placed", t.name),
+            ));
+        }
+    }
+    for t in &config.interactive {
+        if !cave_any(t.spawn_on) {
+            out.push(field(
+                "interactive.spawn_on",
+                format!("Interactive type '{}' has no cave spawn terrain or style ticked — it is never placed", t.name),
+            ));
+        }
+        let f = t.spawn_on;
+        if f.hidden_room && !f.land && !f.path && !f.shallow && config.hidden_rooms.count == 0 {
+            out.push(field(
+                "interactive.spawn_on",
+                format!("Interactive type '{}' spawns only in hidden rooms, but there are none", t.name),
+            ));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -222,6 +295,25 @@ mod tests {
         // Town maps ignore the swamp settings.
         c.kind = MapKind::Town;
         assert!(validate(&c).iter().all(|w| w.field.as_deref().is_none_or(|f| !f.starts_with("swamp."))));
+    }
+
+    #[test]
+    fn cave_warnings_fire_and_default_cave_is_clean() {
+        let clean = LevelConfig::starting();
+        assert!(validate(&clean).is_empty(), "{:?}", validate(&clean));
+        let mut c = LevelConfig::starting();
+        c.cave.chambers.hall_min_m = 50.0;
+        c.cave.chambers.hall_max_m = 30.0;
+        c.cave.tunnels.squeeze_width_m = 9.0;
+        c.cave.style.natural_pct = 100.0;
+        c.gates.gates.clear();
+        c.mobs.types[0].spawn_on = crate::model::SpawnOn { mud: true, natural: true, hand_made: true, ..crate::model::SpawnOn::NONE };
+        let fields: Vec<String> = validate(&c).into_iter().filter_map(|w| w.field).collect();
+        for want in ["cave.chambers.hall_max_m", "cave.tunnels.squeeze_width_m", "cave.style.mixing_pct", "gates.gates", "mobs.types.spawn_on"] {
+            assert!(fields.iter().any(|f| f == want), "missing {want}: {fields:?}");
+        }
+        c.kind = MapKind::Town;
+        assert!(validate(&c).iter().all(|w| w.field.as_deref().is_none_or(|f| !f.starts_with("cave."))));
     }
 
     #[test]

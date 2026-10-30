@@ -106,7 +106,7 @@ fn cave_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_interactive(ui, app);
     flow_arrow(ui, "walkable floor (tunnels, open hidden rooms)");
     node_mobs(ui, app);
-    ui.weak("Next cave step: C8 export — cave ground in layer.png, warnings (docs/cave-plan.md).");
+    ui.weak("The cave chain is complete (docs/cave-plan.md).");
     ui.add_space(4.0);
     ui.separator();
 }
@@ -2347,7 +2347,8 @@ around them is the wall), reached by ONE narrow ford no longer than Path max len
 wading limit. Outside the wall: in the thicket of the border. Inside: in deep water inside \
 the map. Either: thicket first, deep water otherwise.";
     const TIP_PLACE_CAVE: &str = "Cave: hidden rooms are pockets in the solid rock (the rock \
-is their wall), reached by ONE narrow tunnel no longer than Path max length; a cracked-wall \
+is their wall) — organic caves in natural zones, rough hand-dug vaults in hand-made ones, \
+about Size min–max across (the shape fills less than its full box), reached by ONE narrow tunnel no longer than Path max length; a cracked-wall \
 marker shows where the tunnel breaks into the cave (breakable in the game). Outside / inside \
 make NO DIFFERENCE in a cave.";
     let swamp = app.config.kind == MapKind::Swamp;
@@ -2376,10 +2377,10 @@ make NO DIFFERENCE in a cave.";
                     ui.add(egui::DragValue::new(&mut r.count).range(0..=50).speed(0.1))
                 });
                 param_row(ui, "Size min", TIP_SIZE_MIN, |ui| {
-                    ui.add(egui::DragValue::new(&mut r.size_min_m).range(0.5..=30.0).speed(0.05).suffix(" m"))
+                    ui.add(egui::DragValue::new(&mut r.size_min_m).range(0.5..=60.0).speed(0.05).suffix(" m"))
                 });
                 param_row(ui, "Size max", TIP_SIZE_MAX, |ui| {
-                    ui.add(egui::DragValue::new(&mut r.size_max_m).range(0.5..=30.0).speed(0.05).suffix(" m"))
+                    ui.add(egui::DragValue::new(&mut r.size_max_m).range(0.5..=60.0).speed(0.05).suffix(" m"))
                 });
                 if !swamp && !cave {
                     param_row(ui, "Wall thickness", TIP_WALL, |ui| {

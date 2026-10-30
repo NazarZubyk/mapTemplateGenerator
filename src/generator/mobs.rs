@@ -112,8 +112,14 @@ pub(crate) fn room_cells(rooms: Option<&HiddenRoomLayout>, w: usize, h: usize, c
         let [x, y, rw, rh] = r.rect_m;
         let (x0, y0) = ((x / cell).round() as usize, (y / cell).round() as usize);
         let (x1, y1) = (((x + rw) / cell).round() as usize, ((y + rh) / cell).round() as usize);
+        let floor = rooms.map(|l| &l.floor_mask);
         for cy in y0..y1.min(h) {
             for cx in x0..x1.min(w) {
+                // Only the room's floor (a cave pocket does not fill its
+                // rect).
+                if floor.is_some_and(|f| !f.cells[cy * w + cx]) {
+                    continue;
+                }
                 room_of[cy * w + cx] = r.id;
                 room_ok[cy * w + cx] = r.mob_passable;
             }

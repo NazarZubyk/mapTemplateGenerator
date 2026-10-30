@@ -452,6 +452,15 @@ Re-roll works).
   **cracked wall** marker (`Category::HiddenRoomPath`, "cracked wall",
   orange, ~1.4 × path width) on the dug cell next to the open floor,
   listed in the room's objects.
+- **Pocket shapes** (after a user note — "more cave style"):
+  `shape_pockets` reshapes each room inside its rect: natural zone =
+  ellipse + 0.9 × noise (2.4 m, 2 octaves), hand-made zone = rough vault
+  (meters inside the rect's walls + 1.2 × noise > 0.35 m), plus a
+  corridor from the tunnel's room end to the middle; kept only if ≥ 35%
+  of the rect survives. The floor is drawn as one `HiddenRoom` object per
+  horizontal run. `mobs::room_cells` now counts only floor cells inside a
+  room's rect (no change for walled rooms). Size min / max (node 8,
+  range now up to 60 m) set the pocket's box.
 - **Interactive**: like the swamp; blockers = not walkable + props +
   bridges (hidden floors are open); "Near island" = "Near dry floor"
   (distance from dry floor for shallow-pool spots).
@@ -464,7 +473,7 @@ Re-roll works).
   appear in the cave chain with cave labels and tips (chamber / tunnel /
   shallow pool / hidden room + natural / hand-made).
 
-### Step C8 — Export, validation, MCP
+### Step C8 — Export, validation, MCP — done
 
 - layer.png ground ids after the swamp ones: floor natural, floor
   hand-made, tunnel, rock, wall band, chasm, rope bridge, shallow pool,
@@ -476,10 +485,38 @@ Re-roll works).
   the tunnel range, natural % 0/100 with mixing set (no effect).
 - MCP: `patch_config` covers it; a `set_cave_style` tool if tuned often.
 
+**C8 notes (as built).**
+
+- layer.png (`render::rasterize`): cave pixels under no object get R =
+  ground id (`render::CAVE_GROUND_IDS`: 15 cave_floor_natural, 16
+  cave_floor_hand_made — chamber floor by zone style, 17 tunnel — floor
+  off the chambers, 18 rock, 19 cave_wall — the wall band, 20 chasm, 21
+  rope_bridge, 22 shallow_pool, 23 deep_pool), G = style zone id low
+  byte (`cave_zones[].id`), B = chamber id low byte (0 off chambers), A =
+  255. The plan's "G = depth" stayed out (no progression field — the
+  question was left to the game). Objects paint over as before.
+- spec.json: still `format_version` 2 (additive); `layer_categories`
+  lists 0–23; `layer_encoding.ground` describes swamp and cave pixels
+  and which cave ids are walkable. Cave sections from the earlier steps:
+  `cave_zones`, `chambers`, `tunnels`, `junctions`, `cave_gates`,
+  `cave_floor`, `hazards` (+ the shared `hidden_rooms`, `mobs`,
+  `objects`). Verified on a real export: R ids 2–7 and 15–23.
+- Warnings (`validate::cave`, cave maps only, non-blocking, with field
+  paths): swapped min / max (hall, grotto, tunnel width, stub length,
+  hidden room size), halls bigger than the area inside the rock margins,
+  squeezes not narrower than the widest tunnel, natural 0% / 100% (Mixing
+  has no effect), no gates, mob / interactive types with no cave terrain
+  (mud alone counts as none) or no style, interactive types that spawn
+  only in hidden rooms with 0 rooms. The default cave config has none
+  (tested).
+- MCP: `spawn_on` takes "natural" / "hand_made"; `generate` reports
+  `cave_style`, `chambers`, `tunnels`, `carve`, `hazards`; everything
+  else via `patch_config`.
+
 ## Implementation order
 
 C1 → C2 → C3 → C4 is the first visible milestone (a cave with gates and
-both styles). Then C5, C7, C8 (C6 dropped). Per step: logic in
+both styles). Then C5, C7, C8 (C6 dropped). All done. Per step: logic in
 `src/generator/cave/<name>.rs` with tests, settings in `model.rs`
 (`#[serde(default)]`), node in `left_panel.rs` shown only for
 `MapKind::Cave` (`cave_node_chain`), a progress slice, PNG snapshots with

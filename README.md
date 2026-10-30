@@ -12,8 +12,8 @@ an AI agent (or a level designer) to build a playable prototype fast.
 > (islands, paths, water, border, trees, props, objects, hidden islets and
 > mobs) and is being tuned. **Cave is being rebuilt** with its own layout
 > (natural caverns + hand-made passages, chambers, tunnels, chasms and
-> pools, props, objects, hidden rooms and mobs); the app opens on Cave for
-> now. Export polish is next.
+> pools, props, objects, hidden rooms and mobs) and is being tuned; the
+> app opens on Cave for now.
 
 ## What you get
 
@@ -69,7 +69,7 @@ see `QUICKSTART.md`.
 ## Known limitations (beta)
 
 - Only **Town** is tuned. Forest is experimental; Swamp is new (complete,
-  still being tuned); Cave is being rebuilt step by step.
+  still being tuned); Cave is new (complete, still being tuned).
 - The **walkable %** setting is not used yet.
 - Few safety checks. For example, two object types with the same color are
   not flagged yet.

@@ -10,7 +10,9 @@ pub struct Rasterized {
     /// instance id (1-based, G low byte), A = 255. Swamp ground pixels
     /// (under no object): R = ground id (`GROUND_IDS`, 8–14), G = depth (0
     /// safe ground … 254, 255 deep water / thicket), B = island id low byte
-    /// (0 off islands), A = 255. Elsewhere all 0.
+    /// (0 off islands), A = 255. Cave ground pixels: R = ground id
+    /// (`CAVE_GROUND_IDS`, 15–23), G = style zone id low byte, B = chamber
+    /// id low byte (0 off the chambers), A = 255. Elsewhere all 0.
     pub layer: ImageBuffer<Rgba<u8>, Vec<u8>>,
     pub px_per_m: f32,
 }
@@ -36,6 +38,19 @@ pub const GROUND_IDS: [(u8, &str); 7] = [
     (12, "deep_mud"),
     (13, "deep_water"),
     (14, "thicket"),
+];
+
+/// Cave ground ids on layer.png (R channel), after the swamp ones.
+pub const CAVE_GROUND_IDS: [(u8, &str); 9] = [
+    (15, "cave_floor_natural"),
+    (16, "cave_floor_hand_made"),
+    (17, "tunnel"),
+    (18, "rock"),
+    (19, "cave_wall"),
+    (20, "chasm"),
+    (21, "rope_bridge"),
+    (22, "shallow_pool"),
+    (23, "deep_pool"),
 ];
 
 /// Colors for the region split (cycled when there are more regions than
@@ -316,6 +331,45 @@ pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
         }
     }
 
+    // Cave ground on layer.png, under the objects: ground id, zone, chamber.
+    if let Some(cave) = &level.cave
+        && let (Some(style), Some(ch), Some(carve)) = (&cave.style, &cave.chambers, &cave.carve)
+    {
+        let id_of = |name: &str| CAVE_GROUND_IDS.iter().find(|g| g.1 == name).map_or(0, |g| g.0);
+        let cs = style.cell_size_m * px_per_m;
+        for cy in 0..style.height {
+            for cx in 0..style.width {
+                let c = cy * style.width + cx;
+                let hz = cave.hazards.as_ref();
+                let name = if hz.is_some_and(|l| l.bridge.cells[c]) {
+                    "rope_bridge"
+                } else if hz.is_some_and(|l| l.chasm.cells[c]) {
+                    "chasm"
+                } else if hz.is_some_and(|l| l.deep.cells[c]) {
+                    "deep_pool"
+                } else if hz.is_some_and(|l| l.shallow.cells[c]) {
+                    "shallow_pool"
+                } else if carve.floor.cells[c] && ch.ids[c] == 0 {
+                    "tunnel"
+                } else if carve.floor.cells[c] {
+                    if style.style_at(c) == CaveStyle::Natural { "cave_floor_natural" } else { "cave_floor_hand_made" }
+                } else if carve.wall.cells[c] {
+                    "cave_wall"
+                } else {
+                    "rock"
+                };
+                let px = Rgba([id_of(name), (style.ids[c] & 0xFF) as u8, (ch.ids[c] & 0xFF) as u8, 255]);
+                let (x0, x1) = ((cx as f32 * cs).round() as u32, ((cx + 1) as f32 * cs).round() as u32);
+                let (y0, y1) = ((cy as f32 * cs).round() as u32, ((cy + 1) as f32 * cs).round() as u32);
+                for py in y0..y1.min(h) {
+                    for qx in x0..x1.min(w) {
+                        layer.put_pixel(qx, py, px);
+                    }
+                }
+            }
+        }
+    }
+
     // Draw in stored order: later objects paint over earlier ones. Objects
     // may be rotated and compound: every pixel in the bounding box of all
     // corners is tested against the object's rects (pixel centers). A
@@ -382,6 +436,7 @@ pub fn layer_categories() -> Vec<&'static str> {
         names.push(name);
     }
     names.extend(GROUND_IDS.iter().map(|&(_, n)| n));
+    names.extend(CAVE_GROUND_IDS.iter().map(|&(_, n)| n));
     names
 }
 
@@ -450,6 +505,39 @@ mod tests {
         // The house occupies pixels 8..15 × 8..12; everything else is town.
         assert_eq!(r.map.get_pixel(10, 10).0, [10, 20, 30]);
         assert_eq!(r.map.get_pixel(60, 60).0, REGION);
+    }
+
+    #[test]
+    fn cave_layer_carries_ground_zone_and_chamber() {
+        let mut c = crate::model::LevelConfig { kind: crate::model::MapKind::Cave, ..crate::model::LevelConfig::default() };
+        c.map.width_m = 120.0;
+        c.map.height_m = 120.0;
+        c.cell_size_m = 1.0;
+        c.cave.hazards.chasm_pct = 100.0;
+        c.cave.hazards.pool_pct = 100.0;
+        let level = crate::generator::generate(&c, 2);
+        let r = rasterize(&level, 1.0);
+        let cave = level.cave.as_ref().unwrap();
+        let (st, ch) = (cave.style.as_ref().unwrap(), cave.chambers.as_ref().unwrap());
+        let names = layer_categories();
+        let mut seen = std::collections::HashSet::new();
+        for (x, y, px) in r.layer.enumerate_pixels() {
+            assert_eq!(px.0[3], 255, "every cave pixel carries data");
+            let k = y as usize * st.width + x as usize;
+            let name = names[px.0[0] as usize];
+            seen.insert(name);
+            if CAVE_GROUND_IDS.iter().any(|g| g.1 == name) {
+                assert_eq!(px.0[1] as u16, st.ids[k] & 0xFF, "zone id in G");
+                assert_eq!(px.0[2] as u16, ch.ids[k] & 0xFF, "chamber id in B");
+            }
+            if name == "tunnel" {
+                assert_eq!(ch.ids[k], 0);
+            }
+        }
+        for want in ["rock", "cave_wall", "tunnel", "chasm", "shallow_pool", "deep_pool", "gate", "mob_spawn"] {
+            assert!(seen.contains(want), "no {want} on the cave layer: {seen:?}");
+        }
+        assert!(seen.contains("cave_floor_natural") || seen.contains("cave_floor_hand_made"));
     }
 
     #[test]
@@ -531,8 +619,8 @@ mod tests {
         let cats = layer_categories();
         assert_eq!(cats[0], "ground");
         assert_eq!(cats[Category::Structure.layer_id() as usize], "structure");
-        assert_eq!(cats.len(), Category::ALL.len() + 1 + GROUND_IDS.len());
-        for (id, name) in GROUND_IDS {
+        assert_eq!(cats.len(), Category::ALL.len() + 1 + GROUND_IDS.len() + CAVE_GROUND_IDS.len());
+        for (id, name) in GROUND_IDS.into_iter().chain(CAVE_GROUND_IDS) {
             assert_eq!(cats[id as usize], name, "ground ids follow the categories");
         }
     }
