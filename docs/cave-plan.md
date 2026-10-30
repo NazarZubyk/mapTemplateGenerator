@@ -312,7 +312,7 @@ node's `link_traffic`, `widths_from_traffic`, `stamp_path`,
   Diagonals, Max turns, Stub length,
   the gate list (shared rows), 🎲.
 
-### Step C4 — Carve & smooth (node 5, cave only)
+### Step C4 — Carve & smooth (node 5, cave only) — done
 
 1. Carve chambers + tunnels into the floor mask.
 2. Natural parts only: roughen the floor edge with noise
@@ -326,6 +326,36 @@ node's `link_traffic`, `widths_from_traffic`, `stamp_path`,
 
 Settings: roughness, smooth passes, min rock speck, rock / floor / wall
 colors. Stats: floor %, natural / hand-made floor %.
+
+**C4 notes (as built).** `generator/cave/carve.rs` (`tunnels::
+distance_field` now `pub(crate)`).
+
+- Roughen (natural zones, not the outermost cells): floor = signed
+  distance to the carved wall (m, + inside) + `roughness_pct` (50%) ×
+  2.5 m × noise (2.5 m features, gain 2, clamped ±1) > 0; only cells
+  within that reach of the wall are touched.
+- Smooth: `smooth_passes` (4) of the 4-5 rule on natural cells; outside
+  the map = rock. Never changed: hand-made cells, the outer edge, the
+  **core** = natural tunnels' centerlines (`path_m` rasterized, + one
+  cell, only where carved) and the gate points.
+- The plan's "protect the narrowest tunnel width" became the core; a
+  piece the smoothing still cuts off is **rejoined** if it matters
+  (hand-made floor in it, or ≥ 6 m²): BFS over carved ∪ current floor
+  from the main piece, the path reopened one cell thick where carved.
+  Smaller pockets are dropped. Floor is always one piece with every
+  chamber and gate (tested; 20-config sweep: always 1 piece, 0–4
+  rejoins).
+- Rock specks under `min_rock_m2` (4 m²) not touching the edge are dug
+  out. Wall band = rock within `wall_band_m` (1 m, at least one cell) of
+  the floor.
+- Output `CarveLayout { floor, wall, floor_pct, natural_floor_pct,
+  dropped_cells, rejoined }`. Floor ≈ 19–21% of the 200 m map. ~0.05 s.
+- Map: final floor in its chamber's style color (rest by zone), wall band
+  in `wall_color`, rock tinted; legend + "cave wall"; spec.json
+  `cave_floor` { floor_pct, natural_floor_pct, wall_band_m }; MCP
+  `generate` reports `carve`. layer.png ids come with C8.
+- UI: node "5 · Carve & smooth" — Roughness, Smooth passes, Min rock
+  speck, Wall band, Wall color, 🎲.
 
 ### Step C5 — Hazards (node 6, cave only)
 

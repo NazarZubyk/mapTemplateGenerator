@@ -102,6 +102,32 @@ pub fn cave_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[u8
             };
             let (rock_n, rock_h) = (mix(st.natural_color), mix(st.handmade_color));
             let tunnel = |c: usize| cave.tunnels.as_ref().is_some_and(|t| t.mask.cells[c]);
+            if let Some(carve) = &cave.carve {
+                // The final floor: chamber floor in its chamber's style, the
+                // rest in its zone's; the wall band over the rock.
+                let wall = level.config.cave.carve.wall_color;
+                return Some((
+                    style.width,
+                    style.height,
+                    style.cell_size_m,
+                    (0..style.ids.len())
+                        .map(|c| {
+                            if carve.floor.cells[c] {
+                                match ch.ids[c] {
+                                    0 => of(style.style_at(c)),
+                                    id => of(ch.chambers[id as usize - 1].style),
+                                }
+                            } else if carve.wall.cells[c] {
+                                wall
+                            } else if style.style_at(c) == CaveStyle::Natural {
+                                rock_n
+                            } else {
+                                rock_h
+                            }
+                        })
+                        .collect(),
+                ));
+            }
             (0..style.ids.len())
                 .map(|c| match ch.ids[c] {
                     // Tunnels take the zone's style: the carving node shapes
@@ -133,6 +159,9 @@ pub fn cave_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
                 if ch.chambers.iter().any(|c| c.style == kind) || in_tunnels {
                     out.push((color, format!("{} floor", kind.label())));
                 }
+            }
+            if cave.carve.as_ref().is_some_and(|c| c.wall.count_true() > 0) {
+                out.push((level.config.cave.carve.wall_color, "cave wall".to_owned()));
             }
             out.push((level.config.cave.chambers.rock_color, "rock".to_owned()));
         }

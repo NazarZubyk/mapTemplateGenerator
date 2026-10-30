@@ -737,6 +737,10 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
             "gates": l.gates.len(),
             "main_route_m": l.main_route_m,
         })),
+        "carve": level.cave.as_ref().and_then(|c| c.carve.as_ref()).map(|l| json!({
+            "floor_pct": l.floor_pct, "natural_floor_pct": l.natural_floor_pct,
+            "dropped_cells": l.dropped_cells, "rejoined": l.rejoined,
+        })),
         "trees": level.swamp.as_ref().and_then(|s| s.trees.as_ref()).map(|t| json!({
             "grove_trees": t.grove_trees, "water_trees": t.water_trees, "grove_cover_pct": t.grove_cover_pct,
         })),

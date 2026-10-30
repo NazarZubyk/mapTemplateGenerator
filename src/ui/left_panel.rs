@@ -94,7 +94,9 @@ fn cave_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_chambers(ui, app);
     flow_arrow(ui, "chambers, not linked yet");
     node_tunnels(ui, app);
-    ui.weak("Next cave step: C4 carve & smooth (docs/cave-plan.md).");
+    flow_arrow(ui, "chambers + tunnels (one floor, raw edges)");
+    node_carve(ui, app);
+    ui.weak("Next cave step: C5 hazards (docs/cave-plan.md).");
     ui.add_space(4.0);
     ui.separator();
 }
@@ -409,6 +411,56 @@ zone at the edge. Where it leads is up to the game.";
                 l.tunnels.iter().filter(|t| t.squeeze_m.is_some()).count(),
                 l.gates.len(),
                 l.main_route_m
+            ));
+        }
+    });
+}
+
+/// Cave node 5: the final floor — natural walls roughened and smoothed,
+/// the wall band (step C4 in docs/cave-plan.md).
+fn node_carve(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_ROUGH: &str = "How ragged the natural walls get: noise pushes the wall in \
+and out by up to ~2.5 m at 100% (bays, bulges, rough edges). 0%: the carved outline as is. \
+Hand-made parts are never touched — their walls stay as dug.";
+    const TIP_PASSES: &str = "Smoothing passes of a cellular automaton over the natural \
+walls (the classic cave method): each pass a cell becomes rock when most of its neighbors \
+are rock and floor when most are floor — noise turns into organic walls. 0: raw noise. \
+Tunnels never close: their centerlines stay floor.";
+    const TIP_SPECK: &str = "Rock specks smaller than this, m², standing alone in the floor \
+are dug out. 0: keep every speck.";
+    const TIP_BAND: &str = "Width of the wall band — the rock right along the floor, where \
+the game puts its colliders — meters; drawn darker. 0: no band.";
+    const TIP_WALL: &str = "Wall band color on the map image, the preview and the legend.";
+    node(ui, "5 · Carve & smooth", |ui| {
+        ui.weak("input: chambers + tunnels · output: final floor (natural walls organic, hand-made as dug) + wall band (cave)");
+        let s = &mut app.config.cave.carve;
+        egui::Grid::new("carve_node_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Roughness", TIP_ROUGH, |ui| ui.add(egui::Slider::new(&mut s.roughness_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Smooth passes", TIP_PASSES, |ui| ui.add(egui::DragValue::new(&mut s.smooth_passes).range(0..=12).speed(0.05)));
+            param_row(ui, "Min rock speck", TIP_SPECK, |ui| {
+                ui.add(egui::DragValue::new(&mut s.min_rock_m2).range(0.0..=100.0).speed(0.1).suffix(" m²"))
+            });
+            param_row(ui, "Wall band", TIP_BAND, |ui| ui.add(meters(&mut s.wall_band_m, 5.0)));
+            param_row(ui, "Wall color", TIP_WALL, |ui| ui.color_edit_button_srgb(&mut s.wall_color));
+        });
+        ui.horizontal(|ui| {
+            if ui
+                .button("🎲 Random params")
+                .on_hover_text("Rolls every carve setting independently inside its reasonable range. Set values only; press Generate.")
+                .clicked()
+            {
+                let mut rng = rand::rng();
+                s.roughness_pct = rng.random_range(0.0..=100.0);
+                s.smooth_passes = rng.random_range(0..=6);
+                s.min_rock_m2 = rng.random_range(0.0..=12.0);
+                s.wall_band_m = rng.random_range(0.0..=2.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(l) = app.generated.as_ref().and_then(|l| l.cave.as_ref()).and_then(|c| c.carve.as_ref()) {
+            ui.weak(format!(
+                "generated: floor {:.0}% of the map ({:.0}% natural) · {} cut-off pieces rejoined · {} cells of pockets dropped",
+                l.floor_pct, l.natural_floor_pct, l.rejoined, l.dropped_cells
             ));
         }
     });

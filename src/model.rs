@@ -307,6 +307,31 @@ pub struct CaveSettings {
     pub chambers: ChamberSettings,
     /// Node 4: tunnels linking the chambers, gate tunnels.
     pub tunnels: TunnelSettings,
+    /// Node 5: carving the floor out, natural walls, the wall band.
+    pub carve: CarveSettings,
+}
+
+/// Settings of the cave carve & smooth node (step C4): natural walls get
+/// rough and organic, hand-made walls stay as dug.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CarveSettings {
+    /// How ragged the natural walls get, % (noise pushes the wall in and
+    /// out by up to ~2.5 m at 100%).
+    pub roughness_pct: f32,
+    /// Cellular-automaton passes (4-5 rule) smoothing the natural walls.
+    pub smooth_passes: u32,
+    /// Rock specks smaller than this, m², inside the floor are dug out.
+    pub min_rock_m2: f32,
+    /// Width of the wall band (rock touching the floor), meters.
+    pub wall_band_m: f32,
+    pub wall_color: [u8; 3],
+}
+
+impl Default for CarveSettings {
+    fn default() -> Self {
+        Self { roughness_pct: 50.0, smooth_passes: 4, min_rock_m2: 4.0, wall_band_m: 1.0, wall_color: [30, 26, 24] }
+    }
 }
 
 /// Settings of the cave tunnels node (step C3): how the chambers are

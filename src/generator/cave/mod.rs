@@ -9,6 +9,8 @@
 //! 4. **Tunnels** — the chambers linked from a chain to a maze (labyrinth
 //!    slider), natural winding or hand-made straight, gate tunnels in from
 //!    the edge.
+//! 5. **Carve & smooth** — the final floor: natural walls roughened and
+//!    smoothed (cellular automaton), hand-made ones as dug; the wall band.
 
 use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 
@@ -16,6 +18,7 @@ use crate::generator::Progress;
 use crate::level::{CaveLayout, GeneratedLevel};
 use crate::model::LevelConfig;
 
+pub mod carve;
 pub mod chambers;
 pub mod tunnels;
 pub mod style;
@@ -37,6 +40,10 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
     let tunnels = tunnels::build(config, &mut rng, &style.layout, &chambers.layout);
     notes.extend(tunnels.notes);
 
+    progress("Smoothing the walls", 0.7);
+    let carve = carve::build(config, &mut rng, &style.layout, &chambers.layout, &tunnels.layout);
+    notes.extend(carve.notes);
+
     progress("Done", 1.0);
     GeneratedLevel {
         config: config.clone(),
@@ -54,7 +61,7 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
         mobs: None,
         gates: None,
         swamp: None,
-        cave: Some(CaveLayout { style: Some(style.layout), chambers: Some(chambers.layout), tunnels: Some(tunnels.layout) }),
+        cave: Some(CaveLayout { style: Some(style.layout), chambers: Some(chambers.layout), tunnels: Some(tunnels.layout), carve: Some(carve.layout) }),
         noise_preview: None,
         notes,
     }

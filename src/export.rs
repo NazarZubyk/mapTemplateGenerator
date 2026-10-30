@@ -125,6 +125,9 @@ pub struct ExportSpec {
     /// Cave gates: edge point, direction, the chamber their tunnel leads to.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cave_gates: Option<Vec<crate::level::CaveGate>>,
+    /// Cave floor shares after carving (the floor itself is in map.png).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cave_floor: Option<ExportCaveFloor>,
     /// Every placed object with position and size in meters.
     pub objects: Vec<crate::level::PlacedObject>,
 }
@@ -149,6 +152,17 @@ B = island id (low byte, matches `islands[].id`) on islands, else 0; A = 255",
             empty: "R = G = B = A = 0: no object and no ground data (outside a town's region)",
         }
     }
+}
+
+/// The cave floor after carving.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExportCaveFloor {
+    /// Share of the map that is walkable floor, %.
+    pub floor_pct: f32,
+    /// Share of the floor in natural zones, %.
+    pub natural_floor_pct: f32,
+    /// Width of the wall band (rock touching the floor) on the map, meters.
+    pub wall_band_m: f32,
 }
 
 /// The swamp's wading rules and terrain shares.
@@ -419,6 +433,11 @@ impl ExportSpec {
             tunnels: level.cave.as_ref().and_then(|c| c.tunnels.as_ref()).map(|l| l.tunnels.clone()),
             junctions: level.cave.as_ref().and_then(|c| c.tunnels.as_ref()).map(|l| l.junctions.clone()),
             cave_gates: level.cave.as_ref().and_then(|c| c.tunnels.as_ref()).map(|l| l.gates.clone()),
+            cave_floor: level.cave.as_ref().and_then(|c| c.carve.as_ref()).map(|l| ExportCaveFloor {
+                floor_pct: l.floor_pct,
+                natural_floor_pct: l.natural_floor_pct,
+                wall_band_m: level.config.cave.carve.wall_band_m,
+            }),
             water: level.swamp.as_ref().and_then(|s| s.depth.as_ref()).map(|d| {
                 let s = &level.config.swamp.depth;
                 ExportWater {

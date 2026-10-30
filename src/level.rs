@@ -771,6 +771,25 @@ pub struct TunnelLayout {
     pub dead_end_chambers: u32,
 }
 
+/// The cave carve & smooth node's output: the final floor.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CarveLayout {
+    /// Walkable floor (chambers + tunnels, natural walls roughened and
+    /// smoothed). One connected piece.
+    pub floor: CellMask,
+    /// Rock within the wall band of the floor (where the game puts its
+    /// colliders).
+    pub wall: CellMask,
+    /// Share of the map that is floor, %.
+    pub floor_pct: f32,
+    /// Share of the floor in natural zones, %.
+    pub natural_floor_pct: f32,
+    /// Floor pockets cut off by the smoothing and dropped, cells.
+    pub dropped_cells: u32,
+    /// Cut-off pieces joined back along the carved floor.
+    pub rejoined: u32,
+}
+
 /// The cave node chain's output, filled node by node (docs/cave-plan.md).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct CaveLayout {
@@ -780,6 +799,8 @@ pub struct CaveLayout {
     pub chambers: Option<ChamberLayout>,
     #[serde(default)]
     pub tunnels: Option<TunnelLayout>,
+    #[serde(default)]
+    pub carve: Option<CarveLayout>,
 }
 
 /// The mobs node's output.

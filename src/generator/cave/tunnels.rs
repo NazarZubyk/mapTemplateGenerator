@@ -723,7 +723,7 @@ fn disc(mask: &mut CellMask, allowed: &[bool], (x, y): (f32, f32), r: f32) {
 
 /// Distance in cells (8 directions, diagonal √2) from every cell to the
 /// nearest `source` cell.
-fn distance_field(w: usize, h: usize, source: impl Fn(usize) -> bool) -> Vec<f32> {
+pub(crate) fn distance_field(w: usize, h: usize, source: impl Fn(usize) -> bool) -> Vec<f32> {
     let mut d = vec![f32::INFINITY; w * h];
     let mut heap = BinaryHeap::new();
     for (c, v) in d.iter_mut().enumerate() {
