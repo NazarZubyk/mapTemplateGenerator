@@ -10,7 +10,7 @@ server for Claude. Open: step 7 (walkable budget), step 13 (validation &
 export polish), cleanup.
 Next map kind: Swamp — its own node chain, planned in
 [swamp-plan.md](swamp-plan.md) (step list and notes live there). Done:
-S1 gate anchors, S2 islands, S3 paths. A swamp map now runs only that
+S1 gate anchors, S2 islands, S3 paths, S4 depth & border. A swamp map now runs only that
 chain. The default map is 200 × 200 m (town tests use
 `LevelConfig::test_64()`).
 

@@ -227,6 +227,19 @@ fn draw_legend(painter: &egui::Painter, canvas: Rect, level: &GeneratedLevel) {
     {
         entries.push((crate::render::REGION, level.config.kind.slug().to_owned()));
     }
+    if let Some(depth) = level.swamp.as_ref().and_then(|s| s.depth.as_ref()) {
+        let d = &level.config.swamp.depth;
+        for (mask, color, name) in [
+            (&depth.shallow, d.shallow_color, "shallow water"),
+            (&depth.mud, d.mud_color, "deep mud"),
+            (&depth.deep, d.deep_color, "deep water"),
+            (&depth.thicket, d.thicket_color, "thicket"),
+        ] {
+            if mask.count_true() > 0 {
+                entries.push((color, name.to_owned()));
+            }
+        }
+    }
     if let Some(islands) = level.swamp.as_ref().and_then(|s| s.islands.as_ref())
         && !islands.islands.is_empty()
     {

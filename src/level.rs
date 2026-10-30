@@ -431,6 +431,9 @@ pub enum IslandKind {
     Hub,
     /// Small island: stepping stone.
     Small,
+    /// Tiny safe island the depth node puts on a mud path too long to wade
+    /// in one breath.
+    Hummock,
 }
 
 /// One island of firm ground.
@@ -521,6 +524,34 @@ pub struct PathLayout {
     pub bridges: Vec<GateBridge>,
 }
 
+/// The swamp depth & border node's output. Every cell is exactly one of:
+/// island, mud path, boardwalk (earlier nodes) or one of the masks here.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DepthLayout {
+    /// Walkable water near the islands and paths.
+    pub shallow: CellMask,
+    /// Walkable, drains breath `mud_cost` times faster.
+    pub mud: CellMask,
+    /// Not walkable: the inner walls of the swamp and most of the border.
+    pub deep: CellMask,
+    /// Not walkable: thicket / rock stretches of the border.
+    pub thicket: CellMask,
+    /// 0 = safe ground (island, boardwalk); 1..=254 = breath used to get
+    /// here from safe ground, scaled to the wading limit; 255 = deep water or
+    /// thicket.
+    pub depth: Vec<u8>,
+    /// How far into the water things may spawn, meters (the wading limit,
+    /// halved with the return trip).
+    pub reach_m: f32,
+    pub hummocks: u32,
+    /// Shares of the map, %.
+    pub walkable_pct: f32,
+    pub shallow_pct: f32,
+    pub mud_pct: f32,
+    pub deep_pct: f32,
+    pub thicket_pct: f32,
+}
+
 /// The swamp node chain's output, filled node by node (docs/swamp-plan.md).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct SwampLayout {
@@ -529,6 +560,8 @@ pub struct SwampLayout {
     pub islands: Option<IslandLayout>,
     #[serde(default)]
     pub paths: Option<PathLayout>,
+    #[serde(default)]
+    pub depth: Option<DepthLayout>,
 }
 
 /// The mobs node's output.

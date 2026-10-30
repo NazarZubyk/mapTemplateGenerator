@@ -256,7 +256,7 @@ the 4 nearest, no crossings / sharp angles), `link_traffic` +
 `LevelConfig::test_64()` (the old 64 m default) — they were written for
 it and stay fast.
 
-### Step S4 — Depth & border (node 5, swamp only)
+### Step S4 — Depth & border (node 5, swamp only) — done
 
 Input: the walkable core. Output: a depth map (u8 per cell) and the band
 masks: shallow water, deep mud, deep water, thicket.
@@ -284,6 +284,43 @@ Stats: % per band, walkable %, hummocks added, crossings turned boardwalk.
 
 This node also replaces Town's region walls: deep water between paths
 is the inner wall.
+
+**S4 notes (as built).** `generator/swamp/depth.rs`, settings
+`config.swamp.depth: DepthSettings` (shallow 3 m, mud 4 m, wobble ±3 m,
+wade limit 20 m, mud cost 2×, return trip on, hummock 3 m, border 8 m,
+thicket 35% in 15–40 m segments; four colors). The first try (shallow 4 +
+mud 6 m) left only ~20% deep water — the bands merged into open fields;
+3 + 4 m gives ~30% deep water and ~65% walkable, a proper labyrinth.
+
+- Order: bands → border → breath + hummocks → deep cut → thicket → depth.
+  RNG: the noise seed, then the border segment lengths + thicket rolls.
+- Bands: 8-direction Dijkstra in meters from island + mud path cells
+  (boardwalks are not a source), ± `wobble_m` by a 10 m fBm.
+- Border: water whose edge distance is under `border_m · (1 + 2·swing)`
+  (swing = 25 m fBm − 0.5) turns deep; island, mud path and boardwalk
+  cells are never touched.
+- Breath: Dijkstra from island + boardwalk cells through mud path /
+  shallow (×1) and deep mud (× `mud_cost`) cells. Hummock loop: the mud
+  path cell with the highest breath above limit / 2 gets a disc of
+  `hummock_m` (water cells only) → a new `IslandKind::Hummock` island in
+  `IslandLayout` (mud cleared under it), breath re-spread from it; capped
+  at 500 (note). So the islands layout and the mud mask are changed by
+  this node — later nodes read the updated ones.
+- Deep cut: shallow / mud cells with breath > limit (or unreachable) →
+  deep. Walkable water is therefore always connected to safe ground.
+- Thicket: perimeter (clockwise from top-left) cut into random segments;
+  each border-band deep cell maps to its nearest edge point's segment.
+- Depth u8: 0 island / boardwalk, 1 + breath / limit · 253 (≤ 254) in
+  walkable water, 255 deep water / thicket. Kept in `DepthLayout.depth`
+  (layer.png channel in S8).
+- Output `DepthLayout { shallow, mud, deep, thicket (masks), depth,
+  reach_m, hummocks, walkable/shallow/mud/deep/thicket pct }`; every cell
+  is exactly one of island / mud path / boardwalk / these four (tested).
+  Drawn under the islands (map.png, preview, legend); spec.json `water`
+  (wade limit, mud cost, return trip, reach, hummocks, shares); MCP
+  `generate` reports `water`. Islands node stats and MCP island counts
+  skip hummocks.
+- Whole swamp chain on the 200 m default: ~190–230 ms (release).
 
 ### Step S5 — Trees (node 6, swamp only; Town's houses)
 

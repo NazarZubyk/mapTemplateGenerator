@@ -99,8 +99,35 @@ pub struct ExportSpec {
     /// gate point.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gate_bridges: Option<Vec<crate::level::GateBridge>>,
+    /// Swamp water: the wading rules the layout was built for and the
+    /// shares of each terrain. Shallow water and deep mud are walkable,
+    /// deep water and thicket are not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub water: Option<ExportWater>,
     /// Every placed object with position and size in meters.
     pub objects: Vec<crate::level::PlacedObject>,
+}
+
+/// The swamp's wading rules and terrain shares.
+#[derive(Debug, Serialize)]
+pub struct ExportWater {
+    /// Meters of shallow water the player can wade away from safe ground
+    /// (islands, hummocks, boardwalks) before drowning.
+    pub wade_limit_m: f32,
+    /// 1 m of deep mud counts as this many meters of shallow water.
+    pub mud_cost: f32,
+    /// Spawns in the water are reachable and leavable (`reach_m` = half the
+    /// limit) or only reachable (`reach_m` = the limit).
+    pub return_trip: bool,
+    pub reach_m: f32,
+    /// Hummocks added so every mud path crossing fits in one breath.
+    pub hummocks: u32,
+    /// Shares of the map, %.
+    pub walkable_pct: f32,
+    pub shallow_pct: f32,
+    pub mud_pct: f32,
+    pub deep_pct: f32,
+    pub thicket_pct: f32,
 }
 
 /// One region of the split, with its color on map.png.
@@ -223,6 +250,19 @@ impl ExportSpec {
                 category: "ground",
             });
         }
+        if let Some(depth) = level.swamp.as_ref().and_then(|s| s.depth.as_ref()) {
+            let d = &level.config.swamp.depth;
+            for (mask, color, name) in [
+                (&depth.shallow, d.shallow_color, "shallow water"),
+                (&depth.mud, d.mud_color, "deep mud"),
+                (&depth.deep, d.deep_color, "deep water"),
+                (&depth.thicket, d.thicket_color, "thicket"),
+            ] {
+                if mask.count_true() > 0 {
+                    legend.push(LegendEntry { color: color_hex(color), name: name.to_owned(), category: "ground" });
+                }
+            }
+        }
         if let Some(islands) = level.swamp.as_ref().and_then(|s| s.islands.as_ref())
             && !islands.islands.is_empty()
         {
@@ -327,6 +367,21 @@ impl ExportSpec {
             islands: level.swamp.as_ref().and_then(|s| s.islands.as_ref()).map(|l| l.islands.clone()),
             paths: level.swamp.as_ref().and_then(|s| s.paths.as_ref()).map(|l| l.paths.clone()),
             gate_bridges: level.swamp.as_ref().and_then(|s| s.paths.as_ref()).map(|l| l.bridges.clone()),
+            water: level.swamp.as_ref().and_then(|s| s.depth.as_ref()).map(|d| {
+                let s = &level.config.swamp.depth;
+                ExportWater {
+                    wade_limit_m: s.wade_limit_m,
+                    mud_cost: s.mud_cost,
+                    return_trip: s.return_trip,
+                    reach_m: d.reach_m,
+                    hummocks: d.hummocks,
+                    walkable_pct: d.walkable_pct,
+                    shallow_pct: d.shallow_pct,
+                    mud_pct: d.mud_pct,
+                    deep_pct: d.deep_pct,
+                    thicket_pct: d.thicket_pct,
+                }
+            }),
             objects: level.objects.clone(),
         }
     }

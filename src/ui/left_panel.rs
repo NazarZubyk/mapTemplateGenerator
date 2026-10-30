@@ -66,6 +66,8 @@ fn swamp_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_islands(ui, app);
     flow_arrow(ui, "islands, not linked yet");
     node_paths(ui, app);
+    flow_arrow(ui, "islands + mud paths + boardwalks (one network)");
+    node_depth(ui, app);
     ui.weak("Next swamp nodes appear here as they finish: depth & border, trees, then props, interactive objects, hidden rooms and mobs (docs/swamp-plan.md).");
     ui.add_space(4.0);
     ui.separator();
@@ -1044,7 +1046,7 @@ gate islands reach over the edge on purpose).";
             let (gate, hub, small) = (count(IslandKind::Gate), count(IslandKind::Hub), count(IslandKind::Small));
             ui.weak(format!(
                 "generated: {} islands ({gate} gate, {hub} hub, {small} small; {} of {} hub + small asked) · land {:.0}%",
-                l.islands.len(),
+                gate + hub + small,
                 hub + small,
                 l.requested,
                 l.land_pct
@@ -1132,6 +1134,110 @@ each kink bends it sideways by up to 15% of its length. 0: dead straight. NO EFF
                 count(&|p| p.kind == crate::level::PathKind::Boardwalk),
                 l.bridges.len(),
                 water
+            ));
+        }
+    });
+}
+
+/// A meter field from 0 to `max`.
+fn meters(v: &mut f32, max: f32) -> egui::DragValue<'_> {
+    egui::DragValue::new(v).range(0.0..=max).speed(0.1).suffix(" m")
+}
+
+/// Swamp node 5: water depth, the wading limit and the border (step S4 in
+/// docs/swamp-plan.md).
+fn node_depth(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_SHALLOW: &str = "Shallow water reaches this far from the islands and mud \
+paths, meters. Walkable, normal breath use. Together with Deep mud it sets how wide the \
+walkable corridors are; everything farther is deep water — the swamp's inner walls.";
+    const TIP_MUD: &str = "Then deep mud for this many meters, beyond the shallow water. \
+Walkable but drains breath faster (Mud cost). Deep water starts after it. 0: no mud band.";
+    const TIP_WOBBLE: &str = "Random push of the band edges, ± meters — organic, uneven \
+shores. 0: every band is an even strip around the islands and paths.";
+    const TIP_LIMIT: &str = "How far the player can wade through shallow water away from \
+safe ground (islands, hummocks, boardwalks) before drowning, meters. The layout respects \
+it: a mud path longer than this gets hummocks (stepping stones) so every crossing fits in \
+one breath, and water too far to wade back from becomes deep water. The game should use \
+the same rule (spec.json `water`). Big values: no hummocks, no extra deep water.";
+    const TIP_MUD_COST: &str = "Deep mud drains breath faster: 1 m of mud counts as this \
+many meters of shallow water. 1: mud is as easy as shallow water. NO EFFECT with a 0 m \
+mud band.";
+    const TIP_RETURN: &str = "On: things placed in the water later (props, objects, mobs) \
+stay within half the wading limit — the player can reach them AND get back. Off: within \
+the full limit (reach only). No visible effect in this node.";
+    const TIP_HUMMOCK: &str = "Diameter of a hummock, meters: the small safe island put on \
+a mud path that is too long to wade in one breath. Drawn as island ground. NO EFFECT when \
+no crossing is longer than the wading limit.";
+    const TIP_BORDER: &str = "Width of the impassable strip along the map edge, meters; \
+its inner line swings in and out with a slow noise. Water there turns deep (or thicket); \
+islands, paths and gate bridges are never covered, so the gates stay open.";
+    const TIP_THICKET: &str = "Share of the border, %, that is thicket / rock instead of \
+deep water. The edge is walked in segments (Segment length); each one rolls this chance. \
+0%: an all-water border. 100%: an all-thicket border.";
+    const TIP_SEGMENT: &str = "Length range of the border segments, meters: each one is \
+either deep water or thicket. Short: a broken, patchy border. Long: few long stretches. NO \
+EFFECT at 0% or 100% thicket.";
+    const TIP_COLORS: &str = "Colors of shallow water, deep mud, deep water and thicket on \
+the map image, the preview and the legend.";
+    node(ui, "5 · Depth & border", |ui| {
+        ui.weak("input: islands + paths · output: shallow water, deep mud, deep water, thicket border, hummocks (swamp)");
+        let s = &mut app.config.swamp.depth;
+        egui::Grid::new("depth_node_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Shallow water", TIP_SHALLOW, |ui| ui.add(meters(&mut s.shallow_m, 40.0)));
+            param_row(ui, "Deep mud", TIP_MUD, |ui| ui.add(meters(&mut s.mud_m, 40.0)));
+            param_row(ui, "Shore wobble", TIP_WOBBLE, |ui| ui.add(meters(&mut s.wobble_m, 20.0)));
+            param_row(ui, "Wading limit", TIP_LIMIT, |ui| {
+                ui.add(egui::DragValue::new(&mut s.wade_limit_m).range(2.0..=500.0).speed(0.2).suffix(" m"))
+            });
+            param_row(ui, "Mud cost", TIP_MUD_COST, |ui| {
+                ui.add(egui::DragValue::new(&mut s.mud_cost).range(1.0..=10.0).speed(0.02).suffix("×"))
+            });
+            param_row(ui, "Return trip", TIP_RETURN, |ui| ui.checkbox(&mut s.return_trip, ""));
+            param_row(ui, "Hummock size", TIP_HUMMOCK, |ui| {
+                ui.add(egui::DragValue::new(&mut s.hummock_m).range(1.0..=20.0).speed(0.05).suffix(" m"))
+            });
+            param_row(ui, "Border", TIP_BORDER, |ui| ui.add(meters(&mut s.border_m, 60.0)));
+            param_row(ui, "Thicket", TIP_THICKET, |ui| ui.add(egui::Slider::new(&mut s.thicket_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Segment length", TIP_SEGMENT, |ui| range_m(ui, &mut s.segment_min_m, &mut s.segment_max_m, 1.0..=200.0));
+            param_row(ui, "Colors", TIP_COLORS, |ui| {
+                ui.horizontal(|ui| {
+                    ui.color_edit_button_srgb(&mut s.shallow_color).on_hover_text("shallow water");
+                    ui.color_edit_button_srgb(&mut s.mud_color).on_hover_text("deep mud");
+                    ui.color_edit_button_srgb(&mut s.deep_color).on_hover_text("deep water");
+                    ui.color_edit_button_srgb(&mut s.thicket_color).on_hover_text("thicket")
+                })
+                .response
+            });
+        });
+        ui.horizontal(|ui| {
+            if ui
+                .button("🎲 Random params")
+                .on_hover_text(
+                    "Rolls every depth and border setting (not the colors) independently \
+                     inside its reasonable range — they may contradict each other. Set \
+                     values only; press Generate.",
+                )
+                .clicked()
+            {
+                let mut rng = rand::rng();
+                s.shallow_m = rng.random_range(1.0..=8.0);
+                s.mud_m = rng.random_range(0.0..=10.0);
+                s.wobble_m = rng.random_range(0.0..=6.0);
+                s.wade_limit_m = rng.random_range(6.0..=60.0);
+                s.mud_cost = rng.random_range(1.0..=4.0);
+                s.return_trip = rng.random_bool(0.5);
+                s.hummock_m = rng.random_range(2.0..=6.0);
+                s.border_m = rng.random_range(2.0..=20.0);
+                s.thicket_pct = rng.random_range(0.0..=100.0);
+                s.segment_min_m = rng.random_range(5.0..=40.0);
+                s.segment_max_m = rng.random_range(5.0..=60.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(d) = app.generated.as_ref().and_then(|l| l.swamp.as_ref()).and_then(|s| s.depth.as_ref()) {
+            ui.weak(format!(
+                "generated: walkable {:.0}% (shallow {:.0}%, mud {:.0}%) · deep water {:.0}% · thicket {:.0}% · {} hummocks · spawn reach {:.0} m",
+                d.walkable_pct, d.shallow_pct, d.mud_pct, d.deep_pct, d.thicket_pct, d.hummocks, d.reach_m
             ));
         }
     });

@@ -283,6 +283,65 @@ pub struct SwampSettings {
     pub islands: IslandSettings,
     /// Node 4: mud paths and boardwalks linking the islands.
     pub paths: PathSettings,
+    /// Node 5: water depth, the wading limit and the map border.
+    pub depth: DepthSettings,
+}
+
+/// Settings of the swamp depth & border node (step S4).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DepthSettings {
+    /// Shallow water reaches this far from islands and mud paths, meters.
+    pub shallow_m: f32,
+    /// Then deep mud for this many meters; deep water beyond.
+    pub mud_m: f32,
+    /// Random push of the band edges, ± meters (organic shores).
+    pub wobble_m: f32,
+    /// How far the player can wade through shallow water away from safe
+    /// ground (islands, boardwalks) before drowning, meters.
+    pub wade_limit_m: f32,
+    /// Deep mud drains faster: 1 m of mud counts as this many meters.
+    pub mud_cost: f32,
+    /// Things in the water must be reachable AND leavable: at most half the
+    /// wading limit from safe ground (used by the spawn nodes).
+    pub return_trip: bool,
+    /// Diameter of a hummock (a small safe island put on a mud path that is
+    /// too long to wade in one breath), meters.
+    pub hummock_m: f32,
+    /// Width of the impassable border along the map edge, meters.
+    pub border_m: f32,
+    /// Share of the border, %, that is thicket / rock instead of deep water.
+    pub thicket_pct: f32,
+    /// The border is walked in segments of a random length in this range,
+    /// each rolling thicket or water, meters.
+    pub segment_min_m: f32,
+    pub segment_max_m: f32,
+    pub shallow_color: [u8; 3],
+    pub mud_color: [u8; 3],
+    pub deep_color: [u8; 3],
+    pub thicket_color: [u8; 3],
+}
+
+impl Default for DepthSettings {
+    fn default() -> Self {
+        Self {
+            shallow_m: 3.0,
+            mud_m: 4.0,
+            wobble_m: 3.0,
+            wade_limit_m: 20.0,
+            mud_cost: 2.0,
+            return_trip: true,
+            hummock_m: 3.0,
+            border_m: 8.0,
+            thicket_pct: 35.0,
+            segment_min_m: 15.0,
+            segment_max_m: 40.0,
+            shallow_color: [150, 186, 182],
+            mud_color: [104, 96, 66],
+            deep_color: [46, 78, 104],
+            thicket_color: [52, 76, 44],
+        }
+    }
 }
 
 /// Settings of the swamp paths node (step S3).

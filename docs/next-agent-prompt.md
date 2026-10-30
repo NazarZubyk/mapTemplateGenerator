@@ -54,9 +54,10 @@ a node, state which kinds include it.
 
 **Swamp has its own chain** (`src/generator/swamp/`, planned step by step
 in `docs/swamp-plan.md`): Template → Gate anchors (done) → Islands
-(done) → Paths (done) → Depth & border → Trees → props / interactive /
-hidden rooms / mobs with swamp ground. A swamp map currently shows its
-gates, islands, mud paths and boardwalks. The default map is 200 × 200 m;
+(done) → Paths (done) → Depth & border (done) → Trees → props /
+interactive / hidden rooms / mobs with swamp ground. A swamp map currently
+shows its full layout: gates, islands, hummocks, mud paths, boardwalks,
+shallow water, deep mud, deep water and the thicket border. The default map is 200 × 200 m;
 town-chain tests use `LevelConfig::test_64()`.
 
 **MCP server** `mapgen-mcp` (`src/mcp.rs`, `src/bin/mapgen-mcp.rs`,
@@ -113,8 +114,8 @@ Ctrl+scroll zooms). Bottom: warnings panel, then the (empty) bench.
 ## Current state
 
 Steps 0–6 and 8–12 and the MCP server are done; swamp steps S1 (gate
-anchors), S2 (islands) and S3 (paths) are done — S4 Depth & border is
-next. Open:
+anchors), S2 (islands), S3 (paths) and S4 (depth & border) are done —
+S5 Trees is next. Open:
 - **Step 7 — walkable budget**: `map.walkable_pct` vs what houses and later
   objects take.
 - **Step 13 — validation & export polish**: feasibility pre-check, blocking

@@ -684,6 +684,10 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
         "hidden_rooms": level.hidden_rooms.as_ref().map(|h| json!({"placed": h.rooms.len(), "requested": h.requested})),
         "gates": gates,
         "gate_anchors": gate_anchors,
+        "water": level.swamp.as_ref().and_then(|s| s.depth.as_ref()).map(|d| json!({
+            "hummocks": d.hummocks, "reach_m": d.reach_m, "walkable_pct": d.walkable_pct,
+            "shallow_pct": d.shallow_pct, "mud_pct": d.mud_pct, "deep_pct": d.deep_pct, "thicket_pct": d.thicket_pct,
+        })),
         "paths": level.swamp.as_ref().and_then(|s| s.paths.as_ref()).map(|l| json!({
             "links": l.paths.len(),
             "loops": l.paths.iter().filter(|p| p.extra).count(),
@@ -694,9 +698,9 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
         "islands": level.swamp.as_ref().and_then(|s| s.islands.as_ref()).map(|l| {
             let count = |k| l.islands.iter().filter(|i| i.kind == k).count();
             json!({
-                "placed": l.islands.len(), "requested_hub_small": l.requested, "land_pct": l.land_pct,
+                "placed": l.islands.iter().filter(|i| i.kind != crate::level::IslandKind::Hummock).count(), "requested_hub_small": l.requested, "land_pct": l.land_pct,
                 "gate": count(crate::level::IslandKind::Gate), "hub": count(crate::level::IslandKind::Hub),
-                "small": count(crate::level::IslandKind::Small),
+                "small": count(crate::level::IslandKind::Small), "hummock": count(crate::level::IslandKind::Hummock),
             })
         }),
         "mobs": mobs,

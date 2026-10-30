@@ -99,6 +99,12 @@ pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
     } else if let Some(shape) = &level.shape {
         paint_mask(&mut map, &shape.mask, px_per_m, w, h, REGION);
     }
+    if let Some(depth) = level.swamp.as_ref().and_then(|s| s.depth.as_ref()) {
+        let d = &level.config.swamp.depth;
+        for (mask, color) in [(&depth.deep, d.deep_color), (&depth.mud, d.mud_color), (&depth.shallow, d.shallow_color), (&depth.thicket, d.thicket_color)] {
+            paint_mask(&mut map, mask, px_per_m, w, h, color);
+        }
+    }
     if let Some(islands) = level.swamp.as_ref().and_then(|s| s.islands.as_ref()) {
         paint_mask(&mut map, &islands.mask(), px_per_m, w, h, level.config.swamp.islands.color);
     }

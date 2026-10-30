@@ -7,6 +7,9 @@
 //! 3. **Islands** — the firm ground: gate islands, hubs, small islands.
 //! 4. **Paths** — mud paths and boardwalks linking the islands, bridges out
 //!    to the bridge gates.
+//! 5. **Depth & border** — shallow water, deep mud and deep water by
+//!    distance, hummocks so every crossing fits in one breath, the deep
+//!    water / thicket border.
 
 use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 
@@ -14,6 +17,7 @@ use crate::generator::Progress;
 use crate::level::{GeneratedLevel, SwampLayout};
 use crate::model::LevelConfig;
 
+pub mod depth;
 pub mod gate_anchors;
 pub mod islands;
 pub mod paths;
@@ -29,12 +33,16 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
     let objects = anchors.objects;
 
     progress("Raising islands", 0.05);
-    let islands = islands::build(config, &mut rng, &anchors.anchors);
+    let mut islands = islands::build(config, &mut rng, &anchors.anchors);
     notes.extend(islands.notes);
 
     progress("Laying paths", 0.3);
-    let paths = paths::build(config, &mut rng, &anchors.anchors, &islands.layout);
+    let mut paths = paths::build(config, &mut rng, &anchors.anchors, &islands.layout);
     notes.extend(paths.notes);
+
+    progress("Filling the water", 0.7);
+    let depth = depth::build(config, &mut rng, &mut islands.layout, &mut paths.layout);
+    notes.extend(depth.notes);
 
     progress("Done", 1.0);
     GeneratedLevel {
@@ -52,7 +60,7 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
         hidden_rooms: None,
         mobs: None,
         gates: None,
-        swamp: Some(SwampLayout { gate_anchors: anchors.anchors, islands: Some(islands.layout), paths: Some(paths.layout) }),
+        swamp: Some(SwampLayout { gate_anchors: anchors.anchors, islands: Some(islands.layout), paths: Some(paths.layout), depth: Some(depth.layout) }),
         noise_preview: None,
         notes,
     }
