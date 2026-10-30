@@ -24,7 +24,8 @@ use crate::level::{
     Category, CellMask, InteractiveGroup, InteractiveLayout, InteractiveTypeStats, PlacedObject, RegionMap,
     RoadNetwork,
 };
-use crate::model::{InteractiveSpot, InteractiveTerrain, InteractiveType, LevelConfig};
+use crate::generator::placement::TerrainSets;
+use crate::model::{InteractiveSpot, InteractiveType, LevelConfig};
 
 /// Group centers tried per group before the type gives up.
 const CENTER_TRIES: usize = 40;
@@ -105,27 +106,23 @@ pub(crate) struct Area {
     pub along_walls: Vec<bool>,
     /// Too close to obstacles or roads for the "open ground" spot.
     pub crowded: Vec<bool>,
-    /// Swamp maps: the terrain each type may stand on.
-    pub terrain: Option<TerrainMasks>,
+    /// Swamp maps: the terrains each type may stand on.
+    pub terrain: Option<SwampTerrain>,
 }
 
-/// Swamp terrain for the interactive types.
-pub(crate) struct TerrainMasks {
-    pub land: Vec<bool>,
-    /// Shallow water and deep mud within reach.
-    pub water: Vec<bool>,
-    /// Distance from the nearest land cell, meters.
+/// Swamp terrain for the interactive types (`InteractiveType::spawn_on`).
+pub(crate) struct SwampTerrain {
+    pub sets: TerrainSets,
+    /// Distance from the nearest island cell, meters (`shore_dist_m`).
     pub to_land_m: Vec<f32>,
+    /// Hidden room id per cell (0 = none): a group stays in one place.
+    pub room_of: Vec<u32>,
 }
 
-impl TerrainMasks {
-    fn fits(&self, terrain: InteractiveTerrain, shore_m: f32, i: usize) -> bool {
-        match terrain {
-            InteractiveTerrain::Land => self.land[i],
-            InteractiveTerrain::Water => self.water[i],
-            InteractiveTerrain::Both => self.land[i] || self.water[i],
-            InteractiveTerrain::ShoreWater => self.water[i] && self.to_land_m[i] <= shore_m,
-        }
+impl SwampTerrain {
+    fn fits(&self, it: &InteractiveType, i: usize) -> bool {
+        let wet = self.sets.shallow[i] || self.sets.mud[i];
+        self.sets.allows(it.spawn_on, i) && !(wet && it.shore_dist_m > 0.0 && self.to_land_m[i] > it.shore_dist_m)
     }
 }
 
@@ -155,7 +152,7 @@ pub(crate) fn place_types(config: &LevelConfig, rng: &mut ChaCha8Rng, area: Area
         let spread = it.spread_m.max(0.0);
 
         let mut stats = InteractiveTypeStats { name: name.clone(), requested: it.quantity, placed: 0, groups: 0 };
-        let fits_terrain = |i: usize| terrain.as_ref().is_none_or(|t| t.fits(it.terrain, it.shore_dist_m, i));
+        let fits_terrain = |i: usize| terrain.as_ref().is_none_or(|t| t.fits(it, i));
         let mut fell_back = false;
         let mut remaining = it.quantity;
         // Candidate centers, built once per type; cells taken since are
@@ -184,13 +181,9 @@ pub(crate) fn place_types(config: &LevelConfig, rng: &mut ChaCha8Rng, area: Area
                 }
                 tries += 1;
                 let center = (((c % w) as f32 + 0.5) * cell, ((c / w) as f32 + 0.5) * cell);
-                // A group stays on the terrain of its center (land or water).
-                let on_land = terrain.as_ref().is_some_and(|t| t.land[c]);
-                let ok = |i: usize| {
-                    free[i]
-                        && fits_terrain(i)
-                        && terrain.as_ref().is_none_or(|t| it.terrain != InteractiveTerrain::Both || t.land[i] == on_land)
-                };
+                // A group stays in one place: all in its center's hidden room,
+                // or all outside rooms.
+                let ok = |i: usize| free[i] && fits_terrain(i) && terrain.as_ref().is_none_or(|t| t.room_of[i] == t.room_of[c]);
                 let members = try_group(rng, &ok, center, want, spread, (lo, hi), w, h, cell);
                 if members.len() as u32 >= need {
                     group = Some(members);

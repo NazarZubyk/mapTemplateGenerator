@@ -107,6 +107,28 @@ pub(crate) fn nearest_road_angle(net: &RoadNetwork, ids: &[u8], w: usize, h: usi
 }
 
 /// Chebyshev dilation: cells within `r` (8-neighborhood steps) of a set cell.
+/// Swamp terrain masks a spawn node picks from by `SpawnOn` (each a subset
+/// of the node's free ground).
+pub(crate) struct TerrainSets {
+    pub land: Vec<bool>,
+    pub path: Vec<bool>,
+    pub shallow: Vec<bool>,
+    pub mud: Vec<bool>,
+    /// Hidden islet floors.
+    pub room: Vec<bool>,
+}
+
+impl TerrainSets {
+    /// Is cell `i` one of the terrains ticked in `f`?
+    pub fn allows(&self, f: crate::model::SpawnOn, i: usize) -> bool {
+        (f.land && self.land[i])
+            || (f.path && self.path[i])
+            || (f.shallow && self.shallow[i])
+            || (f.mud && self.mud[i])
+            || (f.hidden_room && self.room[i])
+    }
+}
+
 pub(crate) fn dilate(mask: &[bool], w: usize, h: usize, r: i64) -> Vec<bool> {
     // Separable max filter: rows, then columns.
     let mut rows = vec![false; w * h];

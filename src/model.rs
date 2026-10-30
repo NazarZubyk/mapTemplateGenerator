@@ -539,12 +539,12 @@ impl Default for MobType {
     }
 }
 
-/// Which swamp terrains a mob type may spawn on (towns ignore it). Any mix;
-/// none at all = the type is never placed.
+/// Which swamp terrains a mob type or an interactive type may spawn on
+/// (towns ignore it). Any mix; none at all = never placed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SpawnOn {
-    /// Islands, hummocks, open hidden islets.
+    /// Islands and hummocks.
     pub land: bool,
     /// Mud paths and boardwalks.
     pub path: bool,
@@ -552,22 +552,24 @@ pub struct SpawnOn {
     pub shallow: bool,
     /// Deep mud within the spawn reach.
     pub mud: bool,
+    /// Hidden islet floors (mobs: only islets with a mob-passable ford).
+    pub hidden_room: bool,
 }
 
 impl Default for SpawnOn {
     fn default() -> Self {
-        Self { land: true, path: true, shallow: true, mud: true }
+        Self { land: true, path: true, shallow: true, mud: true, hidden_room: true }
     }
 }
 
 impl SpawnOn {
     pub fn any(self) -> bool {
-        self.land || self.path || self.shallow || self.mud
+        self.land || self.path || self.shallow || self.mud || self.hidden_room
     }
 
     /// Short list for stats and MCP, e.g. "land, path".
     pub fn names(self) -> Vec<&'static str> {
-        [(self.land, "land"), (self.path, "path"), (self.shallow, "shallow"), (self.mud, "mud")]
+        [(self.land, "land"), (self.path, "path"), (self.shallow, "shallow"), (self.mud, "mud"), (self.hidden_room, "hidden room")]
             .into_iter()
             .filter_map(|(on, n)| on.then_some(n))
             .collect()
@@ -783,36 +785,6 @@ impl InteractiveSpot {
     }
 }
 
-/// Which swamp terrain an interactive type's groups stand on (towns ignore
-/// it).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum InteractiveTerrain {
-    /// Islands only.
-    Land,
-    /// Shallow water and deep mud within reach.
-    Water,
-    /// Land or water; one group stays on one of them.
-    #[default]
-    Both,
-    /// Water within `shore_dist_m` of an island.
-    ShoreWater,
-}
-
-impl InteractiveTerrain {
-    pub const ALL: [InteractiveTerrain; 4] =
-        [InteractiveTerrain::Land, InteractiveTerrain::Water, InteractiveTerrain::Both, InteractiveTerrain::ShoreWater];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            InteractiveTerrain::Land => "Land",
-            InteractiveTerrain::Water => "Water",
-            InteractiveTerrain::Both => "Both",
-            InteractiveTerrain::ShoreWater => "Shore water",
-        }
-    }
-}
-
 /// One interactive object type of the interactive node (docs/workflow.md,
 /// step 9): e.g. a plant that can be gathered.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -834,9 +806,10 @@ pub struct InteractiveType {
     pub spot: InteractiveSpot,
     /// Color on map.png, the preview and the legend.
     pub color: [u8; 3],
-    /// Swamp maps: which terrain the groups stand on.
-    pub terrain: InteractiveTerrain,
-    /// Swamp maps, `ShoreWater` terrain: farthest from an island, meters.
+    /// Swamp maps: the terrains the groups may stand on.
+    pub spawn_on: SpawnOn,
+    /// Swamp maps: objects in shallow water / deep mud stay at most this far
+    /// from an island, meters (herbs at the water's edge). 0 = no limit.
     pub shore_dist_m: f32,
 }
 
@@ -852,8 +825,8 @@ impl Default for InteractiveType {
             spread_m: 2.0,
             spot: InteractiveSpot::Anywhere,
             color: [120, 200, 80],
-            terrain: InteractiveTerrain::Both,
-            shore_dist_m: 3.0,
+            spawn_on: SpawnOn::default(),
+            shore_dist_m: 0.0,
         }
     }
 }

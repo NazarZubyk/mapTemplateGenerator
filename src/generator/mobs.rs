@@ -32,7 +32,7 @@ use crate::level::{
     Category, CellMask, GateInfo, HiddenRoomLayout, MobLayout, MobPackMember, MobSpawn, PlacedObject, RegionMap, RoadNetwork,
 };
 use crate::model::{LevelConfig, NodeAmount};
-use crate::generator::placement::dilate;
+use crate::generator::placement::{dilate, TerrainSets};
 
 /// Cells drawn per pack while looking for a spot.
 const TRIES: usize = 60;
@@ -142,13 +142,6 @@ pub(crate) struct MobArea {
     pub hub: Option<Vec<bool>>,
 }
 
-/// Swamp terrain masks (each a subset of `spawnable`).
-pub(crate) struct TerrainSets {
-    pub land: Vec<bool>,
-    pub path: Vec<bool>,
-    pub shallow: Vec<bool>,
-    pub mud: Vec<bool>,
-}
 
 /// A mixed pack (types with different terrains) stands where each member's
 /// terrain is within this many meters: on the border between them.
@@ -172,13 +165,7 @@ impl PackCells {
             .iter()
             .map(|t| {
                 area.terrain.as_ref().map(|ts| {
-                    let f = t.spawn_on;
-                    (0..n)
-                        .map(|i| {
-                            area.spawnable[i]
-                                && ((f.land && ts.land[i]) || (f.path && ts.path[i]) || (f.shallow && ts.shallow[i]) || (f.mud && ts.mud[i]))
-                        })
-                        .collect()
+                    (0..n).map(|i| area.spawnable[i] && ts.allows(t.spawn_on, i)).collect()
                 })
             })
             .collect();

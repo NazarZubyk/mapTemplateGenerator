@@ -442,18 +442,28 @@ no swamp code.
   water; either for path edge); a prop with no spot of its kind is
   scattered. `PropLayout` gained `near_trees / shore / in_water /
   path_edge` (serde default).
-- Interactive: `InteractiveType.terrain` (land / water / both / shore
-  water, default both) + `shore_dist_m` (3 m, distance from land by an
-  8-direction search). A "both" group stays on its center's terrain.
-  "Along walls" = within 2 cells of a blocker; "open ground" = 3 m from
-  blockers and paths.
+- Interactive: `InteractiveType.spawn_on: SpawnOn` — the same terrain
+  flags as mobs (land / path / shallow / mud / hidden room, all on by
+  default; replaced the first land / water / both / shore-water picker)
+  + `shore_dist_m` ("Near island": water objects at most this far from an
+  island, 0 = no limit, the default). Shared `placement::TerrainSets`
+  (`allows(SpawnOn, cell)`), `interactive::SwampTerrain { sets, to_land_m,
+  room_of }`. A group stays in one place: all in its center's hidden room
+  or all outside. Path objects need a free walkable ring, so they only
+  fit on wide mud paths. "Along walls" = within 2 cells of a blocker;
+  "open ground" = 3 m from blockers, paths and fords.
+- Order: props → **hidden rooms → interactive** → mobs (rooms first so
+  objects can go inside them). Islet floors + fords are walkable ground
+  for the interactive area; objects never stand on a ford; mobs on an
+  islet floor also keep off the objects there.
 - Hidden rooms: unwalled islets; outside = thicket, inside = deep water
   (block a cell clear of walkable terrain, 6 m from gates); ford ≤
   min(`path_max_m`, wade limit); dug cells join the floor mask. Wall
   thickness hidden in the swamp UI.
-- Mobs: `MobType.spawn_on: SpawnOn { land, path, shallow, mud }` (all on
-  by default; replaced the first land / water / both habitat): land =
-  islands, hummocks, open islet floors; path = mud paths + boardwalks;
+- Mobs: `MobType.spawn_on: SpawnOn { land, path, shallow, mud,
+  hidden_room }` (all on by default; replaced the first land / water /
+  both habitat): land = islands, hummocks; hidden room = floors of islets
+  with a mob-passable ford; path = mud paths + boardwalks;
   shallow / mud = within reach. Per type a cell mask; a pack's mask is
   cached by its set of types: one type → its own cells; several → cells of
   any member's terrain where every member's terrain is within 2 m (a rat +

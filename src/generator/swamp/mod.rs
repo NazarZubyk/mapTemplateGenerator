@@ -11,8 +11,9 @@
 //!    distance, hummocks so every crossing fits in one breath, the deep
 //!    water / thicket border.
 //! 6. **Trees** — groves on the islands, single trees in the water.
-//! 7. **Spawns** (nodes 7–10) — props, interactive objects, hidden islets
-//!    and mobs on swamp ground (the town nodes' cores, swamp rules).
+//! 7. **Spawns** (nodes 7–10) — props, hidden islets, interactive objects
+//!    (may go inside the islets) and mobs on swamp ground (the town nodes'
+//!    cores, swamp rules).
 
 use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 
@@ -61,18 +62,9 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
     notes.extend(props.notes);
     objects.extend(props.objects);
 
-    let mut inter = spawns::interactive(config, &mut rng, &ground, &props.layout.mask, &stage(0.92, 0.94));
-    notes.extend(inter.notes);
-    let offset = objects.len();
-    for g in &mut inter.layout.groups {
-        for m in &mut g.members {
-            *m += offset;
-        }
-    }
-    objects.extend(inter.objects);
-
-    let placed = [&props.layout.mask, &inter.layout.mask];
-    let mut rooms = spawns::hidden_rooms(config, &mut rng, &ground, &placed, &stage(0.94, 0.96));
+    // Hidden rooms before the interactive objects, so objects can go
+    // inside them.
+    let mut rooms = spawns::hidden_rooms(config, &mut rng, &ground, &[&props.layout.mask], &stage(0.92, 0.94));
     notes.extend(rooms.notes);
     let offset = objects.len();
     for r in &mut rooms.layout.rooms {
@@ -81,6 +73,16 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
         }
     }
     objects.extend(rooms.objects);
+
+    let mut inter = spawns::interactive(config, &mut rng, &ground, &props.layout.mask, &rooms.layout, &stage(0.94, 0.96));
+    notes.extend(inter.notes);
+    let offset = objects.len();
+    for g in &mut inter.layout.groups {
+        for m in &mut g.members {
+            *m += offset;
+        }
+    }
+    objects.extend(inter.objects);
 
     // Gate markers last, so they draw on top.
     let mut gate_anchors = anchors.anchors;

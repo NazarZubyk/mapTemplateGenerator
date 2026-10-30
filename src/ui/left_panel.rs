@@ -2,7 +2,7 @@ use eframe::egui;
 use rand::Rng;
 
 use crate::level::IslandKind;
-use crate::model::{GateSpec, GateStyle, InteractiveTerrain, HiddenRoomPlace, InteractiveSpot, InteractiveType, LevelConfig, MapKind, MobType, NodeAmount, ShapeSettings};
+use crate::model::{GateSpec, GateStyle, SpawnOn, HiddenRoomPlace, InteractiveSpot, InteractiveType, LevelConfig, MapKind, MobType, NodeAmount, ShapeSettings};
 use crate::ui::app::{ConfigStatus, MapGenApp};
 use crate::ui::widgets::param_row;
 
@@ -72,13 +72,13 @@ fn swamp_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_trees(ui, app);
     flow_arrow(ui, "land, water within reach, minus paths and trees");
     node_props(ui, app);
-    flow_arrow(ui, "free ground after props");
-    node_interactive(ui, app);
     flow_arrow(ui, "deep water and thicket left over");
     node_hidden_rooms(ui, app);
+    flow_arrow(ui, "free ground after props, hidden islet floors");
+    node_interactive(ui, app);
     flow_arrow(ui, "walkable ground (paths, open islets)");
     node_mobs(ui, app);
-    ui.weak("Later swamp steps: zones, export polish (docs/swamp-plan.md): depth & border, trees, then props, interactive objects, hidden rooms and mobs (docs/swamp-plan.md).");
+    ui.weak("Next swamp step: export polish — terrain and depth in layer.png (docs/swamp-plan.md).");
     ui.add_space(4.0);
     ui.separator();
 }
@@ -960,6 +960,33 @@ shorter map side. NO EFFECT when no gate has the Bridge style.";
     });
 }
 
+/// The swamp "Spawns on" checkboxes (mob and interactive types).
+fn spawn_on_row(ui: &mut egui::Ui, f: &mut SpawnOn) -> egui::Response {
+    ui.horizontal_wrapped(|ui| {
+        ui.checkbox(&mut f.land, "land");
+        ui.checkbox(&mut f.path, "path");
+        ui.checkbox(&mut f.shallow, "shallow");
+        ui.checkbox(&mut f.mud, "mud");
+        ui.checkbox(&mut f.hidden_room, "hidden room")
+    })
+    .response
+}
+
+/// Each terrain on or off at random, at least one on.
+fn random_spawn_on(rng: &mut impl Rng) -> SpawnOn {
+    let mut f = SpawnOn {
+        land: rng.random_bool(0.6),
+        path: rng.random_bool(0.3),
+        shallow: rng.random_bool(0.4),
+        mud: rng.random_bool(0.3),
+        hidden_room: rng.random_bool(0.2),
+    };
+    if !f.any() {
+        f.land = true;
+    }
+    f
+}
+
 /// A "min – max" pair of meter fields on one row.
 fn range_m(ui: &mut egui::Ui, min: &mut f32, max: &mut f32, range: std::ops::RangeInclusive<f32>) -> egui::Response {
     ui.horizontal(|ui| {
@@ -1638,15 +1665,19 @@ two are swapped.";
 to a wall, house or prop. Open ground: at least 3 m from every obstacle and road. If no spot \
 of that kind is left, the rest go anywhere (with a note).";
     const TIP_COLOR: &str = "Color of this type on the map image, the preview and the legend.";
-    const TIP_TERRAIN: &str = "Swamp: where this type's groups stand. Land: islands only. \
-Water: shallow water / deep mud within the spawn reach. Both: either — one group stays on \
-one of them. Shore water: in the water, at most Shore distance from an island (herbs at the \
-edge).";
-    const TIP_SHORE_D: &str = "Swamp, Shore water terrain: farthest from an island, meters.";
+    const TIP_TERRAIN: &str = "Swamp: the terrains this type's groups may stand on — tick \
+one or several. Land: islands and hummocks. Path: mud paths and boardwalks (only where the \
+path is wide enough to walk around the object). Shallow / Mud: shallow water / deep mud \
+within the spawn reach. Hidden room: on the floor of a hidden islet (chests, rare herbs) — \
+never on its ford. A group stays in one place: all inside one hidden room or all outside. \
+None ticked: the type is never placed.";
+    const TIP_SHORE_D: &str = "Swamp: objects in shallow water / deep mud stay at most this \
+far from an island, meters — herbs growing at the water's edge. 0 = no limit (anywhere in \
+reach). NO EFFECT without Shallow or Mud ticked.";
     let swamp = app.config.kind == MapKind::Swamp;
-    node(ui, if swamp { "8 · Interactive objects" } else { "10 · Interactive objects" }, |ui| {
+    node(ui, if swamp { "9 · Interactive objects" } else { "10 · Interactive objects" }, |ui| {
         ui.weak(if swamp {
-            "input: free ground after props · output: interactive objects in groups, by terrain (swamp)"
+            "input: free ground after props + hidden islet floors · output: interactive objects in groups, by terrain (swamp)"
         } else {
             "input: free ground after props · output: interactive objects in groups (every map kind)"
         });
@@ -1708,19 +1739,8 @@ edge).";
                                     .response
                             });
                             if swamp {
-                                param_row(ui, "Terrain", TIP_TERRAIN, |ui| {
-                                    egui::ComboBox::from_id_salt(("interactive_terrain", i))
-                                        .selected_text(it.terrain.label())
-                                        .show_ui(ui, |ui| {
-                                            for t in InteractiveTerrain::ALL {
-                                                ui.selectable_value(&mut it.terrain, t, t.label());
-                                            }
-                                        })
-                                        .response
-                                });
-                                if it.terrain == InteractiveTerrain::ShoreWater {
-                                    param_row(ui, "Shore distance", TIP_SHORE_D, |ui| ui.add(meters(&mut it.shore_dist_m, 30.0)));
-                                }
+                                param_row(ui, "Spawns on", TIP_TERRAIN, |ui| spawn_on_row(ui, &mut it.spawn_on));
+                                param_row(ui, "Near island", TIP_SHORE_D, |ui| ui.add(meters(&mut it.shore_dist_m, 30.0)));
                             }
                             param_row(ui, "Color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut it.color));
                         });
@@ -1758,8 +1778,8 @@ edge).";
                     it.size_min_m = rng.random_range(0.2..=1.0);
                     it.size_max_m = rng.random_range(0.3..=1.5);
                     it.spot = InteractiveSpot::ALL[rng.random_range(0..InteractiveSpot::ALL.len())];
-                    it.terrain = InteractiveTerrain::ALL[rng.random_range(0..InteractiveTerrain::ALL.len())];
-                    it.shore_dist_m = rng.random_range(1.0..=8.0);
+                    it.spawn_on = random_spawn_on(&mut rng);
+                    it.shore_dist_m = if rng.random_bool(0.5) { 0.0 } else { rng.random_range(1.0..=8.0) };
                 }
             }
         });
@@ -1802,9 +1822,9 @@ wading limit. Outside the wall: in the thicket of the border. Inside: in deep wa
 the map. Either: thicket first, deep water otherwise.";
     let swamp = app.config.kind == MapKind::Swamp;
     let tip_place = if swamp { TIP_PLACE_SWAMP } else { TIP_PLACE };
-    node(ui, if swamp { "9 · Hidden rooms" } else { "11 · Hidden rooms" }, |ui| {
+    node(ui, if swamp { "8 · Hidden rooms" } else { "11 · Hidden rooms" }, |ui| {
         ui.weak(if swamp {
-            "input: deep water + thicket left over · output: hidden islets + one ford each (swamp)"
+            "input: deep water + thicket after props · output: hidden islets + one ford each (swamp)"
         } else {
             "input: everything placed so far · output: walled rooms + one access path each (every map kind)"
         });
@@ -1929,9 +1949,10 @@ always combines with itself.";
 a guard pack before the other packs are spread — the reward at the end of the spur is \
 guarded. The guard packs are paid from the budget like the rest.";
     const TIP_SPAWN_ON: &str = "Swamp: the terrains this type may spawn on — tick one or \
-several. Land: islands, hummocks, open hidden islets. Path: mud paths and boardwalks. \
-Shallow / Mud: shallow water / deep mud within the spawn reach of the depth node. None \
-ticked: the type is never placed (a note says so). A pack of types with different terrains \
+several. Land: islands and hummocks. Path: mud paths and boardwalks. Shallow / Mud: shallow \
+water / deep mud within the spawn reach of the depth node. Hidden room: the floor of a \
+hidden islet whose ford is mob-passable. None ticked: the type is never placed (a note says \
+so). A pack of types with different terrains \
 stands where all of them are within 2 m — on the border between them (a rat + leech pack on \
 the shoreline).";
     const TIP_REROLL: &str = "Moves the mobs to new places on the map shown now, with the \
@@ -2026,16 +2047,7 @@ note says so. Guard packs on dead ends don't count.";
                         r
                     });
                     if swamp {
-                        param_row(ui, "Spawns on", TIP_SPAWN_ON, |ui| {
-                            let f = &mut t.spawn_on;
-                            ui.horizontal(|ui| {
-                                ui.checkbox(&mut f.land, "land");
-                                ui.checkbox(&mut f.path, "path");
-                                ui.checkbox(&mut f.shallow, "shallow");
-                                ui.checkbox(&mut f.mud, "mud")
-                            })
-                            .response
-                        });
+                        param_row(ui, "Spawns on", TIP_SPAWN_ON, |ui| spawn_on_row(ui, &mut t.spawn_on));
                     }
                     param_row(ui, "Color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut t.color));
                 });

@@ -94,9 +94,10 @@ ends, winding mud by traffic width, boardwalks with kinks, gate bridges) →
 5 **Depth & border** (shallow water, deep mud, deep water by distance;
 wading limit with hummocks; deep water / thicket border) → 6 **Trees**
 (groves on islands, water trees) → 7 **Props** (near trees, shore, in
-water, path edge) → 8 **Interactive objects** (per-type terrain) → 9
-**Hidden rooms** (islets in thicket / deep water, one ford) → 10 **Mobs**
-(per-type spawn terrains land / path / shallow / mud, dead-end guards,
+water, path edge) → 8 **Hidden rooms** (islets in thicket / deep water,
+one ford) → 9 **Interactive objects** (per-type spawn terrains, inside
+hidden rooms too) → 10 **Mobs** (per-type spawn terrains land / path /
+shallow / mud / hidden room, dead-end guards,
 share of mobs on hubs). Any map: **🎲 Re-roll mobs** / **⟳ Apply mobs
 only** redo just the mobs (`generator::place_mobs`, own RNG stream). Nodes 7–10 are the town nodes' cores
 on swamp ground.

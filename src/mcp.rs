@@ -206,7 +206,7 @@ fn tool_list() -> Value {
             "size_m": { "type": "number", "description": "body diameter, meters (default 0.8)" },
             "balance_pct": { "type": "number", "description": "desired share among mobs; all shares are normalized to 100 (default: equal)" },
             "color": color,
-            "spawn_on": { "type": "array", "items": { "type": "string", "enum": ["land", "path", "shallow", "mud"] }, "description": "swamp maps: terrains this type may spawn on (default all four)" },
+            "spawn_on": { "type": "array", "items": { "type": "string", "enum": ["land", "path", "shallow", "mud", "hidden_room"] }, "description": "swamp maps: terrains this type may spawn on (default all)" },
         }
     });
     json!([
@@ -262,7 +262,7 @@ fn tool_list() -> Value {
                 "name": { "type": "string" }, "rename_to": { "type": "string" },
                 "price": { "type": "number" }, "size_m": { "type": "number" },
                 "balance_pct": { "type": "number" }, "color": color,
-                "spawn_on": { "type": "array", "items": { "type": "string", "enum": ["land", "path", "shallow", "mud"] } },
+                "spawn_on": { "type": "array", "items": { "type": "string", "enum": ["land", "path", "shallow", "mud", "hidden_room"] } },
             } }
         },
         {
@@ -464,14 +464,15 @@ fn apply_mob_fields(t: &mut MobType, args: &Value) -> Result<(), String> {
     }
     if let Some(v) = args.get("spawn_on") {
         let names = v.as_array().ok_or("spawn_on must be a list of terrains")?;
-        let mut f = crate::model::SpawnOn { land: false, path: false, shallow: false, mud: false };
+        let mut f = crate::model::SpawnOn { land: false, path: false, shallow: false, mud: false, hidden_room: false };
         for n in names {
             match n.as_str() {
                 Some("land") => f.land = true,
                 Some("path") => f.path = true,
                 Some("shallow") => f.shallow = true,
                 Some("mud") => f.mud = true,
-                _ => return Err("spawn_on terrains are \"land\", \"path\", \"shallow\", \"mud\"".to_owned()),
+                Some("hidden_room") => f.hidden_room = true,
+                _ => return Err("spawn_on terrains are \"land\", \"path\", \"shallow\", \"mud\", \"hidden_room\"".to_owned()),
             }
         }
         t.spawn_on = f;

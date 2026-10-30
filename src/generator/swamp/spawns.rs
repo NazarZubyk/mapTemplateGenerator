@@ -13,10 +13,13 @@
 //!   piece.
 //! - Props: shares near trees / on the shore / in the water / beside paths,
 //!   the rest scattered over the islands.
-//! - Interactive types: `terrain` land / water / both / shore water.
-//! - Hidden rooms: islets in thicket ("outside") or deep water ("inside"),
-//!   no walls, one ford no longer than the wading limit.
-//! - Mobs: per-type spawn terrains (land / path / shallow / mud); dead-end
+//! - Hidden rooms (before the interactive objects): islets in thicket
+//!   ("outside") or deep water ("inside"), no walls, one ford no longer than
+//!   the wading limit.
+//! - Interactive types: `spawn_on` terrains (land / path / shallow / mud /
+//!   hidden room), water optionally within `shore_dist_m` of an island.
+//! - Mobs: per-type spawn terrains (land / path / shallow / mud / hidden
+//!   room); dead-end
 //!   islands may get a guard pack first;
 //!   `hub_pct` of the mobs stand on hub islands, the rest anywhere.
 
@@ -24,9 +27,9 @@ use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 
 use crate::generator::hidden_rooms::{self, HiddenRoomBuild, RoomArea};
-use crate::generator::interactive::{self, Area, InteractiveBuild, TerrainMasks};
-use crate::generator::mobs::{self, MobArea, MobBuild, TerrainSets};
-use crate::generator::placement::{dilate, footprint};
+use crate::generator::interactive::{self, Area, InteractiveBuild, SwampTerrain};
+use crate::generator::mobs::{self, MobArea, MobBuild};
+use crate::generator::placement::{dilate, footprint, TerrainSets};
 use crate::generator::props::{PropBuild, PROP_NAME, TRIES};
 use crate::generator::Stage;
 use crate::level::{
@@ -279,16 +282,36 @@ pub fn props(config: &LevelConfig, rng: &mut ChaCha8Rng, g: &SwampGround) -> Pro
 }
 
 /// Swamp interactive objects: the town core on swamp ground, with terrain.
-pub(crate) fn interactive(config: &LevelConfig, rng: &mut ChaCha8Rng, g: &SwampGround, props: &CellMask, stage: &Stage) -> InteractiveBuild {
+/// Runs after the hidden rooms, so types may spawn inside them (never on
+/// a ford).
+pub(crate) fn interactive(
+    config: &LevelConfig,
+    rng: &mut ChaCha8Rng,
+    g: &SwampGround,
+    props: &CellMask,
+    rooms: &HiddenRoomLayout,
+    stage: &Stage,
+) -> InteractiveBuild {
     let (w, h, cell) = (g.w, g.h, g.cell);
+    let (room_of, _) = mobs::room_cells(Some(rooms), w, h, cell);
+    let ford: Vec<bool> = (0..w * h).map(|c| rooms.floor_mask.cells[c] && room_of[c] == 0).collect();
     let near_gate = g.near_gates(config.swamp.trees.gate_clear_m.max(0.0));
-    let blockers = g.blockers(&[props]);
+    // Hidden floors and fords are walkable ground, not blockers.
+    let blockers: Vec<bool> = g.blockers(&[props]).iter().zip(&rooms.floor_mask.cells).map(|(&b, &floor)| b && !floor).collect();
     let near = dilate(&blockers, w, h, 1);
-    let free = (0..w * h).map(|c| (g.land[c] || g.water[c]) && !g.path[c] && !near[c] && !near_gate[c]).collect();
+    let ground = |c: usize| g.land[c] || g.water[c] || g.path[c] || room_of[c] != 0;
+    let free = (0..w * h).map(|c| ground(c) && !ford[c] && !near[c] && !near_gate[c]).collect();
     let along_walls = dilate(&blockers, w, h, interactive::ALONG_WALLS_CELLS);
-    let busy: Vec<bool> = (0..w * h).map(|c| blockers[c] || g.path[c]).collect();
+    let busy: Vec<bool> = (0..w * h).map(|c| blockers[c] || g.path[c] || ford[c]).collect();
     let crowded = dilate(&busy, w, h, (interactive::OPEN_GROUND_M / cell).ceil().max(1.0) as i64);
-    let terrain = TerrainMasks { land: g.land.clone(), water: g.water.clone(), to_land_m: g.to_land_m() };
+    let sets = TerrainSets {
+        land: g.land.clone(),
+        path: g.path.clone(),
+        shallow: (0..w * h).map(|c| g.water[c] && g.depth.shallow.cells[c]).collect(),
+        mud: (0..w * h).map(|c| g.water[c] && g.depth.mud.cells[c]).collect(),
+        room: room_of.iter().map(|&r| r != 0).collect(),
+    };
+    let terrain = SwampTerrain { sets, to_land_m: g.to_land_m(), room_of };
     let area = Area { w, h, cell, free, along_walls, crowded, terrain: Some(terrain) };
     interactive::place_types(config, rng, area, stage)
 }
@@ -341,7 +364,7 @@ pub(crate) fn mobs(
                 return false;
             }
             if room_of[c] != 0 {
-                return room_ok[c];
+                return room_ok[c] && !objects.iter().any(|m| m.cells[c]);
             }
             (g.land[c] || g.water[c] || g.path[c])
                 && !g.trees.mask.cells[c]
@@ -349,12 +372,13 @@ pub(crate) fn mobs(
                 && !hidden(|l| &l.floor_mask, c)
         })
         .collect();
-    // Terrain per cell (open islet floors count as land).
+    // Terrain per cell; open islet floors are their own terrain.
     let terrain = TerrainSets {
-        land: (0..w * h).map(|c| spawnable[c] && (g.land[c] || room_of[c] != 0)).collect(),
+        land: (0..w * h).map(|c| spawnable[c] && g.land[c]).collect(),
         path: (0..w * h).map(|c| spawnable[c] && g.path[c] && room_of[c] == 0).collect(),
         shallow: (0..w * h).map(|c| spawnable[c] && g.water[c] && g.depth.shallow.cells[c]).collect(),
         mud: (0..w * h).map(|c| spawnable[c] && g.water[c] && g.depth.mud.cells[c]).collect(),
+        room: (0..w * h).map(|c| spawnable[c] && room_of[c] != 0).collect(),
     };
 
     // Guarded dead ends: the island at the far end of each dead-end link.
@@ -395,7 +419,7 @@ pub(crate) fn mobs(
 mod tests {
     use crate::generator::grid;
     use crate::level::{Category, CellMask, GeneratedLevel};
-    use crate::model::{GateSpec, GateStyle, InteractiveTerrain, LevelConfig, MapKind, MobType, SpawnOn};
+    use crate::model::{GateSpec, GateStyle, InteractiveType, LevelConfig, MapKind, MobType, SpawnOn};
 
     fn config() -> LevelConfig {
         let mut c = LevelConfig { kind: MapKind::Swamp, ..LevelConfig::default() };
@@ -486,26 +510,88 @@ mod tests {
     }
 
     #[test]
-    fn interactive_terrain_is_respected() {
+    fn interactive_types_stand_on_their_terrains() {
         let mut c = config();
-        c.interactive[0].terrain = InteractiveTerrain::Water;
+        c.interactive = vec![
+            InteractiveType { name: "Reed herb".into(), spawn_on: spawn_on(false, false, true, true), ..InteractiveType::default() },
+            InteractiveType {
+                name: "Mushroom".into(),
+                spawn_on: spawn_on(true, false, false, false),
+                color: [200, 120, 40],
+                ..InteractiveType::default()
+            },
+        ];
         let l = level(&c, 2);
         let t = terrain(&l);
-        let herbs: Vec<_> = l.objects.iter().filter(|o| o.category == Category::Interactive).collect();
-        assert!(!herbs.is_empty());
-        for o in &herbs {
-            assert!(cells_of(&l, o).iter().all(|&k| t.water[k]), "a water herb on land");
+        let d = l.swamp.as_ref().unwrap().depth.as_ref().unwrap();
+        let mut seen = [0, 0];
+        for g in &l.interactive.as_ref().unwrap().groups {
+            seen[g.type_index] += 1;
+            for &m in &g.members {
+                for k in cells_of(&l, &l.objects[m]) {
+                    match g.type_index {
+                        0 => assert!(d.shallow.cells[k] || d.mud.cells[k], "a reed herb out of the water"),
+                        _ => assert!(t.land[k], "a mushroom off the islands"),
+                    }
+                }
+            }
         }
-        c.interactive[0].terrain = InteractiveTerrain::Land;
+        assert!(seen[0] > 0 && seen[1] > 0, "{seen:?}");
+        // Near island: water objects stay close to the shore.
+        c.interactive[0].shore_dist_m = 3.0;
         let l = level(&c, 2);
-        let t = terrain(&l);
-        for o in l.objects.iter().filter(|o| o.category == Category::Interactive) {
-            assert!(cells_of(&l, o).iter().all(|&k| t.land[k]), "a land herb in the water");
+        let isl = l.swamp.as_ref().unwrap().islands.as_ref().unwrap();
+        for g in l.interactive.as_ref().unwrap().groups.iter().filter(|g| g.type_index == 0) {
+            let (x, y) = (g.center_m[0] / isl.cell_size_m, g.center_m[1] / isl.cell_size_m);
+            let near = (-4..=4i64).any(|dy| {
+                (-4..=4i64).any(|dx| {
+                    let (nx, ny) = (x as i64 + dx, y as i64 + dy);
+                    nx >= 0 && ny >= 0 && isl.ids[ny as usize * isl.width + nx as usize] > 0
+                })
+            });
+            assert!(near, "a reed herb far from every island");
         }
     }
 
+    #[test]
+    fn interactive_objects_go_inside_hidden_rooms() {
+        let mut c = config();
+        c.hidden_rooms.count = 3;
+        c.hidden_rooms.size_min_m = 5.0;
+        c.hidden_rooms.size_max_m = 7.0;
+        c.interactive = vec![InteractiveType {
+            name: "Chest".into(),
+            quantity: 3,
+            group_min: 1,
+            group_max: 1,
+            size_min_m: 1.0,
+            size_max_m: 1.0,
+            spawn_on: spawn_on_room(),
+            ..InteractiveType::default()
+        }];
+        let l = level(&c, 1);
+        let rooms = l.hidden_rooms.as_ref().unwrap();
+        assert!(!rooms.rooms.is_empty());
+        let chests = &l.interactive.as_ref().unwrap().types[0];
+        assert!(chests.placed > 0, "{:?}", l.notes);
+        let isl = l.swamp.as_ref().unwrap().islands.as_ref().unwrap();
+        let (room_of, _) = crate::generator::mobs::room_cells(Some(rooms), isl.width, isl.height, isl.cell_size_m);
+        for o in l.objects.iter().filter(|o| o.category == Category::Interactive) {
+            for k in cells_of(&l, o) {
+                assert!(room_of[k] != 0, "a chest outside a hidden room (or on its ford)");
+            }
+        }
+        // Chests are drawn after the room floors.
+        let first_chest = l.objects.iter().position(|o| o.category == Category::Interactive).unwrap();
+        assert!(rooms.rooms.iter().all(|r| r.objects[0] < first_chest));
+    }
+
     fn spawn_on(land: bool, path: bool, shallow: bool, mud: bool) -> SpawnOn {
-        SpawnOn { land, path, shallow, mud }
+        SpawnOn { land, path, shallow, mud, hidden_room: false }
+    }
+
+    fn spawn_on_room() -> SpawnOn {
+        SpawnOn { land: false, path: false, shallow: false, mud: false, hidden_room: true }
     }
 
     /// Terrain under every mob marker center: (land, path, shallow, mud).
@@ -552,6 +638,25 @@ mod tests {
         let l = level(&c, 3);
         assert_eq!(l.mobs.as_ref().unwrap().per_type[2], 0);
         assert!(l.notes.iter().any(|n| n.contains("'Bandit' is never placed")), "{:?}", l.notes);
+    }
+
+    #[test]
+    fn hidden_room_mobs_stay_in_open_islets() {
+        let mut c = config();
+        c.hidden_rooms.count = 3;
+        c.hidden_rooms.size_min_m = 6.0;
+        c.hidden_rooms.size_max_m = 8.0;
+        c.hidden_rooms.mob_passable_pct = 100.0;
+        c.mobs.types = vec![MobType { name: "Hermit".into(), spawn_on: spawn_on_room(), ..MobType::default() }];
+        c.mobs.pack_max = 1;
+        c.mobs.spacing_m = 1.0;
+        c.mobs.dead_end_guard_pct = 0.0;
+        let l = level(&c, 1);
+        let spawns = &l.mobs.as_ref().unwrap().spawns;
+        assert!(!spawns.is_empty(), "{:?}", l.notes);
+        assert!(spawns.iter().all(|sp| sp.hidden_room.is_some()), "a hermit outside the islets");
+        c.hidden_rooms.mob_passable_pct = 0.0;
+        assert!(level(&c, 1).mobs.as_ref().unwrap().spawns.is_empty(), "closed islets take no mobs");
     }
 
     #[test]
