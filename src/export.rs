@@ -59,8 +59,11 @@ pub struct ExportSpec {
     /// One entry per unique (color, object type) — the meaning of every color
     /// on map.png.
     pub legend: Vec<LegendEntry>,
-    /// Category names indexed by the layer.png R-channel value (index 0 = ground).
+    /// Layer names indexed by the layer.png R-channel value (index 0 =
+    /// empty ground; 1–7 object categories; 8–14 swamp ground).
     pub layer_categories: Vec<&'static str>,
+    /// How to read layer.png, channel by channel.
+    pub layer_encoding: LayerEncoding,
     /// What kind of map this is ("town", "swamp", ...).
     pub map_kind: &'static str,
     /// The region split, once the regions node is built.
@@ -106,6 +109,28 @@ pub struct ExportSpec {
     pub water: Option<ExportWater>,
     /// Every placed object with position and size in meters.
     pub objects: Vec<crate::level::PlacedObject>,
+}
+
+/// The meaning of layer.png's channels (written into spec.json so a reader
+/// needs nothing else).
+#[derive(Debug, Serialize)]
+pub struct LayerEncoding {
+    pub object: &'static str,
+    pub ground: &'static str,
+    pub empty: &'static str,
+}
+
+impl Default for LayerEncoding {
+    fn default() -> Self {
+        Self {
+            object: "R = category id (1-7, see layer_categories); G + 256*B = instance id = index in `objects` + 1; A = 255",
+            ground: "swamp maps, pixels under no object: R = ground id (8-14, see layer_categories); \
+G = depth: 0 = safe ground (island, hummock, boardwalk), 1-254 = breath used to wade there from safe \
+ground (254 = the wading limit, see `water`), 255 = deep water / thicket (not walkable); \
+B = island id (low byte, matches `islands[].id`) on islands, else 0; A = 255",
+            empty: "R = G = B = A = 0: no object and no ground data (outside a town's region)",
+        }
+    }
 }
 
 /// The swamp's wading rules and terrain shares.
@@ -333,7 +358,7 @@ impl ExportSpec {
                 .collect()
         });
         Self {
-            format_version: 1,
+            format_version: 2,
             generator: format!("MapTemplateGenerator {}", env!("CARGO_PKG_VERSION")),
             seed: level.seed,
             map_size_m: [level.config.map.width_m, level.config.map.height_m],
@@ -342,6 +367,7 @@ impl ExportSpec {
             px_per_m,
             legend,
             layer_categories: render::layer_categories(),
+            layer_encoding: LayerEncoding::default(),
             regions,
             roads: level.roads.as_ref().map(ExportRoads::new),
             region_walls: level.region_walls.as_ref().map(|rw| {
@@ -458,7 +484,8 @@ mod tests {
         let legend = spec["legend"].as_array().unwrap();
         assert_eq!(legend.len(), 1, "same type+color merges into one legend entry");
         assert_eq!(spec["seed"].as_u64(), Some(42));
-        assert_eq!(spec["layer_categories"].as_array().unwrap().len(), 8);
+        assert_eq!(spec["layer_categories"].as_array().unwrap().len(), 15);
+        assert_eq!(spec["format_version"].as_u64(), Some(2));
 
         std::fs::remove_dir_all(&dir).ok();
     }

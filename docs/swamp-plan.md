@@ -497,7 +497,7 @@ no swamp code.
 
 Not needed (decided 2026-10-30): no outskirts → mire → heart coloring.
 
-### Step S8 — Export, validation, MCP
+### Step S8 — Export, validation, MCP — done
 
 - New terrain entries in map.png legend / spec.json: island, mud path,
   shallow water, deep mud, deep water, thicket, boardwalk, tree.
@@ -506,10 +506,34 @@ Not needed (decided 2026-10-30): no outskirts → mire → heart coloring.
 - Warnings: island sizes vs map, bridge gate too long, gates too close.
 - MCP: `patch_config` covers it; add a tool if the swamp is tuned often.
 
+**S8 notes (as built).**
+
+- layer.png (`render::rasterize`): swamp ground pixels under no object get
+  R = ground id (`render::GROUND_IDS`: 8 island, 9 mud path, 10 boardwalk,
+  11 shallow water, 12 deep mud, 13 deep water, 14 thicket), G = the depth
+  node's value (0 safe ground, 1–254 breath scaled to the wading limit,
+  255 deep water / thicket), B = island id low byte (0 off islands), A =
+  255. Objects paint over as before (R = category 1–7, G/B = instance).
+  Town layers are unchanged (no ground data yet — town step 13).
+- spec.json: `format_version` 2; `layer_categories` lists 0–14 (ground,
+  the 7 categories, the 7 swamp ground ids); new `layer_encoding`
+  { object, ground, empty } spells out the channels. The legend already
+  had every terrain (S2–S5).
+- Warnings (`validate::swamp`, swamp maps only, non-blocking, with the
+  field path): swapped min/max (gate island, bridge, hub, small island,
+  path width, border segments, tree size), gate islands over 40% of the
+  map side, bridge + island over 40%, two gates within 15°, hubs larger
+  than the area inside the border margins, wading limit under two
+  hummocks, mob / interactive types with no spawn terrain, interactive
+  types that spawn only in hidden rooms with 0 rooms. The default swamp
+  config has none (tested).
+- Field markers on the inputs themselves are still the generic town
+  step-13 work.
+
 ## Implementation order
 
 S1 → S2 → S3 → S4 is the first visible milestone (a playable swamp shape
-with gates). Then S5, S6, S8 (S7 dropped). Per step: logic in
+with gates). Then S5, S6, S8 (S7 dropped). All done. Per step: logic in
 `src/generator/swamp/<name>.rs` with tests, settings in `model.rs`
 (`#[serde(default)]`, so old swamp configs still load), node in
 `left_panel.rs` shown only for `MapKind::Swamp`, a progress slice in

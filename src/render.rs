@@ -6,8 +6,11 @@ use crate::level::{Category, GeneratedLevel};
 pub struct Rasterized {
     /// Human-facing colored map: every object type in its own color.
     pub map: ImageBuffer<Rgb<u8>, Vec<u8>>,
-    /// Machine layer data: R = category layer id, G/B = instance id (1-based,
-    /// 0 = empty ground), A = 255 where an object exists.
+    /// Machine layer data. Object pixels: R = category layer id (1–7), G/B =
+    /// instance id (1-based, G low byte), A = 255. Swamp ground pixels
+    /// (under no object): R = ground id (`GROUND_IDS`, 8–14), G = depth (0
+    /// safe ground … 254, 255 deep water / thicket), B = island id low byte
+    /// (0 off islands), A = 255. Elsewhere all 0.
     pub layer: ImageBuffer<Rgba<u8>, Vec<u8>>,
     pub px_per_m: f32,
 }
@@ -23,6 +26,18 @@ pub const WALL: [u8; 3] = [97, 82, 70];
 pub const REGION_WALL: [u8; 3] = [128, 108, 90];
 /// Roads, painted over the regions and under the wall.
 pub const ROAD: [u8; 3] = [238, 228, 202];
+/// Swamp ground ids on layer.png (R channel), after the object categories
+/// (1–7). Stable: tools read them from spec.json `layer_categories`.
+pub const GROUND_IDS: [(u8, &str); 7] = [
+    (8, "island"),
+    (9, "mud_path"),
+    (10, "boardwalk"),
+    (11, "shallow_water"),
+    (12, "deep_mud"),
+    (13, "deep_water"),
+    (14, "thicket"),
+];
+
 /// Colors for the region split (cycled when there are more regions than
 /// colors) — earthy tones distinct from the wall and ground.
 const REGION_PALETTE: [[u8; 3]; 8] = [
@@ -125,6 +140,41 @@ pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
         paint_mask(&mut map, &rooms.wall_mask, px_per_m, w, h, WALL);
     }
 
+    // Swamp ground on layer.png, under the objects: terrain id + depth.
+    if let Some(s) = &level.swamp
+        && let (Some(isl), Some(paths), Some(depth)) = (&s.islands, &s.paths, &s.depth)
+    {
+        let cs = isl.cell_size_m * px_per_m;
+        for cy in 0..isl.height {
+            for cx in 0..isl.width {
+                let c = cy * isl.width + cx;
+                let id = if isl.ids[c] > 0 {
+                    8
+                } else if paths.boardwalk.cells[c] {
+                    10
+                } else if paths.mud.cells[c] {
+                    9
+                } else if depth.shallow.cells[c] {
+                    11
+                } else if depth.mud.cells[c] {
+                    12
+                } else if depth.thicket.cells[c] {
+                    14
+                } else {
+                    13
+                };
+                let px = Rgba([id, depth.depth[c], (isl.ids[c] & 0xFF) as u8, 255]);
+                let (x0, x1) = ((cx as f32 * cs).round() as u32, ((cx + 1) as f32 * cs).round() as u32);
+                let (y0, y1) = ((cy as f32 * cs).round() as u32, ((cy + 1) as f32 * cs).round() as u32);
+                for py in y0..y1.min(h) {
+                    for qx in x0..x1.min(w) {
+                        layer.put_pixel(qx, py, px);
+                    }
+                }
+            }
+        }
+    }
+
     // Draw in stored order: later objects paint over earlier ones. Objects
     // may be rotated and compound: every pixel in the bounding box of all
     // corners is tested against the object's rects (pixel centers). A
@@ -177,8 +227,9 @@ pub fn category_name(c: Category) -> &'static str {
     }
 }
 
-/// Category names indexed by layer id (index 0 = empty ground), so layer.png
-/// consumers can map R-channel values without knowing this crate.
+/// Layer names indexed by the layer.png R value (index 0 = empty ground):
+/// the object categories (1–7), then the swamp ground ids (8–14), so
+/// consumers can map R values without knowing this crate.
 pub fn layer_categories() -> Vec<&'static str> {
     let mut names = vec!["ground"];
     for id in 1..=Category::ALL.len() as u8 {
@@ -189,6 +240,7 @@ pub fn layer_categories() -> Vec<&'static str> {
             .unwrap_or("unknown");
         names.push(name);
     }
+    names.extend(GROUND_IDS.iter().map(|&(_, n)| n));
     names
 }
 
@@ -259,6 +311,42 @@ mod tests {
     }
 
     #[test]
+    fn swamp_layer_carries_ground_and_depth() {
+        let mut c = crate::model::LevelConfig { kind: crate::model::MapKind::Swamp, ..crate::model::LevelConfig::default() };
+        c.map.width_m = 120.0;
+        c.map.height_m = 120.0;
+        c.cell_size_m = 1.0;
+        let level = crate::generator::generate(&c, 3);
+        let r = rasterize(&level, 1.0);
+        let s = level.swamp.as_ref().unwrap();
+        let (isl, d) = (s.islands.as_ref().unwrap(), s.depth.as_ref().unwrap());
+        let names = layer_categories();
+        let mut seen = std::collections::HashSet::new();
+        for (x, y, px) in r.layer.enumerate_pixels() {
+            assert_eq!(px.0[3], 255, "every swamp pixel carries data");
+            let id = px.0[0];
+            seen.insert(id);
+            let c = y as usize * isl.width + x as usize;
+            match names[id as usize] {
+                "island" => {
+                    assert_eq!(px.0[2] as u16, isl.ids[c] & 0xFF);
+                    assert_eq!(px.0[1], 0, "islands are safe ground");
+                }
+                "deep_water" | "thicket" => assert_eq!(px.0[1], 255),
+                "shallow_water" | "deep_mud" => {
+                    assert!((1..=254).contains(&px.0[1]));
+                    assert_eq!(px.0[1], d.depth[c]);
+                }
+                _ => {}
+            }
+        }
+        for want in ["island", "mud_path", "shallow_water", "deep_mud", "deep_water", "gate", "structure"] {
+            let id = names.iter().position(|n| *n == want).unwrap() as u8;
+            assert!(seen.contains(&id), "no {want} pixel on layer.png");
+        }
+    }
+
+    #[test]
     fn map_carries_color_layer_carries_category_and_instance() {
         let level = level_with_one_object();
         let r = rasterize(&level, 4.0);
@@ -301,6 +389,9 @@ mod tests {
         let cats = layer_categories();
         assert_eq!(cats[0], "ground");
         assert_eq!(cats[Category::Structure.layer_id() as usize], "structure");
-        assert_eq!(cats.len(), Category::ALL.len() + 1);
+        assert_eq!(cats.len(), Category::ALL.len() + 1 + GROUND_IDS.len());
+        for (id, name) in GROUND_IDS {
+            assert_eq!(cats[id as usize], name, "ground ids follow the categories");
+        }
     }
 }

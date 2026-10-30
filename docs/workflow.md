@@ -12,7 +12,9 @@ Next map kind: Swamp — its own node chain, planned in
 [swamp-plan.md](swamp-plan.md) (step list and notes live there). Done:
 S1 gate anchors, S2 islands, S3 paths, S4 depth & border, S5 trees, S6
 spawns (props, interactive, hidden islets, mobs — the town modules now
-expose their cores: `place_types`, `place_rooms`, `spend`). A swamp map now runs only that
+expose their cores: `place_types`, `place_rooms`, `spend`), S8 export
+polish (swamp ground + depth in layer.png, spec.json v2, swamp warnings);
+S7 zones dropped — the swamp plan is complete. A swamp map runs only that
 chain. The default map is 200 × 200 m (town tests use
 `LevelConfig::test_64()`).
 
