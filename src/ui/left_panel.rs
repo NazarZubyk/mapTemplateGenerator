@@ -98,7 +98,7 @@ fn cave_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_carve(ui, app);
     flow_arrow(ui, "final floor + wall band");
     node_hazards(ui, app);
-    ui.weak("Next cave step: C6 pillars (docs/cave-plan.md).");
+    ui.weak("Next cave step: C7 spawns — props, interactive objects, hidden rooms, mobs (docs/cave-plan.md).");
     ui.add_space(4.0);
     ui.separator();
 }

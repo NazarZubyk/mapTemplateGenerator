@@ -51,11 +51,16 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
     let hazards = hazards::build(config, &mut rng, &chambers.layout, &tunnels.layout, &carve.layout);
     notes.extend(hazards.notes);
 
+    // Gate markers last, so they draw on top (later nodes add objects
+    // before them and shift `gates[..].object`).
+    let objects = tunnels.objects;
+    let tunnel_layout = tunnels.layout;
+
     progress("Done", 1.0);
     GeneratedLevel {
         config: config.clone(),
         seed,
-        objects: tunnels.objects,
+        objects,
         shape: None,
         walls: None,
         regions: None,
@@ -68,7 +73,7 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
         mobs: None,
         gates: None,
         swamp: None,
-        cave: Some(CaveLayout { style: Some(style.layout), chambers: Some(chambers.layout), tunnels: Some(tunnels.layout), carve: Some(carve.layout), hazards: Some(hazards.layout) }),
+        cave: Some(CaveLayout { style: Some(style.layout), chambers: Some(chambers.layout), tunnels: Some(tunnel_layout), carve: Some(carve.layout), hazards: Some(hazards.layout) }),
         noise_preview: None,
         notes,
     }

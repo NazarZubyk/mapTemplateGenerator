@@ -19,7 +19,7 @@ generator's business.
 | Inner walls | region walls | deep water | **the rock itself** |
 | Character | — | — | **natural + hand-made, mixed by %** |
 | Complexity | — | fixed half labyrinth | **slider: straightforward → labyrinth** |
-| Structure | houses | trees | **pillars / stalagmites** |
+| Structure | houses | trees | **none — props only** |
 | Gates | in the outer wall | shore / bridge | **openings in the rock at the edge** |
 
 ## Two styles: natural and hand-made
@@ -112,8 +112,6 @@ ends, junctions — so the user sees how "lost" a player can get.
   set by the complexity slider (below).
 - **Hazards** inside: **chasms** (impassable pits in big halls) and
   **pools** (shallow = walkable, deep = impassable).
-- **Pillars and stalagmites** (natural) / **support columns**
-  (hand-made) stand in the bigger chambers.
 - **Gates** are just openings at the map edge with a tunnel leading in to
   the nearest chamber — same direction rule as the other kinds. Where they
   lead is decided later, not by the generator.
@@ -129,7 +127,7 @@ ends, junctions — so the user sees how "lost" a player can get.
 | 5 | Roads | **Carve & smooth** | `grid` (connectivity, despeckle), new CA |
 | 6 | Region walls | **Hazards** (chasms, pools) | connectivity guard |
 | 7 | Gates | (folded into 4) | `gates.rs` ray + markers |
-| 8 | Houses | **Pillars** | swamp `trees.rs` (round objects, ring rule) |
+| 8 | Houses | — (pillars dropped: props are enough) | — |
 | 9–12 | Props, Interactive, Hidden rooms, Mobs | same nodes, cave ground | the shared cores (`place_types`, `place_rooms`, `spend`) |
 
 ## Steps
@@ -398,15 +396,12 @@ unanswered, so the plan's two).
 - UI: node "6 · Hazards" — Chasms, Chasm size, Rope bridges, Bridge
   width, Pools, Pool size, Shallow edge, Colors, 🎲.
 
-### Step C6 — Pillars (node 7, cave only; Town's houses)
+### Step C6 — Pillars — dropped
 
-1. Natural chambers: round pillars / stalagmites, noise-grouped like
-   swamp groves, some against the walls.
-2. Hand-made chambers: square support columns in a loose grid.
-3. Ring rule: one free floor cell around each — the floor stays one piece.
-   Never in tunnels or at gates.
-
-Settings: density, size range, wall share, column spacing, colors.
+Built, then removed on the user's call: pillars, stalagmites and support
+columns are just uninteractive props, and the map is a reference — the
+level maker decides on such details. Cave props come with the props node
+(C7). The swamp trees stay (they are the swamp's structure).
 
 ### Step C7 — Spawns (existing nodes)
 
@@ -445,7 +440,7 @@ miners' crates appear only in hand-made parts.
 ## Implementation order
 
 C1 → C2 → C3 → C4 is the first visible milestone (a cave with gates and
-both styles). Then C5, C6, C7, C8. Per step: logic in
+both styles). Then C5, C7, C8 (C6 dropped). Per step: logic in
 `src/generator/cave/<name>.rs` with tests, settings in `model.rs`
 (`#[serde(default)]`), node in `left_panel.rs` shown only for
 `MapKind::Cave` (`cave_node_chain`), a progress slice, PNG snapshots with
