@@ -322,7 +322,7 @@ mud 6 m) left only ~20% deep water — the bands merged into open fields;
   skip hummocks.
 - Whole swamp chain on the 200 m default: ~190–230 ms (release).
 
-### Step S5 — Trees (node 6, swamp only; Town's houses)
+### Step S5 — Trees (node 6, swamp only; Town's houses) — done
 
 Input: everything so far. Output: tree objects (`Category::Structure`,
 type "tree", round or small rect) + footprint mask.
@@ -334,6 +334,34 @@ type "tree", round or small rect) + footprint mask.
 3. One-cell ring like houses/props → walkable ground stays one piece.
 
 Settings: grove density, tree size range, water trees on/density.
+
+**S5 notes (as built).** `generator/swamp/trees.rs`, settings
+`config.swamp.trees: TreeSettings` (density 30% of the grove zones, grove
+area 55% of the island ground, 1.5–4 m, gate clearing 6 m, water trees on
+at 1.5 / 1000 m² of walkable water, dark green / sage).
+
+- Trees are `PlacedObject`s, `Category::Structure` (the structure layer
+  id, like houses), type "tree" / "water tree" with their own colors, and
+  the new `PlacedObject.round` flag (serde default, skipped when false):
+  `contains` treats them as inscribed discs, so map.png / layer.png
+  rasterize circles; the preview draws filled circles with a darker rim.
+- Grove zones: island cells (not hummocks, > gate clearing from every gate
+  point) ranked by a 14 m fBm, the top `grove_area_pct`.
+- Placement: candidate cells shuffled, diameter rolled per attempt; the
+  footprint (cells whose centers lie within the radius, at least the
+  center cell) must be all allowed (zone / walkable water) and free; its
+  8-neighbor ring must be in bounds, walkable (no deep water, thicket)
+  and free of other trees — so trees never touch a blocker and the
+  walkable ground stays one piece (tested at 90% density, 100% zones,
+  20 water trees / 1000 m²).
+- Groves stop at the coverage target; < 80% of it → note. Water trees
+  stop at the count; fewer → note.
+- RNG: noise seed, zone shuffle, per grove attempt a diameter, water
+  shuffle, per water attempt a diameter.
+- Objects: trees first, then the gate markers (anchor `object` indexes
+  shifted) so markers draw on top. `TreeLayout { mask, grove_trees,
+  water_trees, grove_cover_pct }`; MCP `generate` reports `trees`.
+- Default 200 m map: ~300 grove trees, ~20 water trees.
 
 ### Step S6 — Spawns: props, interactive objects, mobs (existing nodes)
 

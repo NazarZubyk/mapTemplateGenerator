@@ -684,6 +684,9 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
         "hidden_rooms": level.hidden_rooms.as_ref().map(|h| json!({"placed": h.rooms.len(), "requested": h.requested})),
         "gates": gates,
         "gate_anchors": gate_anchors,
+        "trees": level.swamp.as_ref().and_then(|s| s.trees.as_ref()).map(|t| json!({
+            "grove_trees": t.grove_trees, "water_trees": t.water_trees, "grove_cover_pct": t.grove_cover_pct,
+        })),
         "water": level.swamp.as_ref().and_then(|s| s.depth.as_ref()).map(|d| json!({
             "hummocks": d.hummocks, "reach_m": d.reach_m, "walkable_pct": d.walkable_pct,
             "shallow_pct": d.shallow_pct, "mud_pct": d.mud_pct, "deep_pct": d.deep_pct, "thicket_pct": d.thicket_pct,

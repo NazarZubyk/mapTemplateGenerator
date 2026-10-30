@@ -138,6 +138,7 @@ pub(crate) fn build_with_progress(
             h_m: size.1,
             angle_deg,
             parts: Vec::new(),
+            round: false,
         });
         true
     };

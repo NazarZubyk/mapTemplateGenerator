@@ -285,6 +285,46 @@ pub struct SwampSettings {
     pub paths: PathSettings,
     /// Node 5: water depth, the wading limit and the map border.
     pub depth: DepthSettings,
+    /// Node 6: trees, the swamp's structure.
+    pub trees: TreeSettings,
+}
+
+/// Settings of the swamp trees node (step S5).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TreeSettings {
+    /// Share of the grove zones, %, covered by trees.
+    pub density_pct: f32,
+    /// Share of the island ground, %, that is grove zone (noise-picked
+    /// patches; the rest stays clearing).
+    pub grove_area_pct: f32,
+    /// Trunk + crown diameter range, meters.
+    pub size_min_m: f32,
+    pub size_max_m: f32,
+    /// No tree this close to a gate point, meters.
+    pub gate_clear_m: f32,
+    /// Single trees standing in shallow water and deep mud.
+    pub water_trees: bool,
+    /// Water trees per 1000 m² of walkable water.
+    pub water_per_1000m2: f32,
+    pub color: [u8; 3],
+    pub water_color: [u8; 3],
+}
+
+impl Default for TreeSettings {
+    fn default() -> Self {
+        Self {
+            density_pct: 30.0,
+            grove_area_pct: 55.0,
+            size_min_m: 1.5,
+            size_max_m: 4.0,
+            gate_clear_m: 6.0,
+            water_trees: true,
+            water_per_1000m2: 1.5,
+            color: [38, 92, 40],
+            water_color: [56, 96, 70],
+        }
+    }
 }
 
 /// Settings of the swamp depth & border node (step S4).

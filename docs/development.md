@@ -48,7 +48,8 @@ src/
 │       ├── gate_anchors.rs # swamp node 2: gate points + gate islands
 │       ├── islands.rs   #   swamp node 3: gate, hub and small islands
 │       ├── paths.rs     #   swamp node 4: mud paths, boardwalks, gate bridges
-│       └── depth.rs     #   swamp node 5: water bands, wading limit, hummocks, border
+│       ├── depth.rs     #   swamp node 5: water bands, wading limit, hummocks, border
+│       └── trees.rs     #   swamp node 6: groves and water trees (round objects)
 ├── render.rs            # map.png / layer.png rasterizers
 ├── export.rs            # export bundle writer + spec.json
 ├── validate.rs          # config validation (early subset; step 13 extends it)
@@ -90,7 +91,9 @@ island goes) → 3 **Islands** (gate islands, hubs, small islands; shape
 irregularity, gap, border margin) → 4 **Paths** (tree + loops + dead
 ends, winding mud by traffic width, boardwalks with kinks, gate bridges) →
 5 **Depth & border** (shallow water, deep mud, deep water by distance;
-wading limit with hummocks; deep water / thicket border) → trees, … next.
+wading limit with hummocks; deep water / thicket border) → 6 **Trees**
+(groves on islands, water trees) → props, interactive objects, hidden
+rooms, mobs next.
 
 Export: map.png (colored map), layer.png (R = category id, G/B = instance
 id), spec.json (legend, every object, regions, roads, wall gaps, interactive

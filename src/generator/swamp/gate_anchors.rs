@@ -101,6 +101,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng) -> AnchorBuild {
             h_m: MARKER_M,
             angle_deg: 0.0,
             parts: Vec::new(),
+            round: false,
         });
         anchors.push(GateAnchor {
             id,
@@ -281,7 +282,10 @@ mod tests {
         let s = level.swamp.as_ref().expect("swamp layout");
         assert_eq!(s.gate_anchors.len(), 2);
         assert!(level.regions.is_none() && level.shape.is_none());
-        assert_eq!(level.objects.len(), 2);
+        assert_eq!(level.objects.iter().filter(|o| o.category == Category::Gate).count(), 2);
+        for a in &s.gate_anchors {
+            assert_eq!(level.objects[a.object].category, Category::Gate, "anchor indexes its marker");
+        }
         assert_eq!(level, crate::generator::generate(&config, 3));
         assert_ne!(level.swamp, crate::generator::generate(&config, 4).swamp, "seed rolls the sizes");
     }

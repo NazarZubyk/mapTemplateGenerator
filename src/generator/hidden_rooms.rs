@@ -226,6 +226,7 @@ pub(crate) fn build_with_progress(
             h_m: rect_m[3],
             angle_deg: 0.0,
             parts: Vec::new(),
+            round: false,
         });
         // Path pieces: one rect per horizontal run of dug cells.
         let mut k = 0;
@@ -245,6 +246,7 @@ pub(crate) fn build_with_progress(
                 h_m: cell,
                 angle_deg: 0.0,
                 parts: Vec::new(),
+                round: false,
             });
             k = end;
         }

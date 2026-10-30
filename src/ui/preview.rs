@@ -183,6 +183,12 @@ fn draw_level(painter: &egui::Painter, map_rect: Rect, zoom: f32, level: &Genera
                 let color = color32(o.color);
                 clipped.circle_filled(center, r, color);
             }
+            _ if o.round => {
+                let center = to_screen(map_rect, zoom, o.x_m + o.w_m / 2.0, o.y_m + o.h_m / 2.0);
+                let r = (o.w_m.min(o.h_m) * zoom / 2.0).max(1.5);
+                clipped.circle_filled(center, r, color32(o.color));
+                clipped.circle_stroke(center, r, Stroke::new(1.5_f32, darker(o.color)));
+            }
             _ => {
                 // Each rect (main + wings) as a rotated convex polygon. All
                 // outlines first, then all fills: the fills cover the inner

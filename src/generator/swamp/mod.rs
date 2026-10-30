@@ -10,6 +10,7 @@
 //! 5. **Depth & border** — shallow water, deep mud and deep water by
 //!    distance, hummocks so every crossing fits in one breath, the deep
 //!    water / thicket border.
+//! 6. **Trees** — groves on the islands, single trees in the water.
 
 use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 
@@ -21,6 +22,7 @@ pub mod depth;
 pub mod gate_anchors;
 pub mod islands;
 pub mod paths;
+pub mod trees;
 
 /// Generate a swamp level: one RNG stream, nodes in fixed order.
 pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progress) -> GeneratedLevel {
@@ -30,7 +32,6 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
     progress("Placing gate anchors", 0.0);
     let anchors = gate_anchors::build(config, &mut rng);
     notes.extend(anchors.notes);
-    let objects = anchors.objects;
 
     progress("Raising islands", 0.05);
     let mut islands = islands::build(config, &mut rng, &anchors.anchors);
@@ -43,6 +44,18 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
     progress("Filling the water", 0.7);
     let depth = depth::build(config, &mut rng, &mut islands.layout, &mut paths.layout);
     notes.extend(depth.notes);
+
+    progress("Planting trees", 0.85);
+    let trees = trees::build(config, &mut rng, &anchors.anchors, &islands.layout, &depth.layout);
+    notes.extend(trees.notes);
+
+    // Gate markers last, so they draw on top.
+    let mut objects = trees.objects;
+    let mut gate_anchors = anchors.anchors;
+    for a in &mut gate_anchors {
+        a.object += objects.len();
+    }
+    objects.extend(anchors.objects);
 
     progress("Done", 1.0);
     GeneratedLevel {
@@ -60,7 +73,7 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
         hidden_rooms: None,
         mobs: None,
         gates: None,
-        swamp: Some(SwampLayout { gate_anchors: anchors.anchors, islands: Some(islands.layout), paths: Some(paths.layout), depth: Some(depth.layout) }),
+        swamp: Some(SwampLayout { gate_anchors, islands: Some(islands.layout), paths: Some(paths.layout), depth: Some(depth.layout), trees: Some(trees.layout) }),
         noise_preview: None,
         notes,
     }

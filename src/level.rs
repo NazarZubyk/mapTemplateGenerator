@@ -60,6 +60,9 @@ pub struct PlacedObject {
     /// the main rect and sharing its rotation. Empty for a simple rect.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parts: Vec<ObjectPart>,
+    /// A disc inscribed in the rect instead of the rect (trees).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub round: bool,
 }
 
 /// One extra rectangle of a compound object, in the object's own frame: the
@@ -81,8 +84,9 @@ impl PlacedObject {
     /// Is the point (meters) inside the rotated rect or any of its parts?
     pub fn contains(&self, x: f32, y: f32) -> bool {
         let (cx, cy) = self.center();
-        // Markers (mob spawns, gates) are circles inscribed in their rect.
-        if matches!(self.category, Category::MobSpawn | Category::Gate) {
+        // Markers (mob spawns, gates) and round objects are circles
+        // inscribed in their rect.
+        if self.round || matches!(self.category, Category::MobSpawn | Category::Gate) {
             let r = self.w_m.min(self.h_m) / 2.0;
             return (x - cx).powi(2) + (y - cy).powi(2) <= r * r;
         }
@@ -552,6 +556,18 @@ pub struct DepthLayout {
     pub thicket_pct: f32,
 }
 
+/// The swamp trees node's output (the trees themselves are objects).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TreeLayout {
+    /// Tree footprints.
+    pub mask: CellMask,
+    /// Trees on islands, and standing in the water.
+    pub grove_trees: u32,
+    pub water_trees: u32,
+    /// Share of the grove zones covered, %.
+    pub grove_cover_pct: f32,
+}
+
 /// The swamp node chain's output, filled node by node (docs/swamp-plan.md).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct SwampLayout {
@@ -562,6 +578,8 @@ pub struct SwampLayout {
     pub paths: Option<PathLayout>,
     #[serde(default)]
     pub depth: Option<DepthLayout>,
+    #[serde(default)]
+    pub trees: Option<TreeLayout>,
 }
 
 /// The mobs node's output.

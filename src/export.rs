@@ -412,6 +412,7 @@ mod tests {
                     h_m: 3.0,
                     angle_deg: 0.0,
                     parts: Vec::new(),
+                    round: false,
                 },
                 PlacedObject {
                     category: Category::Structure,
@@ -423,6 +424,7 @@ mod tests {
                     h_m: 3.0,
                     angle_deg: 0.0,
                     parts: Vec::new(),
+                    round: false,
                 },
             ],
             shape: None,

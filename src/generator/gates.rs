@@ -145,6 +145,7 @@ pub fn build(
             h_m: MARKER_M,
             angle_deg: 0.0,
             parts: Vec::new(),
+            round: false,
         });
         layout.gates.push(GateInfo {
             id,

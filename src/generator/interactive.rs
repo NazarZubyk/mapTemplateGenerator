@@ -166,6 +166,7 @@ pub(crate) fn build_with_progress(
                     h_m: m.size,
                     angle_deg: m.angle_deg,
                     parts: Vec::new(),
+                    round: false,
                 });
             }
             let n = members.len() as u32;

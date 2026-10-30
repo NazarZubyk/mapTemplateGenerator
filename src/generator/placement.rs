@@ -32,6 +32,7 @@ pub(crate) fn footprint(
         h_m: size.1,
         angle_deg,
         parts: parts.to_vec(),
+        round: false,
     };
     let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
     for (x, y) in probe.all_corners().into_iter().flatten() {

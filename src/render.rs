@@ -211,6 +211,7 @@ mod tests {
                 h_m: 2.0,
                 angle_deg: 0.0,
                 parts: Vec::new(),
+                round: false,
             }],
             shape: None,
             walls: None,
@@ -287,6 +288,7 @@ mod tests {
                 h_m: 64.0,
                 angle_deg: 0.0,
                 parts: Vec::new(),
+                round: false,
             },
         );
         let r = rasterize(&level, 4.0);

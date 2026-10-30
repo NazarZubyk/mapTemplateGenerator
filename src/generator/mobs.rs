@@ -228,6 +228,7 @@ pub(crate) fn build_with_progress(
                 h_m: r * 2.0,
                 angle_deg: 0.0,
                 parts: Vec::new(),
+                round: false,
             });
         }
         layout.entities += pack.len() as u32;

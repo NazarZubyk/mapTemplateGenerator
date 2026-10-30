@@ -68,6 +68,8 @@ fn swamp_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_paths(ui, app);
     flow_arrow(ui, "islands + mud paths + boardwalks (one network)");
     node_depth(ui, app);
+    flow_arrow(ui, "islands, paths, water bands");
+    node_trees(ui, app);
     ui.weak("Next swamp nodes appear here as they finish: depth & border, trees, then props, interactive objects, hidden rooms and mobs (docs/swamp-plan.md).");
     ui.add_space(4.0);
     ui.separator();
@@ -1238,6 +1240,75 @@ the map image, the preview and the legend.";
             ui.weak(format!(
                 "generated: walkable {:.0}% (shallow {:.0}%, mud {:.0}%) · deep water {:.0}% · thicket {:.0}% · {} hummocks · spawn reach {:.0} m",
                 d.walkable_pct, d.shallow_pct, d.mud_pct, d.deep_pct, d.thicket_pct, d.hummocks, d.reach_m
+            ));
+        }
+    });
+}
+
+/// Swamp node 6: trees, the swamp's structure (step S5 in
+/// docs/swamp-plan.md).
+fn node_trees(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_DENSITY: &str = "Share of the grove zones, %, covered by trees. Trees keep a \
+free ring around them, so the real ceiling is around 40–50%; a note says when the groves \
+fall short. 0%: no trees on the islands.";
+    const TIP_AREA: &str = "Share of the island ground, %, that is grove zone — patches \
+picked by a noise field; the rest stays open clearing (room for camps, fights, objects). \
+100%: trees everywhere on the islands. Hummocks never get trees.";
+    const TIP_SIZE: &str = "Tree diameter range, meters (rolled per tree, crown included).";
+    const TIP_GATE: &str = "No tree this close to a gate point, meters — the gate stays in \
+the open.";
+    const TIP_WATER: &str = "Single trees standing in shallow water and deep mud (never on \
+a mud path or boardwalk). They block movement and sight like island trees.";
+    const TIP_WATER_D: &str = "Water trees per 1000 m² of walkable water (shallow + deep \
+mud). NO EFFECT with Water trees off.";
+    const TIP_COLOR: &str = "Tree and water tree colors on the map image, the preview and \
+the legend.";
+    node(ui, "6 · Trees", |ui| {
+        ui.weak("input: islands + water bands · output: tree objects (groves, water trees) (swamp)");
+        let s = &mut app.config.swamp.trees;
+        egui::Grid::new("trees_node_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Density", TIP_DENSITY, |ui| ui.add(egui::Slider::new(&mut s.density_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Grove area", TIP_AREA, |ui| ui.add(egui::Slider::new(&mut s.grove_area_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Size", TIP_SIZE, |ui| range_m(ui, &mut s.size_min_m, &mut s.size_max_m, 0.5..=20.0));
+            param_row(ui, "Gate clearing", TIP_GATE, |ui| ui.add(meters(&mut s.gate_clear_m, 50.0)));
+            param_row(ui, "Water trees", TIP_WATER, |ui| ui.checkbox(&mut s.water_trees, ""));
+            if s.water_trees {
+                param_row(ui, "Water / 1000 m²", TIP_WATER_D, |ui| {
+                    ui.add(egui::DragValue::new(&mut s.water_per_1000m2).range(0.0..=50.0).speed(0.02))
+                });
+            }
+            param_row(ui, "Colors", TIP_COLOR, |ui| {
+                ui.horizontal(|ui| {
+                    ui.color_edit_button_srgb(&mut s.color).on_hover_text("tree");
+                    ui.color_edit_button_srgb(&mut s.water_color).on_hover_text("water tree")
+                })
+                .response
+            });
+        });
+        ui.horizontal(|ui| {
+            if ui
+                .button("🎲 Random params")
+                .on_hover_text(
+                    "Rolls every tree setting (not the colors) independently inside its \
+                     reasonable range. Set values only; press Generate.",
+                )
+                .clicked()
+            {
+                let mut rng = rand::rng();
+                s.density_pct = rng.random_range(0.0..=60.0);
+                s.grove_area_pct = rng.random_range(0.0..=100.0);
+                s.size_min_m = rng.random_range(0.8..=4.0);
+                s.size_max_m = rng.random_range(1.0..=6.0);
+                s.gate_clear_m = rng.random_range(2.0..=15.0);
+                s.water_trees = rng.random_bool(0.6);
+                s.water_per_1000m2 = rng.random_range(0.0..=6.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(t) = app.generated.as_ref().and_then(|l| l.swamp.as_ref()).and_then(|s| s.trees.as_ref()) {
+            ui.weak(format!(
+                "generated: {} grove trees (cover {:.0}% of the zones) · {} water trees",
+                t.grove_trees, t.grove_cover_pct, t.water_trees
             ));
         }
     });
