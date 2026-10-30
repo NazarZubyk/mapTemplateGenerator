@@ -123,6 +123,23 @@ impl MapGenApp {
         });
     }
 
+    /// Place only the mobs again on the level shown, with the current mob
+    /// settings; with `reroll`, a new random placement first. Instant (no
+    /// background job); the rest of the map stays.
+    pub fn redo_mobs(&mut self, ctx: &egui::Context, reroll: bool) {
+        if reroll {
+            self.config.mobs.reroll = rand::random::<u64>();
+        }
+        if self.job.is_some() {
+            return;
+        }
+        let Some(level) = self.generated.as_ref() else { return };
+        let mut level = level.clone();
+        level.config.mobs = self.config.mobs.clone();
+        crate::generator::place_mobs(&mut level, &|_, _| {});
+        self.finish_level(ctx, level);
+    }
+
     /// Pick up a finished background generation, if there is one.
     fn poll_job(&mut self, ctx: &egui::Context) {
         let Some(job) = &self.job else { return };

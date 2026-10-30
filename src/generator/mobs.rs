@@ -31,7 +31,8 @@ use crate::generator::Stage;
 use crate::level::{
     Category, CellMask, GateInfo, HiddenRoomLayout, MobLayout, MobPackMember, MobSpawn, PlacedObject, RegionMap, RoadNetwork,
 };
-use crate::model::{Habitat, LevelConfig, NodeAmount};
+use crate::model::{LevelConfig, NodeAmount};
+use crate::generator::placement::dilate;
 
 /// Cells drawn per pack while looking for a spot.
 const TRIES: usize = 60;
@@ -98,7 +99,7 @@ pub(crate) fn build_with_progress(
         .collect();
 
     let road_mask: Vec<bool> = (0..w * h).map(road).collect();
-    let area = MobArea { w, h, cell, spawnable, room_of, road: road_mask, habitat: None, guards: Vec::new() };
+    let area = MobArea { w, h, cell, spawnable, room_of, road: road_mask, terrain: None, guards: Vec::new(), hub: None };
     Some(spend(config, rng, &area, stage))
 }
 
@@ -131,33 +132,106 @@ pub(crate) struct MobArea {
     pub room_of: Vec<u32>,
     /// Road (swamp: path or boardwalk) cells, for `MobSpawn::on_road`.
     pub road: Vec<bool>,
-    /// Swamp maps: where each habitat may stand (subsets of `spawnable`).
-    pub habitat: Option<HabitatMasks>,
+    /// Swamp maps: the terrains, so each type stands only on its own
+    /// (`MobType::spawn_on`). None: every type may use all of `spawnable`.
+    pub terrain: Option<TerrainSets>,
     /// Areas that each get one pack before the rest are spread (swamp:
     /// guarded dead-end islands); subsets of `spawnable`.
     pub guards: Vec<Vec<bool>>,
+    /// Swamp maps: hub island cells; `hub_pct` of the mobs stand there.
+    pub hub: Option<Vec<bool>>,
 }
 
-pub(crate) struct HabitatMasks {
+/// Swamp terrain masks (each a subset of `spawnable`).
+pub(crate) struct TerrainSets {
     pub land: Vec<bool>,
-    pub water: Vec<bool>,
-    /// Both sides of the shoreline: where a land + water pack stands.
-    pub shore: Vec<bool>,
+    pub path: Vec<bool>,
+    pub shallow: Vec<bool>,
+    pub mud: Vec<bool>,
 }
 
-/// The cells a pack may cover, and their class (index into the per-class
-/// candidate lists): every member's habitat must fit (a land + water pack
-/// stands on the shoreline). Without habitats, all spawnable.
-fn pack_cells<'a>(area: &'a MobArea, pack: &[usize], s: &crate::model::MobSettings) -> (usize, &'a [bool]) {
-    let Some(hab) = &area.habitat else {
-        return (0, &area.spawnable);
-    };
-    let has = |want: Habitat| pack.iter().any(|&t| s.types[t].habitat == want);
-    match (has(Habitat::Land), has(Habitat::Water)) {
-        (true, true) => (3, &hab.shore),
-        (true, false) => (1, &hab.land),
-        (false, true) => (2, &hab.water),
-        (false, false) => (0, &area.spawnable),
+/// A mixed pack (types with different terrains) stands where each member's
+/// terrain is within this many meters: on the border between them.
+const MIXED_REACH_M: f32 = 2.0;
+
+/// Per-type spawn cells and the pack masks built from them, cached by the
+/// pack's set of types (sorted, no repeats).
+struct PackCells {
+    /// Per type: its cells (None without terrain = all spawnable).
+    types: Vec<Option<Vec<bool>>>,
+    /// Per type: its cells grown by `MIXED_REACH_M`, built on first use.
+    near: Vec<Option<Vec<bool>>>,
+    masks: std::collections::HashMap<Vec<usize>, Vec<bool>>,
+}
+
+impl PackCells {
+    fn new(area: &MobArea, s: &crate::model::MobSettings) -> Self {
+        let n = area.spawnable.len();
+        let types = s
+            .types
+            .iter()
+            .map(|t| {
+                area.terrain.as_ref().map(|ts| {
+                    let f = t.spawn_on;
+                    (0..n)
+                        .map(|i| {
+                            area.spawnable[i]
+                                && ((f.land && ts.land[i]) || (f.path && ts.path[i]) || (f.shallow && ts.shallow[i]) || (f.mud && ts.mud[i]))
+                        })
+                        .collect()
+                })
+            })
+            .collect();
+        Self { types, near: vec![None; s.types.len()], masks: Default::default() }
+    }
+
+    /// Can type `t` stand anywhere at all?
+    fn placeable(&self, t: usize, area: &MobArea) -> bool {
+        match &self.types[t] {
+            Some(m) => m.iter().any(|&v| v),
+            None => area.spawnable.iter().any(|&v| v),
+        }
+    }
+
+    /// The pack's key: its types, sorted, no repeats (empty without terrain).
+    fn key(&self, pack: &[usize]) -> Vec<usize> {
+        if self.types.iter().all(Option::is_none) {
+            return Vec::new();
+        }
+        let mut k = pack.to_vec();
+        k.sort_unstable();
+        k.dedup();
+        k
+    }
+
+    /// The cells a pack may cover: one type → its own cells; several →
+    /// cells of any member's terrain where every member's terrain is within
+    /// `MIXED_REACH_M`.
+    fn mask(&mut self, key: &[usize], area: &MobArea) -> &Vec<bool> {
+        if !self.masks.contains_key(key) {
+            let n = area.spawnable.len();
+            let mask = match key {
+                [] => area.spawnable.clone(),
+                [t] => self.types[*t].clone().unwrap_or_else(|| area.spawnable.clone()),
+                _ => {
+                    let r = (MIXED_REACH_M / area.cell).ceil().max(1.0) as i64;
+                    for &t in key {
+                        if self.near[t].is_none() {
+                            let own = self.types[t].clone().unwrap_or_else(|| area.spawnable.clone());
+                            self.near[t] = Some(dilate(&own, area.w, area.h, r));
+                        }
+                    }
+                    (0..n)
+                        .map(|i| {
+                            key.iter().any(|&t| self.types[t].as_ref().is_none_or(|m| m[i]))
+                                && key.iter().all(|&t| self.near[t].as_ref().is_some_and(|m| m[i]))
+                        })
+                        .collect()
+                }
+            };
+            self.masks.insert(key.to_vec(), mask);
+        }
+        &self.masks[key]
     }
 }
 
@@ -178,6 +252,7 @@ pub(crate) fn spend(config: &LevelConfig, rng: &mut ChaCha8Rng, area: &MobArea, 
         budget: s.budget,
         spacing_used_m: s.spacing_m.max(0.0),
         stop_reason: String::new(),
+        in_hubs: 0,
     };
     let mut objects: Vec<PlacedObject> = Vec::new();
     let mut notes = Vec::new();
@@ -204,8 +279,19 @@ pub(crate) fn spend(config: &LevelConfig, rng: &mut ChaCha8Rng, area: &MobArea, 
     let mut spacing = s.spacing_m.max(0.0);
     let cheapest = (0..n_types).filter(|&t| target[t] > 0.0).map(price).fold(f32::MAX, f32::min);
 
-    // One candidate list per pack class (see `pack_cells`), built on first use.
-    let mut candidates: [Option<Vec<usize>>; 4] = Default::default();
+    // Pack masks and candidate lists per set of types, built on first use;
+    // the same inside the hubs.
+    let mut cells_of = PackCells::new(area, s);
+    let placeable: Vec<bool> = (0..n_types).map(|t| cells_of.placeable(t, area)).collect();
+    for t in (0..n_types).filter(|&t| target[t] > 0.0 && !placeable[t]) {
+        let what = if s.types[t].spawn_on.any() { "no free ground of its terrains" } else { "no terrain ticked" };
+        notes.push(format!("Mobs: '{}' is never placed — {what}", s.types[t].name));
+    }
+    let mut candidates: std::collections::HashMap<Vec<usize>, Vec<usize>> = Default::default();
+    let mut hub_cells: std::collections::HashMap<Vec<usize>, Vec<bool>> = Default::default();
+    let mut hub_candidates: std::collections::HashMap<Vec<usize>, Vec<usize>> = Default::default();
+    let hub_share = s.hub_pct.clamp(0.0, 100.0) / 100.0;
+    let mut hub_misses = 0u32;
     let mut remaining = s.budget;
     let mut guards = area.guards.iter();
     let mut guarding = true;
@@ -231,7 +317,7 @@ pub(crate) fn spend(config: &LevelConfig, rng: &mut ChaCha8Rng, area: &MobArea, 
             let total_after = (layout.entities + pack.len() as u32 + 1) as f32;
             let count = |t: usize| layout.per_type[t] + pack.iter().filter(|&&p| p == t).count() as u32;
             let pick = (0..n_types)
-                .filter(|&t| target[t] > 0.0 && (over_budget || price(t) <= remaining - cost))
+                .filter(|&t| target[t] > 0.0 && placeable[t] && (over_budget || price(t) <= remaining - cost))
                 .filter(|&t| pack.iter().all(|&p| s.combines(t, p)))
                 .max_by(|&a, &b| {
                     let deficit = |t: usize| target[t] * total_after - count(t) as f32;
@@ -248,30 +334,52 @@ pub(crate) fn spend(config: &LevelConfig, rng: &mut ChaCha8Rng, area: &MobArea, 
             break "budget spent";
         }
 
-        // 4. Find a spot; a pack that fits nowhere shrinks to one mob.
+        // 4. Find a spot; a pack that fits nowhere shrinks to one mob. A
+        // pack due for the hubs (hub share not met yet) tries them first.
+        let hub_due = guard.is_none()
+            && area.hub.is_some()
+            && (layout.in_hubs as f32) < hub_share * (layout.entities as usize + pack.len()) as f32;
         let mut spot = None;
-        for attempt in 0..2 {
-            if attempt == 1 {
-                if pack.len() <= 1 {
-                    break;
-                }
-                pack.truncate(1);
-                cost = price(pack[0]);
+        let mut in_hub = false;
+        'zones: for hub_try in [true, false] {
+            if hub_try && !hub_due {
+                continue;
             }
-            let (class, cells) = pack_cells(area, &pack, s);
-            spot = match guard {
-                Some(g) => {
-                    let inside: Vec<bool> = (0..w * h).map(|i| g[i] && cells[i]).collect();
-                    let mut pool: Vec<usize> = (0..w * h).filter(|&i| inside[i]).collect();
-                    find_spot(rng, &mut pool, &inside, room_of, &layout.spawns, spacing, &pack, s, w, h, cell)
+            for attempt in 0..2 {
+                if attempt == 1 {
+                    if pack.len() <= 1 {
+                        break;
+                    }
+                    pack.truncate(1);
+                    cost = price(pack[0]);
                 }
-                None => {
-                    let pool = candidates[class].get_or_insert_with(|| (0..w * h).filter(|&i| cells[i]).collect());
-                    find_spot(rng, pool, cells, room_of, &layout.spawns, spacing, &pack, s, w, h, cell)
+                let key = cells_of.key(&pack);
+                let cells = cells_of.mask(&key, area);
+                spot = match (guard, hub_try) {
+                    (Some(g), _) => {
+                        let inside: Vec<bool> = (0..w * h).map(|i| g[i] && cells[i]).collect();
+                        let mut pool: Vec<usize> = (0..w * h).filter(|&i| inside[i]).collect();
+                        find_spot(rng, &mut pool, &inside, room_of, &layout.spawns, spacing, &pack, s, w, h, cell)
+                    }
+                    (None, true) => {
+                        let hub = area.hub.as_ref().expect("hub_due needs hub cells");
+                        let inside =
+                            hub_cells.entry(key.clone()).or_insert_with(|| (0..w * h).map(|i| hub[i] && cells[i]).collect());
+                        let pool = hub_candidates.entry(key).or_insert_with(|| (0..w * h).filter(|&i| inside[i]).collect());
+                        find_spot(rng, pool, inside, room_of, &layout.spawns, spacing, &pack, s, w, h, cell)
+                    }
+                    (None, false) => {
+                        let pool = candidates.entry(key).or_insert_with(|| (0..w * h).filter(|&i| cells[i]).collect());
+                        find_spot(rng, pool, cells, room_of, &layout.spawns, spacing, &pack, s, w, h, cell)
+                    }
+                };
+                if spot.is_some() {
+                    in_hub = hub_try;
+                    break 'zones;
                 }
-            };
-            if spot.is_some() {
-                break;
+            }
+            if hub_try {
+                hub_misses += 1;
             }
         }
         if guard.is_some() && spot.is_none() {
@@ -283,6 +391,7 @@ pub(crate) fn spend(config: &LevelConfig, rng: &mut ChaCha8Rng, area: &MobArea, 
                 // Relax the spacing and give the dropped cells another chance.
                 spacing = if spacing > 0.5 { spacing / 2.0 } else { 0.0 };
                 candidates = Default::default();
+                hub_candidates = Default::default();
                 continue;
             }
             break "no free spot left";
@@ -318,6 +427,9 @@ pub(crate) fn spend(config: &LevelConfig, rng: &mut ChaCha8Rng, area: &MobArea, 
             });
         }
         layout.entities += pack.len() as u32;
+        if in_hub {
+            layout.in_hubs += pack.len() as u32;
+        }
         layout.spent += cost;
         remaining -= cost;
         layout.spawns.push(MobSpawn {
@@ -327,11 +439,18 @@ pub(crate) fn spend(config: &LevelConfig, rng: &mut ChaCha8Rng, area: &MobArea, 
             cost,
             on_road: area.road[c],
             hidden_room: (room_of[c] != 0).then_some(room_of[c]),
+            hub: in_hub,
             objects: (first..objects.len()).collect(),
         });
     };
     layout.stop_reason = stop_reason.to_owned();
     layout.spacing_used_m = spacing;
+    if hub_misses > 0 {
+        notes.push(format!(
+            "Mobs: the hubs were full for {hub_misses} pack(s) — {} of {} mobs in hubs (asked {:.0}%)",
+            layout.in_hubs, layout.entities, s.hub_pct
+        ));
+    }
     if min_wanted > s.max_entities {
         notes.push(format!("Mobs: the minimum of {min_wanted} is above the cap — capped at {}", s.max_entities));
     }
@@ -720,6 +839,27 @@ mod tests {
         config.kind = MapKind::Forest;
         config.shape = ShapeSettings::for_kind(config.kind);
         assert!(!level(&config, 2).mobs.as_ref().unwrap().spawns.is_empty());
+    }
+
+    #[test]
+    fn reroll_moves_only_the_mobs_on_a_town() {
+        let config = LevelConfig::test_64();
+        let base = level(&config, 4);
+        let mut moved = base.clone();
+        moved.config.mobs.reroll = 99;
+        crate::generator::place_mobs(&mut moved, &|_, _| {});
+        assert_ne!(moved.mobs, base.mobs);
+        let keep = |l: &GeneratedLevel| l.objects.iter().filter(|o| o.category != Category::MobSpawn).cloned().collect::<Vec<_>>();
+        assert_eq!(keep(&moved), keep(&base));
+        for g in &moved.gates.as_ref().unwrap().gates {
+            assert_eq!(moved.objects[g.object].category, Category::Gate);
+        }
+        for r in &moved.hidden_rooms.as_ref().unwrap().rooms {
+            assert_eq!(moved.objects[r.objects[0]].category, Category::HiddenRoom);
+        }
+        let mut again = config.clone();
+        again.mobs.reroll = 99;
+        assert_eq!(level(&again, 4), moved);
     }
 
     #[test]

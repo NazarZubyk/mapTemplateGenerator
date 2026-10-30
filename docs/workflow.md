@@ -192,7 +192,11 @@ user explicitly asks to try before they become a node.
 Rules that carried over from the old build (keep them in every section):
 
 - **Deterministic**: same (config, seed) ⇒ byte-identical level. One RNG stream,
-  phases in fixed order.
+  phases in fixed order — except the mobs: `generator::place_mobs` (the
+  last step of every chain) seeds its own stream from the seed and
+  `mobs.reroll`, so the app's "🎲 Re-roll mobs" / "⟳ Apply mobs only" redo
+  only the mobs on the shown level (index fix-ups for gate markers,
+  interactive groups and hidden rooms included).
 - **Metric**: meters (f32) everywhere; grid cell size from `config.cell_size_m`.
 - **Never fragment**: the walkable area must stay one connected region after
   every phase (reference `grid.rs` has the flood-fill + anti-seal helpers).

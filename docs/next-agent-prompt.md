@@ -56,8 +56,8 @@ a node, state which kinds include it.
 in `docs/swamp-plan.md`): Template → Gate anchors (done) → Islands
 (done) → Paths (done) → Depth & border (done) → Trees (done) → Props /
 Interactive / Hidden rooms / Mobs on swamp ground (done, S6). The swamp
-chain is complete; open: S7 zones (optional), S8 export polish (terrain
-in layer.png, depth channel, warnings), tuning. The default map is 200 × 200 m;
+chain is complete; open: S8 export polish (terrain in layer.png, depth
+channel, warnings), tuning. Zones (S7) are dropped. The default map is 200 × 200 m;
 town-chain tests use `LevelConfig::test_64()`.
 
 **MCP server** `mapgen-mcp` (`src/mcp.rs`, `src/bin/mapgen-mcp.rs`,
@@ -88,8 +88,11 @@ The app's 🔄 Live sync reloads the file and regenerates. Rebuild it with
 ## Hard rules
 
 - **Determinism**: one `ChaCha8Rng::seed_from_u64(seed)` stream created in
-  `generator::generate_with_progress`, passed `&mut` to each phase in fixed
-  order (shape has its own seed; gates use no RNG).
+  `generator::generate_with_progress` (swamp: `swamp::generate_with_progress`),
+  passed `&mut` to each phase in fixed order (shape has its own seed; gates
+  use no RNG). Exception: mobs, the last node, run in
+  `generator::place_mobs` on their own stream (seed + `mobs.reroll`), so
+  "Re-roll mobs" can redo them on a finished level.
 - **Metric** meters (f32) everywhere, quantized to `config.cell_size_m`.
 - **Walkable ground stays one piece** after every node (objects keep a
   one-cell Chebyshev ring); solid objects never overlap.
@@ -115,7 +118,7 @@ Ctrl+scroll zooms). Bottom: warnings panel, then the (empty) bench.
 
 Steps 0–6 and 8–12 and the MCP server are done; swamp steps S1 (gate
 anchors), S2 (islands), S3 (paths), S4 (depth & border), S5 (trees) and
-S6 (spawns) are done — S8 export polish (or S7 zones) is next. Open:
+S6 (spawns) are done — S8 export polish is next (S7 zones dropped). Open:
 - **Step 7 — walkable budget**: `map.walkable_pct` vs what houses and later
   objects take.
 - **Step 13 — validation & export polish**: feasibility pre-check, blocking

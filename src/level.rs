@@ -610,6 +610,9 @@ pub struct MobLayout {
     /// minimum did not fit otherwise).
     #[serde(default)]
     pub spacing_used_m: f32,
+    /// Swamp maps: mobs placed on hub islands for the hub share.
+    #[serde(default)]
+    pub in_hubs: u32,
     /// Why spending stopped (budget, entity cap or space).
     pub stop_reason: String,
 }
@@ -626,6 +629,9 @@ pub struct MobSpawn {
     pub on_road: bool,
     /// The hidden room it stands in (only rooms with a mob-passable path).
     pub hidden_room: Option<u32>,
+    /// Swamp maps: placed on a hub island to meet the hub share.
+    #[serde(default)]
+    pub hub: bool,
     /// Indices of its markers in `GeneratedLevel::objects`: one per mob,
     /// each at its type's body size, inside the pack circle.
     pub objects: Vec<usize>,

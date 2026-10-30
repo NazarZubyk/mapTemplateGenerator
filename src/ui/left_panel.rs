@@ -2,7 +2,7 @@ use eframe::egui;
 use rand::Rng;
 
 use crate::level::IslandKind;
-use crate::model::{GateSpec, GateStyle, Habitat, InteractiveTerrain, HiddenRoomPlace, InteractiveSpot, InteractiveType, LevelConfig, MapKind, MobType, NodeAmount, ShapeSettings};
+use crate::model::{GateSpec, GateStyle, InteractiveTerrain, HiddenRoomPlace, InteractiveSpot, InteractiveType, LevelConfig, MapKind, MobType, NodeAmount, ShapeSettings};
 use crate::ui::app::{ConfigStatus, MapGenApp};
 use crate::ui::widgets::param_row;
 
@@ -1925,15 +1925,26 @@ budget allow. 0% = never placed.";
 biggest group's color).";
     const TIP_COMBINE: &str = "Which types may appear together at one spawn point. A type \
 always combines with itself.";
-    const TIP_PATHS: &str = "Swamp: let spawn points stand on mud paths and boardwalks. \
-Spawns are markers, not obstacles — they never block a path.";
     const TIP_GUARD: &str = "Swamp: chance, %, that each dead-end island (paths node) gets \
 a guard pack before the other packs are spread — the reward at the end of the spur is \
 guarded. The guard packs are paid from the budget like the rest.";
-    const TIP_HABITAT: &str = "Swamp: where this type stands. Land: islands (and \
-boardwalks). Water: shallow water / deep mud within the spawn reach (and mud paths). Both: \
-anywhere walkable. A pack must suit every member: a pack with land and water types stands on \
-the shoreline.";
+    const TIP_SPAWN_ON: &str = "Swamp: the terrains this type may spawn on — tick one or \
+several. Land: islands, hummocks, open hidden islets. Path: mud paths and boardwalks. \
+Shallow / Mud: shallow water / deep mud within the spawn reach of the depth node. None \
+ticked: the type is never placed (a note says so). A pack of types with different terrains \
+stands where all of them are within 2 m — on the border between them (a rat + leech pack on \
+the shoreline).";
+    const TIP_REROLL: &str = "Moves the mobs to new places on the map shown now, with the \
+current mob settings — the rest of the map stays. Instant. The new placement is kept in the \
+config (mobs.reroll), so ⚙ Generate with the same seed gives these mobs again.";
+    const TIP_APPLY: &str = "Places the mobs again on the map shown now with the current mob \
+settings (budget, types, terrains, ...) and the same placement roll — the rest of the map \
+stays. Instant.";
+    const TIP_HUBS: &str = "Swamp: share of the mobs, %, that must stand on hub islands \
+(the big islands of the islands node) — busy camps, quieter stepping stones and water. The \
+rest go anywhere they may stand (hubs included). 100%: every mob on a hub. 0%: no rule, \
+packs spread over all ground by area. When the hubs are full, the rest go anywhere and a \
+note says so. Guard packs on dead ends don't count.";
     let swamp = app.config.kind == MapKind::Swamp;
     node(ui, if swamp { "10 · Mobs" } else { "12 · Mobs" }, |ui| {
         ui.weak(if swamp {
@@ -1977,9 +1988,11 @@ the shoreline.";
                 ui.add(egui::DragValue::new(&mut mobs.spacing_m).range(0.0..=50.0).speed(0.1).suffix(" m"))
             });
             if swamp {
-                param_row(ui, "Spawn on paths", TIP_PATHS, |ui| ui.checkbox(&mut mobs.on_roads, ""));
                 param_row(ui, "Dead-end guards", TIP_GUARD, |ui| {
                     ui.add(egui::Slider::new(&mut mobs.dead_end_guard_pct, 0.0..=100.0).suffix(" %"))
+                });
+                param_row(ui, "In hubs", TIP_HUBS, |ui| {
+                    ui.add(egui::Slider::new(&mut mobs.hub_pct, 0.0..=100.0).suffix(" %"))
                 });
             } else {
                 param_row(ui, "Spawn on roads", TIP_ROADS, |ui| ui.checkbox(&mut mobs.on_roads, ""));
@@ -2013,15 +2026,15 @@ the shoreline.";
                         r
                     });
                     if swamp {
-                        param_row(ui, "Habitat", TIP_HABITAT, |ui| {
-                            egui::ComboBox::from_id_salt(("mob_habitat", i))
-                                .selected_text(t.habitat.label())
-                                .show_ui(ui, |ui| {
-                                    for hab in Habitat::ALL {
-                                        ui.selectable_value(&mut t.habitat, hab, hab.label());
-                                    }
-                                })
-                                .response
+                        param_row(ui, "Spawns on", TIP_SPAWN_ON, |ui| {
+                            let f = &mut t.spawn_on;
+                            ui.horizontal(|ui| {
+                                ui.checkbox(&mut f.land, "land");
+                                ui.checkbox(&mut f.path, "path");
+                                ui.checkbox(&mut f.shallow, "shallow");
+                                ui.checkbox(&mut f.mud, "mud")
+                            })
+                            .response
                         });
                     }
                     param_row(ui, "Color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut t.color));
@@ -2116,7 +2129,20 @@ the shoreline.";
                 }
             }
         });
-        ui.weak("Changes apply on ⚙ Generate");
+        let mut redo = None;
+        ui.horizontal(|ui| {
+            let ready = app.generated.is_some() && app.job.is_none();
+            if ui.add_enabled(ready, egui::Button::new("🎲 Re-roll mobs")).on_hover_text(TIP_REROLL).clicked() {
+                redo = Some(true);
+            }
+            if ui.add_enabled(ready, egui::Button::new("⟳ Apply mobs only")).on_hover_text(TIP_APPLY).clicked() {
+                redo = Some(false);
+            }
+        });
+        if let Some(reroll) = redo {
+            app.redo_mobs(ui.ctx(), reroll);
+        }
+        ui.weak("Other changes apply on ⚙ Generate");
         if let Some(lvl) = app.generated.as_ref()
             && let Some(l) = lvl.mobs.as_ref()
         {
@@ -2140,6 +2166,9 @@ the shoreline.";
                 l.spacing_used_m,
                 l.stop_reason
             ));
+            if swamp && app.config.mobs.hub_pct > 0.0 {
+                ui.weak(format!("in hubs: {} of {} mobs", l.in_hubs, l.entities));
+            }
         }
     });
 }

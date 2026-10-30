@@ -451,24 +451,41 @@ no swamp code.
   (block a cell clear of walkable terrain, 6 m from gates); ford ≤
   min(`path_max_m`, wade limit); dug cells join the floor mask. Wall
   thickness hidden in the swamp UI.
-- Mobs: `MobType.habitat` (land / water / both, default both). Land =
-  islands, boardwalks, open islet floors; water = the rest of spawnable
-  (water within reach, mud paths). A pack's class: land + water members →
-  shoreline (cells within 2 m of both), else land / water / any; one
-  candidate list per class. `on_roads` = "Spawn on paths".
+- Mobs: `MobType.spawn_on: SpawnOn { land, path, shallow, mud }` (all on
+  by default; replaced the first land / water / both habitat): land =
+  islands, hummocks, open islet floors; path = mud paths + boardwalks;
+  shallow / mud = within reach. Per type a cell mask; a pack's mask is
+  cached by its set of types: one type → its own cells; several → cells of
+  any member's terrain where every member's terrain is within 2 m (a rat +
+  leech pack on the shoreline); one candidate list per set. A type with no
+  free terrain is never picked (note). `on_roads` is not used on swamps
+  (Path is per type).
+- Re-roll: mobs moved into `generator::place_mobs` (last step of both
+  chains, own RNG stream: seed ^ salt ^ `mobs.reroll` × golden ratio). It
+  drops old mob markers + "Mobs:" notes, rebuilds from the stored level,
+  inserts markers before the gate markers and re-maps every stored object
+  index. UI: "🎲 Re-roll mobs" (new `reroll`, kept in the config) and "⟳
+  Apply mobs only" (current mob settings, same roll) — `MapGenApp::
+  redo_mobs`, instant, town too. MCP: types take `spawn_on`,
+  `set_mob_settings` takes `reroll`.
   `dead_end_guard_pct` (50%): each dead-end island rolls; guards are
   bought first, a guard that finds no spot is skipped.
-  Not built: `hub_bias_pct` (packs preferring hubs).
+  `hub_pct` ("In hubs", default 0%): that share of the mobs must stand
+  on hub islands (`IslandKind::Hub`), the rest anywhere. A pack goes to
+  the hubs while `in_hubs < hub_pct · (entities + pack)`; it tries the
+  hubs (full pack, then one mob) before the free ground; a hub miss → a
+  note with the reached count. Guard packs don't count. `MobArea.hub`
+  (hub cells ∩ spawnable), per-class hub candidate lists, `MobLayout.
+  in_hubs`, `MobSpawn.hub` (serde default); MCP `set_mob_settings`
+  `hub_pct`, summary `in_hubs`.
 - MCP: mob types take `habitat`, `set_mob_settings` takes
   `dead_end_guard_pct`; the summary's prop count includes swamp props.
 - RNG order after trees: props (per prop a size, then spot draws and
   angle), interactive, hidden rooms, mobs (guard rolls, then spending).
 
-### Step S7 — Zones (optional, later)
+### Step S7 — Zones — dropped
 
-Key regions for the game: color islands/paths by graph distance from the
-gates — outskirts → mire → heart (the hub farthest from every gate). Shown
-as region colors, exported in spec.json `regions`. No walls.
+Not needed (decided 2026-10-30): no outskirts → mire → heart coloring.
 
 ### Step S8 — Export, validation, MCP
 
@@ -482,7 +499,7 @@ as region colors, exported in spec.json `regions`. No walls.
 ## Implementation order
 
 S1 → S2 → S3 → S4 is the first visible milestone (a playable swamp shape
-with gates). Then S5, S6, S8; S7 when needed. Per step: logic in
+with gates). Then S5, S6, S8 (S7 dropped). Per step: logic in
 `src/generator/swamp/<name>.rs` with tests, settings in `model.rs`
 (`#[serde(default)]`, so old swamp configs still load), node in
 `left_panel.rs` shown only for `MapKind::Swamp`, a progress slice in

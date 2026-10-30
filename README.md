@@ -43,7 +43,8 @@ the details.
 2. Go down the panel on the left. Each block is one step of the map, from
    the outline to walls, regions, roads, gates, houses, props, interactive
    objects, hidden rooms and mobs. Hover any setting to see what it does.
-3. Press **⚙ Generate**. Press **🎲 Re-roll** for another variant.
+3. Press **⚙ Generate**. Press **🎲 Re-roll** for another variant. To move
+   only the mobs, use **🎲 Re-roll mobs** in the Mobs block.
 4. Drag or swipe to move the preview, and pinch or Ctrl+scroll to zoom.
 5. Use **Export** to write the three files, and **Config file → Save**
    to keep your settings.

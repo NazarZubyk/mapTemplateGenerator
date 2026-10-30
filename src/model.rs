@@ -522,8 +522,8 @@ pub struct MobType {
     pub balance_pct: f32,
     /// Color on map.png, the preview and the legend.
     pub color: [u8; 3],
-    /// Swamp maps: land / water / both.
-    pub habitat: Habitat,
+    /// Swamp maps: the terrains this type may spawn on.
+    pub spawn_on: SpawnOn,
 }
 
 impl Default for MobType {
@@ -534,33 +534,43 @@ impl Default for MobType {
             size_m: 0.8,
             balance_pct: 100.0,
             color: [200, 60, 50],
-            habitat: Habitat::Both,
+            spawn_on: SpawnOn::default(),
         }
     }
 }
 
-/// Where a mob type lives on a swamp map (towns ignore it).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Habitat {
-    /// Islands only.
-    Land,
-    /// Shallow water and deep mud within reach only.
-    Water,
-    /// Either.
-    #[default]
-    Both,
+/// Which swamp terrains a mob type may spawn on (towns ignore it). Any mix;
+/// none at all = the type is never placed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SpawnOn {
+    /// Islands, hummocks, open hidden islets.
+    pub land: bool,
+    /// Mud paths and boardwalks.
+    pub path: bool,
+    /// Shallow water within the spawn reach.
+    pub shallow: bool,
+    /// Deep mud within the spawn reach.
+    pub mud: bool,
 }
 
-impl Habitat {
-    pub const ALL: [Habitat; 3] = [Habitat::Land, Habitat::Water, Habitat::Both];
+impl Default for SpawnOn {
+    fn default() -> Self {
+        Self { land: true, path: true, shallow: true, mud: true }
+    }
+}
 
-    pub fn label(self) -> &'static str {
-        match self {
-            Habitat::Land => "Land",
-            Habitat::Water => "Water",
-            Habitat::Both => "Both",
-        }
+impl SpawnOn {
+    pub fn any(self) -> bool {
+        self.land || self.path || self.shallow || self.mud
+    }
+
+    /// Short list for stats and MCP, e.g. "land, path".
+    pub fn names(self) -> Vec<&'static str> {
+        [(self.land, "land"), (self.path, "path"), (self.shallow, "shallow"), (self.mud, "mud")]
+            .into_iter()
+            .filter_map(|(on, n)| on.then_some(n))
+            .collect()
     }
 }
 
@@ -598,6 +608,13 @@ pub struct MobSettings {
     /// Swamp maps: chance, %, that a dead-end island gets a guard pack
     /// before the rest are spread (the reward at the end is guarded).
     pub dead_end_guard_pct: f32,
+    /// Swamp maps: share of the mobs, %, that must stand on hub islands
+    /// (the big islands); the rest go anywhere. 0 = no rule.
+    pub hub_pct: f32,
+    /// Mob placement has its own random stream, seeded by the level seed
+    /// and this number: "Re-roll mobs" changes it, so the mobs move while
+    /// the map stays (and a full Generate gives the same mobs again).
+    pub reroll: u64,
 }
 
 impl Default for MobSettings {
@@ -619,6 +636,8 @@ impl Default for MobSettings {
             on_roads: true,
             gate_clearance_m: 8.0,
             dead_end_guard_pct: 50.0,
+            hub_pct: 0.0,
+            reroll: 0,
         }
     }
 }

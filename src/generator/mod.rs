@@ -239,40 +239,6 @@ pub fn generate_with_progress(
         built.layout
     });
 
-    // Step 11: mobs (every map kind) — packs bought from the budget, on
-    // walkable ground (roads too, if allowed).
-    let mobs = regions.as_ref().and_then(|split| {
-        let object_masks: Vec<&CellMask> = [
-            houses.as_ref().map(|l| &l.mask),
-            props.as_ref().map(|l| &l.mask),
-            interactive.as_ref().map(|l| &l.mask),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-        let ground = mobs::Ground {
-            regions: &split.map,
-            outer_wall: walls.as_ref().map(|w| &w.mask),
-            region_walls: region_walls.as_ref().map(|w| &w.mask),
-            roads: roads.as_ref(),
-            objects: &object_masks,
-            hidden_rooms: hidden_rooms.as_ref(),
-            gates: gates.as_ref().map(|g| g.gates.as_slice()).unwrap_or(&[]),
-        };
-        mobs::build_with_progress(config, &mut rng, &ground, &stage(0.99, 0.995))
-    });
-    let mobs = mobs.map(|mut built| {
-        notes.extend(built.notes);
-        let offset = objects.len();
-        for sp in &mut built.layout.spawns {
-            for o in &mut sp.objects {
-                *o += offset;
-            }
-        }
-        objects.extend(built.objects);
-        built.layout
-    });
-
     let mut gates = gates;
     if let Some(layout) = gates.as_mut() {
         let offset = objects.len();
@@ -286,8 +252,7 @@ pub fn generate_with_progress(
     let mut stats = built.shape.stats;
     stats.coverage_pct = region_mask.count_true() as f32 / total.max(1) as f32 * 100.0;
 
-    progress("Done", 1.0);
-    GeneratedLevel {
+    let mut level = GeneratedLevel {
         config: config.clone(),
         seed,
         objects,
@@ -303,11 +268,120 @@ pub fn generate_with_progress(
         props,
         interactive,
         hidden_rooms,
-        mobs,
+        mobs: None,
         gates,
         swamp: None,
         noise_preview: Some(built.noise_preview),
         notes,
+    };
+    // Step 11: mobs (every map kind), last.
+    place_mobs(&mut level, progress);
+    progress("Done", 1.0);
+    level
+}
+
+/// Mobs, the last node of every chain: (re)places the level's mobs from its
+/// config. Old mob markers and "Mobs:" notes are dropped; new markers go
+/// before the gate markers (which draw on top). The mobs have their own
+/// random stream (level seed + `mobs.reroll`), so this can run again on a
+/// finished level — "Re-roll mobs" — and a full generation with the same
+/// config gives the same mobs.
+pub fn place_mobs(level: &mut GeneratedLevel, progress: Progress) {
+    let stage = Stage { progress, from: 0.99, to: 0.995 };
+    if let Some(old) = level.mobs.take() {
+        let gone: std::collections::HashSet<usize> = old.spawns.iter().flat_map(|sp| sp.objects.iter().copied()).collect();
+        let mut map = vec![usize::MAX; level.objects.len()];
+        let mut kept = Vec::with_capacity(level.objects.len());
+        for (i, o) in std::mem::take(&mut level.objects).into_iter().enumerate() {
+            if !gone.contains(&i) {
+                map[i] = kept.len();
+                kept.push(o);
+            }
+        }
+        level.objects = kept;
+        remap_objects(level, |i| map[i]);
+        level.notes.retain(|n| !n.starts_with("Mobs:"));
+    }
+    let mut rng = ChaCha8Rng::seed_from_u64(
+        level.seed ^ 0x6D6F_6273_0000_0000 ^ level.config.mobs.reroll.wrapping_mul(0x9E37_79B9_7F4A_7C15),
+    );
+    let config = &level.config;
+    let built = if config.kind == crate::model::MapKind::Swamp {
+        level.swamp.as_ref().and_then(|s| {
+            let ground = swamp::spawns::SwampGround::new(
+                config,
+                &s.gate_anchors,
+                s.islands.as_ref()?,
+                s.paths.as_ref()?,
+                s.depth.as_ref()?,
+                s.trees.as_ref()?,
+            );
+            let placed: Vec<&CellMask> =
+                [level.props.as_ref().map(|l| &l.mask), level.interactive.as_ref().map(|l| &l.mask)].into_iter().flatten().collect();
+            Some(swamp::spawns::mobs(config, &mut rng, &ground, &placed, level.hidden_rooms.as_ref(), &stage))
+        })
+    } else {
+        level.regions.as_ref().and_then(|split| {
+            let object_masks: Vec<&CellMask> = [
+                level.houses.as_ref().map(|l| &l.mask),
+                level.props.as_ref().map(|l| &l.mask),
+                level.interactive.as_ref().map(|l| &l.mask),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            let ground = mobs::Ground {
+                regions: &split.map,
+                outer_wall: level.walls.as_ref().map(|w| &w.mask),
+                region_walls: level.region_walls.as_ref().map(|w| &w.mask),
+                roads: level.roads.as_ref(),
+                objects: &object_masks,
+                hidden_rooms: level.hidden_rooms.as_ref(),
+                gates: level.gates.as_ref().map(|g| g.gates.as_slice()).unwrap_or(&[]),
+            };
+            mobs::build_with_progress(config, &mut rng, &ground, &stage)
+        })
+    };
+    let Some(mut built) = built else { return };
+    // Insert before the gate markers (always the last objects).
+    let at = level.objects.iter().position(|o| o.category == crate::level::Category::Gate).unwrap_or(level.objects.len());
+    let n = built.objects.len();
+    remap_objects(level, |i| if i >= at { i + n } else { i });
+    for sp in &mut built.layout.spawns {
+        for o in &mut sp.objects {
+            *o += at;
+        }
+    }
+    level.objects.splice(at..at, built.objects);
+    level.notes.extend(built.notes);
+    level.mobs = Some(built.layout);
+}
+
+/// Apply `f` to every stored index into `level.objects` (mobs excluded).
+fn remap_objects(level: &mut GeneratedLevel, f: impl Fn(usize) -> usize) {
+    if let Some(l) = level.interactive.as_mut() {
+        for g in &mut l.groups {
+            for m in &mut g.members {
+                *m = f(*m);
+            }
+        }
+    }
+    if let Some(l) = level.hidden_rooms.as_mut() {
+        for r in &mut l.rooms {
+            for m in &mut r.objects {
+                *m = f(*m);
+            }
+        }
+    }
+    if let Some(l) = level.gates.as_mut() {
+        for g in &mut l.gates {
+            g.object = f(g.object);
+        }
+    }
+    if let Some(s) = level.swamp.as_mut() {
+        for a in &mut s.gate_anchors {
+            a.object = f(a.object);
+        }
     }
 }
 

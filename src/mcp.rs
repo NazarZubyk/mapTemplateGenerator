@@ -206,7 +206,7 @@ fn tool_list() -> Value {
             "size_m": { "type": "number", "description": "body diameter, meters (default 0.8)" },
             "balance_pct": { "type": "number", "description": "desired share among mobs; all shares are normalized to 100 (default: equal)" },
             "color": color,
-            "habitat": { "type": "string", "enum": ["land", "water", "both"], "description": "swamp maps: islands / water within reach / either (default both)" },
+            "spawn_on": { "type": "array", "items": { "type": "string", "enum": ["land", "path", "shallow", "mud"] }, "description": "swamp maps: terrains this type may spawn on (default all four)" },
         }
     });
     json!([
@@ -243,6 +243,8 @@ fn tool_list() -> Value {
                 "on_roads": { "type": "boolean" },
                 "gate_clearance_m": { "type": "number" },
                 "dead_end_guard_pct": { "type": "number", "description": "swamp maps: chance a dead-end island gets a guard pack" },
+                "hub_pct": { "type": "number", "description": "swamp maps: share of mobs, %, that must stand on hub islands (the rest anywhere)" },
+                "reroll": { "type": "integer", "minimum": 0, "description": "mob placement roll: a new value moves the mobs, the map stays" },
             } }
         },
         {
@@ -260,7 +262,7 @@ fn tool_list() -> Value {
                 "name": { "type": "string" }, "rename_to": { "type": "string" },
                 "price": { "type": "number" }, "size_m": { "type": "number" },
                 "balance_pct": { "type": "number" }, "color": color,
-                "habitat": { "type": "string", "enum": ["land", "water", "both"] },
+                "spawn_on": { "type": "array", "items": { "type": "string", "enum": ["land", "path", "shallow", "mud"] } },
             } }
         },
         {
@@ -430,6 +432,12 @@ fn set_mob_settings(c: &mut LevelConfig, args: &Value) -> Result<String, String>
     if let Some(v) = f32_arg(args, "dead_end_guard_pct") {
         m.dead_end_guard_pct = v.clamp(0.0, 100.0);
     }
+    if let Some(v) = f32_arg(args, "hub_pct") {
+        m.hub_pct = v.clamp(0.0, 100.0);
+    }
+    if let Some(v) = args.get("reroll").and_then(Value::as_u64) {
+        m.reroll = v;
+    }
     let min = match m.min_amount {
         NodeAmount::Count => format!("{}", m.min_entities),
         NodeAmount::Density => format!("{}/100 m²", m.min_per_100m2),
@@ -454,8 +462,19 @@ fn apply_mob_fields(t: &mut MobType, args: &Value) -> Result<(), String> {
     if let Some(col) = color_arg(args)? {
         t.color = col;
     }
-    if let Some(v) = args.get("habitat") {
-        t.habitat = serde_json::from_value(v.clone()).map_err(|_| "habitat must be \"land\", \"water\" or \"both\"")?;
+    if let Some(v) = args.get("spawn_on") {
+        let names = v.as_array().ok_or("spawn_on must be a list of terrains")?;
+        let mut f = crate::model::SpawnOn { land: false, path: false, shallow: false, mud: false };
+        for n in names {
+            match n.as_str() {
+                Some("land") => f.land = true,
+                Some("path") => f.path = true,
+                Some("shallow") => f.shallow = true,
+                Some("mud") => f.mud = true,
+                _ => return Err("spawn_on terrains are \"land\", \"path\", \"shallow\", \"mud\"".to_owned()),
+            }
+        }
+        t.spawn_on = f;
     }
     Ok(())
 }
@@ -661,6 +680,7 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
             "spacing_used_m": m.spacing_used_m, "stopped": m.stop_reason,
             "on_roads": m.spawns.iter().filter(|s| s.on_road).count(),
             "in_hidden_rooms": m.spawns.iter().filter(|s| s.hidden_room.is_some()).count(),
+            "in_hubs": m.in_hubs,
         })
     });
     let gate_anchors = level.swamp.as_ref().map(|s| {

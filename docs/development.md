@@ -96,7 +96,9 @@ wading limit with hummocks; deep water / thicket border) → 6 **Trees**
 (groves on islands, water trees) → 7 **Props** (near trees, shore, in
 water, path edge) → 8 **Interactive objects** (per-type terrain) → 9
 **Hidden rooms** (islets in thicket / deep water, one ford) → 10 **Mobs**
-(per-type habitat, dead-end guards). Nodes 7–10 are the town nodes' cores
+(per-type spawn terrains land / path / shallow / mud, dead-end guards,
+share of mobs on hubs). Any map: **🎲 Re-roll mobs** / **⟳ Apply mobs
+only** redo just the mobs (`generator::place_mobs`, own RNG stream). Nodes 7–10 are the town nodes' cores
 on swamp ground.
 
 Export: map.png (colored map), layer.png (R = category id, G/B = instance
@@ -116,9 +118,9 @@ rebuild it after code changes.
 |---|---|
 | `set_gates` | gates by `directions` (0° east, 90° north…) or `count` spread evenly; swamp `styles` (shore / bridge); opening, gate road, color |
 | `set_mob_types` | replace all mob types (name, price, size, share, color) + `forbid_pairs` |
-| `upsert_mob_type` / `remove_mob_type` | add or change one type (rename too, swamp `habitat`) / remove one |
+| `upsert_mob_type` / `remove_mob_type` | add or change one type (rename too, swamp `spawn_on`) / remove one |
 | `set_mob_combination` | allow/forbid two types at one spawn |
-| `set_mob_settings` | budget, max, minimum (count or density), pack size, spacing, on roads, gate clearance |
+| `set_mob_settings` | budget, max, minimum (count or density), pack size, spacing, on roads, gate clearance, swamp guards / hub share, `reroll` |
 | `patch_config` | JSON merge patch for any other node (map, regions, roads, houses, props, …) |
 | `get_config` / `reset_config` | read the config (or one section) / back to defaults |
 | `generate` / `export` | generate and summarize (mobs per type, budget, gates, notes) / write the bundle |

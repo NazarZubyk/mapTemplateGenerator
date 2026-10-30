@@ -82,16 +82,6 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
     }
     objects.extend(rooms.objects);
 
-    let mut mobs = spawns::mobs(config, &mut rng, &ground, &placed, Some(&rooms.layout), &stage(0.96, 0.99));
-    notes.extend(mobs.notes);
-    let offset = objects.len();
-    for sp in &mut mobs.layout.spawns {
-        for o in &mut sp.objects {
-            *o += offset;
-        }
-    }
-    objects.extend(mobs.objects);
-
     // Gate markers last, so they draw on top.
     let mut gate_anchors = anchors.anchors;
     for a in &mut gate_anchors {
@@ -99,8 +89,7 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
     }
     objects.extend(anchors.objects);
 
-    progress("Done", 1.0);
-    GeneratedLevel {
+    let mut level = GeneratedLevel {
         config: config.clone(),
         seed,
         objects,
@@ -113,10 +102,14 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
         props: Some(props.layout),
         interactive: Some(inter.layout),
         hidden_rooms: Some(rooms.layout),
-        mobs: Some(mobs.layout),
+        mobs: None,
         gates: None,
         swamp: Some(SwampLayout { gate_anchors, islands: Some(islands.layout), paths: Some(paths.layout), depth: Some(depth.layout), trees: Some(trees.layout) }),
         noise_preview: None,
         notes,
-    }
+    };
+    // Node 10: mobs, last (own random stream; "Re-roll mobs" reruns it).
+    crate::generator::place_mobs(&mut level, progress);
+    progress("Done", 1.0);
+    level
 }

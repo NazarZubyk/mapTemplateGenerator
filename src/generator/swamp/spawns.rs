@@ -16,25 +16,24 @@
 //! - Interactive types: `terrain` land / water / both / shore water.
 //! - Hidden rooms: islets in thicket ("outside") or deep water ("inside"),
 //!   no walls, one ford no longer than the wading limit.
-//! - Mobs: per-type habitat; dead-end islands may get a guard pack first.
+//! - Mobs: per-type spawn terrains (land / path / shallow / mud); dead-end
+//!   islands may get a guard pack first;
+//!   `hub_pct` of the mobs stand on hub islands, the rest anywhere.
 
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 
 use crate::generator::hidden_rooms::{self, HiddenRoomBuild, RoomArea};
 use crate::generator::interactive::{self, Area, InteractiveBuild, TerrainMasks};
-use crate::generator::mobs::{self, HabitatMasks, MobArea, MobBuild};
+use crate::generator::mobs::{self, MobArea, MobBuild, TerrainSets};
 use crate::generator::placement::{dilate, footprint};
 use crate::generator::props::{PropBuild, PROP_NAME, TRIES};
 use crate::generator::Stage;
 use crate::level::{
-    Category, CellMask, DepthLayout, GateAnchor, HiddenRoomLayout, IslandLayout, PathLayout, PlacedObject, PropLayout,
-    TreeLayout,
+    Category, CellMask, DepthLayout, GateAnchor, HiddenRoomLayout, IslandKind, IslandLayout, PathLayout, PlacedObject,
+    PropLayout, TreeLayout,
 };
 use crate::model::LevelConfig;
-
-/// Shoreline half-width for land + water mob packs, meters.
-const SHORE_M: f32 = 2.0;
 
 /// The swamp after the layout nodes and the trees: what every spawn node
 /// starts from.
@@ -344,18 +343,19 @@ pub(crate) fn mobs(
             if room_of[c] != 0 {
                 return room_ok[c];
             }
-            (g.land[c] || g.water[c] || (s.on_roads && g.path[c]))
+            (g.land[c] || g.water[c] || g.path[c])
                 && !g.trees.mask.cells[c]
                 && !objects.iter().any(|m| m.cells[c])
                 && !hidden(|l| &l.floor_mask, c)
         })
         .collect();
-    let boardwalk = &g.paths.boardwalk.cells;
-    let land: Vec<bool> = (0..w * h).map(|c| spawnable[c] && (g.land[c] || boardwalk[c] || room_of[c] != 0)).collect();
-    let water: Vec<bool> = (0..w * h).map(|c| spawnable[c] && !land[c]).collect();
-    let r = (SHORE_M / cell).ceil() as i64;
-    let (near_land, near_water) = (dilate(&land, w, h, r), dilate(&water, w, h, r));
-    let shore = (0..w * h).map(|c| spawnable[c] && near_land[c] && near_water[c]).collect();
+    // Terrain per cell (open islet floors count as land).
+    let terrain = TerrainSets {
+        land: (0..w * h).map(|c| spawnable[c] && (g.land[c] || room_of[c] != 0)).collect(),
+        path: (0..w * h).map(|c| spawnable[c] && g.path[c] && room_of[c] == 0).collect(),
+        shallow: (0..w * h).map(|c| spawnable[c] && g.water[c] && g.depth.shallow.cells[c]).collect(),
+        mud: (0..w * h).map(|c| spawnable[c] && g.water[c] && g.depth.mud.cells[c]).collect(),
+    };
 
     // Guarded dead ends: the island at the far end of each dead-end link.
     let chance = s.dead_end_guard_pct.clamp(0.0, 100.0) / 100.0;
@@ -368,6 +368,15 @@ pub(crate) fn mobs(
         .map(|p| (0..w * h).map(|c| spawnable[c] && g.islands.ids[c] == p.a).collect())
         .collect();
 
+    // Hub island cells (only when a hub share is asked for).
+    let hub = (s.hub_pct > 0.0).then(|| {
+        (0..w * h)
+            .map(|c| {
+                let id = g.islands.ids[c];
+                spawnable[c] && id > 0 && g.islands.islands[id as usize - 1].kind == IslandKind::Hub
+            })
+            .collect()
+    });
     let area = MobArea {
         w,
         h,
@@ -375,8 +384,9 @@ pub(crate) fn mobs(
         spawnable,
         room_of,
         road: g.path.clone(),
-        habitat: Some(HabitatMasks { land, water, shore }),
+        terrain: Some(terrain),
         guards,
+        hub,
     };
     mobs::spend(config, rng, &area, stage)
 }
@@ -385,7 +395,7 @@ pub(crate) fn mobs(
 mod tests {
     use crate::generator::grid;
     use crate::level::{Category, CellMask, GeneratedLevel};
-    use crate::model::{GateSpec, GateStyle, Habitat, InteractiveTerrain, LevelConfig, MapKind, MobType};
+    use crate::model::{GateSpec, GateStyle, InteractiveTerrain, LevelConfig, MapKind, MobType, SpawnOn};
 
     fn config() -> LevelConfig {
         let mut c = LevelConfig { kind: MapKind::Swamp, ..LevelConfig::default() };
@@ -494,37 +504,100 @@ mod tests {
         }
     }
 
-    #[test]
-    fn mob_habitats_hold() {
-        let mut c = config();
-        c.mobs.types = vec![
-            MobType { name: "Rat".into(), habitat: Habitat::Land, balance_pct: 50.0, ..MobType::default() },
-            MobType { name: "Leech".into(), habitat: Habitat::Water, balance_pct: 50.0, color: [20, 90, 200], ..MobType::default() },
-        ];
-        c.mobs.combinations = vec![vec![true, false], vec![false, true]];
-        c.mobs.on_roads = false;
-        let l = level(&c, 3);
-        let t = terrain(&l);
+    fn spawn_on(land: bool, path: bool, shallow: bool, mud: bool) -> SpawnOn {
+        SpawnOn { land, path, shallow, mud }
+    }
+
+    /// Terrain under every mob marker center: (land, path, shallow, mud).
+    fn mob_terrain(l: &GeneratedLevel) -> Vec<(usize, [bool; 4])> {
+        let s = l.swamp.as_ref().unwrap();
+        let (isl, p, d) = (s.islands.as_ref().unwrap(), s.paths.as_ref().unwrap(), s.depth.as_ref().unwrap());
         let rooms = l.hidden_rooms.as_ref().unwrap();
-        let mut seen = [0, 0];
+        let mut out = Vec::new();
         for sp in &l.mobs.as_ref().unwrap().spawns {
-            if sp.hidden_room.is_some() {
-                continue;
-            }
-            let m = &sp.members[0];
-            seen[m.type_index] += 1;
-            let isl = l.swamp.as_ref().unwrap().islands.as_ref().unwrap();
-            for &o in &sp.objects {
+            for (&o, m) in sp.objects.iter().zip(sp.members.iter().flat_map(|m| std::iter::repeat_n(m.type_index, m.count as usize))) {
                 let (x, y) = l.objects[o].center();
-                let center = (y / isl.cell_size_m) as usize * isl.width + (x / isl.cell_size_m) as usize;
-                if m.type_index == 0 {
-                    assert!(t.land[center] || rooms.floor_mask.cells[center], "a rat in the water");
-                } else {
-                    assert!(t.water[center], "a leech on land");
-                }
+                let k = (y / isl.cell_size_m) as usize * isl.width + (x / isl.cell_size_m) as usize;
+                let land = isl.ids[k] > 0 || rooms.floor_mask.cells[k];
+                out.push((m, [land, p.mud.cells[k] || p.boardwalk.cells[k], d.shallow.cells[k], d.mud.cells[k]]));
             }
         }
-        assert!(seen[0] > 0 && seen[1] > 0, "{seen:?}");
+        out
+    }
+
+    #[test]
+    fn mobs_spawn_only_on_their_terrains() {
+        let mut c = config();
+        c.mobs.types = vec![
+            MobType { name: "Rat".into(), spawn_on: spawn_on(true, false, false, false), ..MobType::default() },
+            MobType { name: "Leech".into(), spawn_on: spawn_on(false, false, true, true), color: [20, 90, 200], ..MobType::default() },
+            MobType { name: "Bandit".into(), spawn_on: spawn_on(false, true, false, false), color: [90, 90, 20], ..MobType::default() },
+        ];
+        c.mobs.combinations = vec![vec![true, false, false], vec![false, true, false], vec![false, false, true]];
+        c.mobs.pack_max = 1;
+        c.mobs.dead_end_guard_pct = 0.0;
+        let l = level(&c, 3);
+        let mut seen = [0; 3];
+        for (t, [land, path, shallow, mud]) in mob_terrain(&l) {
+            seen[t] += 1;
+            match t {
+                0 => assert!(land, "a rat off land"),
+                1 => assert!(shallow || mud, "a leech out of the water"),
+                _ => assert!(path, "a bandit off the paths"),
+            }
+        }
+        assert!(seen.iter().all(|&n| n > 0), "{seen:?}");
+        // A type with no terrain is never placed (and a note says so).
+        c.mobs.types[2].spawn_on = spawn_on(false, false, false, false);
+        let l = level(&c, 3);
+        assert_eq!(l.mobs.as_ref().unwrap().per_type[2], 0);
+        assert!(l.notes.iter().any(|n| n.contains("'Bandit' is never placed")), "{:?}", l.notes);
+    }
+
+    #[test]
+    fn mixed_packs_stand_on_the_border() {
+        let mut c = config();
+        c.mobs.types = vec![
+            MobType { name: "Rat".into(), spawn_on: spawn_on(true, false, false, false), ..MobType::default() },
+            MobType { name: "Leech".into(), spawn_on: spawn_on(false, false, true, false), color: [20, 90, 200], ..MobType::default() },
+        ];
+        c.mobs.pack_min = 2;
+        c.mobs.pack_max = 2;
+        c.mobs.dead_end_guard_pct = 0.0;
+        let l = level(&c, 6);
+        let isl = l.swamp.as_ref().unwrap().islands.as_ref().unwrap();
+        let shallow = &l.swamp.as_ref().unwrap().depth.as_ref().unwrap().shallow;
+        let mixed: Vec<_> = l.mobs.as_ref().unwrap().spawns.iter().filter(|sp| sp.members.len() == 2).collect();
+        assert!(!mixed.is_empty());
+        let near = |sp: &&crate::level::MobSpawn, want: &dyn Fn(usize) -> bool| {
+            let (cx, cy) = ((sp.center_m[0] / isl.cell_size_m) as i64, (sp.center_m[1] / isl.cell_size_m) as i64);
+            (-3..=3i64).any(|dy| (-3..=3i64).any(|dx| want((cy + dy) as usize * isl.width + (cx + dx) as usize)))
+        };
+        for sp in mixed {
+            assert!(near(&sp, &|k| isl.ids[k] > 0) && near(&sp, &|k| shallow.cells[k]), "mixed pack far from the shore");
+        }
+    }
+
+    #[test]
+    fn reroll_moves_only_the_mobs() {
+        let c = config();
+        let base = level(&c, 2);
+        let mut moved = base.clone();
+        moved.config.mobs.reroll = 7;
+        crate::generator::place_mobs(&mut moved, &|_, _| {});
+        assert_ne!(moved.mobs, base.mobs, "re-roll moves the mobs");
+        let non_mob = |l: &GeneratedLevel| l.objects.iter().filter(|o| o.category != Category::MobSpawn).cloned().collect::<Vec<_>>();
+        assert_eq!(non_mob(&moved), non_mob(&base), "the rest of the map stays");
+        assert_eq!(moved.swamp, base.swamp);
+        // Gate markers stay last and their indexes stay right.
+        for a in &moved.swamp.as_ref().unwrap().gate_anchors {
+            assert_eq!(moved.objects[a.object].category, Category::Gate);
+        }
+        // A full generation with the same reroll gives the same mobs.
+        let mut again = c.clone();
+        again.mobs.reroll = 7;
+        assert_eq!(level(&again, 2).mobs, moved.mobs);
+        assert_eq!(level(&again, 2).objects, moved.objects);
     }
 
     #[test]
@@ -549,6 +622,39 @@ mod tests {
         assert_eq!(guarded, dead.len(), "{guarded} of {} dead ends guarded", dead.len());
         c.mobs.dead_end_guard_pct = 0.0;
         assert!(level(&c, 4).notes.is_empty());
+    }
+
+    #[test]
+    fn hub_share_puts_that_share_of_mobs_on_hubs() {
+        let on_hub = |l: &GeneratedLevel| {
+            let isl = l.swamp.as_ref().unwrap().islands.as_ref().unwrap();
+            let m = l.mobs.as_ref().unwrap();
+            let count = m
+                .spawns
+                .iter()
+                .filter(|sp| {
+                    let k = (sp.center_m[1] / isl.cell_size_m) as usize * isl.width + (sp.center_m[0] / isl.cell_size_m) as usize;
+                    let id = isl.ids[k];
+                    id > 0 && isl.islands[id as usize - 1].kind == crate::level::IslandKind::Hub
+                })
+                .map(|sp| sp.members.iter().map(|x| x.count).sum::<u32>())
+                .sum::<u32>();
+            (count, m.entities, m.in_hubs)
+        };
+        let mut c = config();
+        c.mobs.dead_end_guard_pct = 0.0;
+        c.mobs.hub_pct = 100.0;
+        let (hub, all, counted) = on_hub(&level(&c, 5));
+        assert_eq!(hub, all, "100%: every mob on a hub");
+        assert_eq!(counted, all);
+        c.mobs.hub_pct = 40.0;
+        let l = level(&c, 5);
+        let (_, all, counted) = on_hub(&l);
+        let share = counted as f32 / all as f32;
+        assert!((0.35..=0.5).contains(&share), "40% asked, got {share:.2}");
+        assert!(l.mobs.as_ref().unwrap().spawns.iter().filter(|sp| sp.hub).count() > 0);
+        c.mobs.hub_pct = 0.0;
+        assert_eq!(on_hub(&level(&c, 5)).2, 0);
     }
 
     #[test]
