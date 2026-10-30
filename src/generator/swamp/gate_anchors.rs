@@ -139,7 +139,7 @@ fn roll(rng: &mut ChaCha8Rng, a: f32, b: f32) -> f32 {
 
 /// Where the ray from `center` at `deg` leaves the `w`×`h` map, and that
 /// edge's inward normal.
-fn edge_hit(center: (f32, f32), deg: f32, w: f32, h: f32) -> ((f32, f32), (f32, f32)) {
+pub(crate) fn edge_hit(center: (f32, f32), deg: f32, w: f32, h: f32) -> ((f32, f32), (f32, f32)) {
     let (dx, dy) = (deg.to_radians().cos(), -deg.to_radians().sin());
     let t_for = |d: f32, c: f32, size: f32| {
         if d > 1e-6 {

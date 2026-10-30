@@ -54,7 +54,8 @@ src/
 │   └── cave/            # the cave node chain (docs/cave-plan.md)
 │       ├── mod.rs       #   cave pipeline
 │       ├── style.rs     #   cave node 2: natural / hand-made style zones
-│       └── chambers.rs  #   cave node 3: halls and grottos (blobs / rooms)
+│       ├── chambers.rs  #   cave node 3: halls and grottos (blobs / rooms)
+│       └── tunnels.rs   #   cave node 4: tunnels (chain → maze), junctions, gate tunnels
 ├── render.rs            # map.png / layer.png rasterizers
 ├── export.rs            # export bundle writer + spec.json
 ├── validate.rs          # config validation (early subset; step 13 extends it)
@@ -110,7 +111,10 @@ on swamp ground.
 1 Template → 2 **Style** (natural % + mixing → natural / hand-made zones;
 0% mixing = two zones, 100% = patchwork) → 3 **Chambers** (halls +
 grottos; natural blobs or hand-made rectangular rooms by zone; gap, rock
-margin). The app and the MCP server
+margin) → 4 **Tunnels** (labyrinth slider: chain → tree + loops → maze
+with junctions, optional per style; natural winding tunnels with
+squeezes, hand-made straight ones; dead-end stubs; gate tunnels from the
+edge). The app and the MCP server
 (with no config file / `reset_config`) start on Cave for now
 (`LevelConfig::START_KIND`, `LevelConfig::starting()`); `default()` stays
 Town for the tests.
@@ -120,7 +124,7 @@ G/B = instance id; swamp ground: R = ground id 8–14, G = depth, B =
 island id — spelled out in spec.json `layer_encoding`), spec.json
 (format v2) (legend, every object, regions, roads, wall gaps, interactive
 groups, hidden rooms, mobs, gates; swamp: `gate_anchors`, `islands`,
-`paths`, `gate_bridges`, `water`; cave: `cave_zones`, `chambers`).
+`paths`, `gate_bridges`, `water`; cave: `cave_zones`, `chambers`, `tunnels`, `junctions`, `cave_gates`).
 
 ## MCP server
 

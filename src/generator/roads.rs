@@ -436,7 +436,7 @@ pub(crate) fn widths_from_traffic(traffic: &[u32], main_pct: f32, lo: f32, hi: f
 }
 
 /// Cosine of the angle at `at` between the directions to `p` and `q`.
-fn cos_angle(at: (f32, f32), p: (f32, f32), q: (f32, f32)) -> f32 {
+pub(crate) fn cos_angle(at: (f32, f32), p: (f32, f32), q: (f32, f32)) -> f32 {
     let (ux, uy) = (p.0 - at.0, p.1 - at.1);
     let (vx, vy) = (q.0 - at.0, q.1 - at.1);
     let len = ((ux * ux + uy * uy) * (vx * vx + vy * vy)).sqrt().max(1e-6);
@@ -444,7 +444,7 @@ fn cos_angle(at: (f32, f32), p: (f32, f32), q: (f32, f32)) -> f32 {
 }
 
 /// Do segments p1–p2 and q1–q2 properly cross (not just touch)?
-fn segments_cross(p1: (f32, f32), p2: (f32, f32), q1: (f32, f32), q2: (f32, f32)) -> bool {
+pub(crate) fn segments_cross(p1: (f32, f32), p2: (f32, f32), q1: (f32, f32), q2: (f32, f32)) -> bool {
     let orient = |a: (f32, f32), b: (f32, f32), c: (f32, f32)| {
         (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0)
     };

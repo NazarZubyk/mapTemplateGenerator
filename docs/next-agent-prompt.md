@@ -62,8 +62,8 @@ town-chain tests use `LevelConfig::test_64()`.
 
 **Cave is next**: its own chain (`src/generator/cave/`), planned in
 `docs/cave-plan.md` (C1 style: natural % + mixing → C2 chambers → C3 tunnels +
-gates → C4 carve & smooth → C5 hazards → C6 pillars → C7 spawns → C8 export). C1 style and
-C2 chambers are done; the user drives it one step at a time. The app / MCP start on Cave
+gates → C4 carve & smooth → C5 hazards → C6 pillars → C7 spawns → C8 export). C1 style, C2
+chambers and C3 tunnels are done; the user drives it one step at a time. The app / MCP start on Cave
 (`LevelConfig::starting()`); `default()` stays Town for the tests.
 
 **MCP server** `mapgen-mcp` (`src/mcp.rs`, `src/bin/mapgen-mcp.rs`,

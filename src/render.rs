@@ -101,8 +101,12 @@ pub fn cave_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[u8
                 [m(rock[0], t[0]), m(rock[1], t[1]), m(rock[2], t[2])]
             };
             let (rock_n, rock_h) = (mix(st.natural_color), mix(st.handmade_color));
+            let tunnel = |c: usize| cave.tunnels.as_ref().is_some_and(|t| t.mask.cells[c]);
             (0..style.ids.len())
                 .map(|c| match ch.ids[c] {
+                    // Tunnels take the zone's style: the carving node shapes
+                    // them by it.
+                    0 if tunnel(c) => of(style.style_at(c)),
                     0 if style.style_at(c) == CaveStyle::Natural => rock_n,
                     0 => rock_h,
                     id => of(ch.chambers[id as usize - 1].style),
@@ -123,7 +127,10 @@ pub fn cave_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
     match (&cave.chambers, &cave.style) {
         (Some(ch), _) => {
             for (kind, color) in kinds {
-                if ch.chambers.iter().any(|c| c.style == kind) {
+                let in_tunnels = cave.tunnels.as_ref().zip(cave.style.as_ref()).is_some_and(|(t, st)| {
+                    t.mask.cells.iter().enumerate().any(|(c, &on)| on && st.style_at(c) == kind)
+                });
+                if ch.chambers.iter().any(|c| c.style == kind) || in_tunnels {
                     out.push((color, format!("{} floor", kind.label())));
                 }
             }

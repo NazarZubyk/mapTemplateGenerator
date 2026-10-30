@@ -226,12 +226,12 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, anchors: &[GateAnchor],
 }
 
 /// Center of a cell, meters.
-fn center(c: usize, w: usize, cell: f32) -> [f32; 2] {
+pub(crate) fn center(c: usize, w: usize, cell: f32) -> [f32; 2] {
     [((c % w) as f32 + 0.5) * cell, ((c / w) as f32 + 0.5) * cell]
 }
 
 /// The cells under a polyline (meters), in order, without repeats.
-fn polyline_cells(corners: &[[f32; 2]], w: usize, h: usize, cell: f32) -> Vec<usize> {
+pub(crate) fn polyline_cells(corners: &[[f32; 2]], w: usize, h: usize, cell: f32) -> Vec<usize> {
     let mut out: Vec<usize> = Vec::new();
     for seg in corners.windows(2) {
         let (p, q) = (seg[0], seg[1]);
@@ -253,7 +253,7 @@ fn polyline_cells(corners: &[[f32; 2]], w: usize, h: usize, cell: f32) -> Vec<us
 /// around both ends. `cost` is the step factor of entering a cell; `cheapest`
 /// its lowest value (keeps the heuristic admissible). Returns the cells,
 /// `from` first.
-fn astar(w: usize, h: usize, from: usize, to: usize, cost: impl Fn(usize) -> f32, cheapest: f32) -> Vec<usize> {
+pub(crate) fn astar(w: usize, h: usize, from: usize, to: usize, cost: impl Fn(usize) -> f32, cheapest: f32) -> Vec<usize> {
     let (fx, fy, tx, ty) = (from % w, from / w, to % w, to / w);
     let span = fx.abs_diff(tx).max(fy.abs_diff(ty));
     let pad = (span * 3 / 5).max(40);

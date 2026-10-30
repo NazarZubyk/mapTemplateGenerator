@@ -12,9 +12,10 @@
 //!    `elongation_pct`, domain-warped and roughened by `irregularity_pct`
 //!    (like the swamp islands). Hand-made: a rectangle of the same area,
 //!    aspect up to `room_aspect_max`, axis-aligned or rotated up to
-//!    `room_rotation_deg`. Natural keeps the best-scoring cells of its
-//!    window up to the area; hand-made keeps exactly the cells inside the
-//!    rectangle.
+//!    `room_rotation_deg`, its walls wandering by `room_roughness_pct`
+//!    (dug by hand, not cut by tools). Natural keeps the best-scoring cells
+//!    of its window up to the area; hand-made keeps the cells inside its
+//!    (wobbly) rectangle.
 //! 4. **Gap** — two chambers never come closer than `gap_m` (the weaker
 //!    cell goes), so there is always rock between them.
 //! 5. **Tidy** — each chamber keeps its largest piece, holes filled; one
@@ -38,6 +39,11 @@ pub struct ChamberBuild {
 /// Most grottos, whatever the density says.
 const MAX_GROTTOS: u32 = 400;
 const CANDIDATES: usize = 32;
+/// Hand-made room walls wander by up to this at 100% roughness, meters
+/// (the noise rarely reaches its ends, so the walls stay within ~1 m).
+const ROOM_WOBBLE_M: f32 = 3.0;
+/// Feature size of that wander, meters.
+const ROOM_WOBBLE_SCALE_M: f32 = 3.5;
 
 /// One chamber before rasterizing.
 struct Seed {
@@ -59,6 +65,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout) ->
     let (wm, hm) = (w as f32 * cell, h as f32 * cell);
     let irr = (s.irregularity_pct / 100.0).clamp(0.0, 1.0);
     let elong = (s.elongation_pct / 100.0).clamp(0.0, 1.0);
+    let room_rough = (s.room_roughness_pct / 100.0).clamp(0.0, 1.0);
     let margin_m = s.rock_margin_m.max(0.0);
     let mut notes = Vec::new();
     let noise = NoiseField::new(rng.random::<u64>());
@@ -164,9 +171,12 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout) ->
                     CaveStyle::HandMade => {
                         let (dx, dy) = (px - seed.center.0, py - seed.center.1);
                         let (u, v) = (dx * cos + dy * sin, -dx * sin + dy * cos);
-                        // Half sides (a, b)·√π/2: area π·a·b = π·r².
+                        // Meters inside the nearest wall; half sides
+                        // (a, b)·√π/2 give area π·a·b = π·r². Hand-dug
+                        // walls wander by up to ROOM_WOBBLE_M.
                         let k = PI.sqrt() / 2.0;
-                        1.0 - (u.abs() / (a * k)).max(v.abs() / (b * k))
+                        let wobble = room_rough * ROOM_WOBBLE_M * (noise.fbm(px / ROOM_WOBBLE_SCALE_M + salt, py / ROOM_WOBBLE_SCALE_M - salt, 2) - 0.5) * 2.0;
+                        (a * k - u.abs()).min(b * k - v.abs()) + wobble
                     }
                 };
                 cells.push((sc, y * w + x));
@@ -356,6 +366,7 @@ mod tests {
     fn hand_made_rooms_are_rectangles() {
         let mut c = config();
         c.cave.style.natural_pct = 0.0;
+        c.cave.chambers.room_roughness_pct = 0.0;
         let (_, b) = run(&c, 5);
         let l = &b.layout;
         assert!(l.chambers.iter().all(|ch| ch.style == CaveStyle::HandMade));
@@ -369,6 +380,25 @@ mod tests {
             let bbox = (x1 - x0 + 1) * (y1 - y0 + 1);
             assert!(cells.len() as f32 >= bbox as f32 * 0.9, "room {} fills {} of {bbox}", ch.id, cells.len());
         }
+    }
+
+    #[test]
+    fn rough_rooms_stay_roomlike() {
+        let mut c = config();
+        c.cave.style.natural_pct = 0.0;
+        let (_, b) = run(&c, 5);
+        let l = &b.layout;
+        let mut uneven = 0;
+        for ch in &l.chambers {
+            let cells: Vec<usize> = (0..l.ids.len()).filter(|&k| l.ids[k] == ch.id).collect();
+            let xs = cells.iter().map(|&k| k % l.width);
+            let ys = cells.iter().map(|&k| k / l.width);
+            let bbox = (xs.clone().max().unwrap() - xs.min().unwrap() + 1) * (ys.clone().max().unwrap() - ys.min().unwrap() + 1);
+            let fill = cells.len() as f32 / bbox as f32;
+            assert!(fill > 0.7, "room {} fills only {fill}", ch.id);
+            uneven += (fill < 0.97) as usize;
+        }
+        assert!(uneven * 2 > l.chambers.len(), "hand-dug rooms should not be exact rectangles");
     }
 
     #[test]

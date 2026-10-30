@@ -726,6 +726,17 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
             "halls": l.chambers.iter().filter(|c| c.kind == crate::level::ChamberKind::Hall).count(),
             "hand_made": l.chambers.iter().filter(|c| c.style == crate::level::CaveStyle::HandMade).count(),
         })),
+        "tunnels": level.cave.as_ref().and_then(|c| c.tunnels.as_ref()).map(|l| json!({
+            "links": l.tunnels.iter().filter(|t| !matches!(t.a, crate::level::TunnelEnd::Gate(_)) && t.b != crate::level::TunnelEnd::Blind).count(),
+            "loops": l.tunnels.iter().filter(|t| t.extra).count(),
+            "dead_end_stubs": l.tunnels.iter().filter(|t| t.b == crate::level::TunnelEnd::Blind).count(),
+            "dead_end_chambers": l.dead_end_chambers,
+            "junctions": l.junctions.len(),
+            "squeezes": l.tunnels.iter().filter(|t| t.squeeze_m.is_some()).count(),
+            "zone_crossings": l.tunnels.iter().filter(|t| t.cross_zone).count(),
+            "gates": l.gates.len(),
+            "main_route_m": l.main_route_m,
+        })),
         "trees": level.swamp.as_ref().and_then(|s| s.trees.as_ref()).map(|t| json!({
             "grove_trees": t.grove_trees, "water_trees": t.water_trees, "grove_cover_pct": t.grove_cover_pct,
         })),

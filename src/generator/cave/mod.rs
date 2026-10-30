@@ -5,7 +5,10 @@
 //! 2. **Style** — which parts of the map are natural caverns and which are
 //!    hand-made passages, as zones.
 //! 3. **Chambers** — halls and grottos: blobs in natural zones,
-//!    rectangular rooms in hand-made ones. Not linked yet.
+//!    rectangular rooms in hand-made ones.
+//! 4. **Tunnels** — the chambers linked from a chain to a maze (labyrinth
+//!    slider), natural winding or hand-made straight, gate tunnels in from
+//!    the edge.
 
 use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 
@@ -14,6 +17,7 @@ use crate::level::{CaveLayout, GeneratedLevel};
 use crate::model::LevelConfig;
 
 pub mod chambers;
+pub mod tunnels;
 pub mod style;
 
 /// Generate a cave level: one RNG stream, nodes in fixed order.
@@ -29,11 +33,15 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
     let chambers = chambers::build(config, &mut rng, &style.layout);
     notes.extend(chambers.notes);
 
+    progress("Digging tunnels", 0.5);
+    let tunnels = tunnels::build(config, &mut rng, &style.layout, &chambers.layout);
+    notes.extend(tunnels.notes);
+
     progress("Done", 1.0);
     GeneratedLevel {
         config: config.clone(),
         seed,
-        objects: Vec::new(),
+        objects: tunnels.objects,
         shape: None,
         walls: None,
         regions: None,
@@ -46,7 +54,7 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
         mobs: None,
         gates: None,
         swamp: None,
-        cave: Some(CaveLayout { style: Some(style.layout), chambers: Some(chambers.layout) }),
+        cave: Some(CaveLayout { style: Some(style.layout), chambers: Some(chambers.layout), tunnels: Some(tunnels.layout) }),
         noise_preview: None,
         notes,
     }

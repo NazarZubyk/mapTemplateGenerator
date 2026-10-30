@@ -389,6 +389,11 @@ fn remap_objects(level: &mut GeneratedLevel, f: impl Fn(usize) -> usize) {
             a.object = f(a.object);
         }
     }
+    if let Some(t) = level.cave.as_mut().and_then(|c| c.tunnels.as_mut()) {
+        for g in &mut t.gates {
+            g.object = f(g.object);
+        }
+    }
 }
 
 #[cfg(test)]

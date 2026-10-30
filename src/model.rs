@@ -305,6 +305,111 @@ pub struct CaveSettings {
     pub style: CaveStyleSettings,
     /// Node 3: halls and grottos.
     pub chambers: ChamberSettings,
+    /// Node 4: tunnels linking the chambers, gate tunnels.
+    pub tunnels: TunnelSettings,
+}
+
+/// Settings of the cave tunnels node (step C3): how the chambers are
+/// linked (straightforward → labyrinth) and what the tunnels look like.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TunnelSettings {
+    /// 0 = one route, chamber after chamber; 40 = half labyrinth; 100 =
+    /// dense maze with crossings. Sets branching / loops / dead ends /
+    /// junctions while `auto` is on.
+    pub labyrinth_pct: f32,
+    /// Hand-made parts get their own labyrinth value.
+    pub per_style: bool,
+    /// Labyrinth % of the hand-made parts (with `per_style`).
+    pub handmade_labyrinth_pct: f32,
+    /// Branching / loops / dead ends / junctions follow the labyrinth
+    /// slider; off = the values below are used as set.
+    pub auto: bool,
+    /// Chance, %, a new chamber hangs on the nearest chamber of the network
+    /// instead of the last one (0 = a chain, 100 = a tree).
+    pub branching_pct: f32,
+    /// Chance per pair of neighboring chambers of an extra link closing a
+    /// loop, %.
+    pub loops_pct: f32,
+    /// Blind tunnel stubs.
+    pub dead_ends: u32,
+    /// Tunnel crossings with no chamber.
+    pub junctions: u32,
+    /// Natural tunnel width range, meters (by traffic).
+    pub width_min_m: f32,
+    pub width_max_m: f32,
+    /// Natural tunnels: how much the width changes along a tunnel, %
+    /// (± around its width).
+    pub width_variation_pct: f32,
+    /// Natural tunnels: how much they wind, %.
+    pub wiggle_pct: f32,
+    /// Share of the natural tunnels, %, with a short narrow stretch.
+    pub squeeze_pct: f32,
+    pub squeeze_width_m: f32,
+    /// Hand-made tunnel width, meters.
+    pub mine_width_m: f32,
+    /// Hand-made tunnels: how uneven the hand-dug walls are, % (0 =
+    /// ruler-straight).
+    pub mine_roughness_pct: f32,
+    /// Hand-made tunnels: chance, %, of a 45° leg.
+    pub diagonal_pct: f32,
+    /// Hand-made tunnels: most turns.
+    pub max_turns: u32,
+    /// Dead-end stub length range, meters.
+    pub stub_min_m: f32,
+    pub stub_max_m: f32,
+}
+
+impl Default for TunnelSettings {
+    fn default() -> Self {
+        let mut s = Self {
+            labyrinth_pct: 40.0,
+            per_style: false,
+            handmade_labyrinth_pct: 70.0,
+            auto: true,
+            branching_pct: 0.0,
+            loops_pct: 0.0,
+            dead_ends: 0,
+            junctions: 0,
+            width_min_m: 3.5,
+            width_max_m: 7.0,
+            width_variation_pct: 40.0,
+            wiggle_pct: 50.0,
+            squeeze_pct: 30.0,
+            squeeze_width_m: 2.0,
+            mine_width_m: 2.0,
+            mine_roughness_pct: 50.0,
+            diagonal_pct: 20.0,
+            max_turns: 2,
+            stub_min_m: 6.0,
+            stub_max_m: 16.0,
+        };
+        let d = LabyrinthParams::from_pct(s.labyrinth_pct);
+        (s.branching_pct, s.loops_pct, s.dead_ends) = (d.branching_pct, d.loops_pct, d.dead_ends);
+        s
+    }
+}
+
+/// What the labyrinth slider sets (docs/cave-plan.md, "Complexity").
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LabyrinthParams {
+    pub branching_pct: f32,
+    pub loops_pct: f32,
+    pub dead_ends: u32,
+    /// Junctions per chamber.
+    pub junction_share: f32,
+}
+
+impl LabyrinthParams {
+    pub fn from_pct(pct: f32) -> Self {
+        let l = (pct / 100.0).clamp(0.0, 1.0);
+        Self {
+            branching_pct: (l * 150.0).min(100.0),
+            loops_pct: ((l - 0.2) * 125.0).clamp(0.0, 100.0),
+            dead_ends: (l * 8.0).round() as u32,
+            junction_share: ((l - 0.5) * 1.2).max(0.0),
+        }
+    }
 }
 
 /// Settings of the cave chambers node (step C2): the halls and grottos the
@@ -333,6 +438,9 @@ pub struct ChamberSettings {
     /// Hand-made rooms: most rotation off the map axes, degrees (0 =
     /// always axis-aligned).
     pub room_rotation_deg: f32,
+    /// Hand-made rooms: how uneven the hand-dug walls are, % (0 = exact
+    /// rectangles).
+    pub room_roughness_pct: f32,
     /// Least rock between two chambers, meters.
     pub gap_m: f32,
     /// Chambers keep this far from the map edge, meters (solid rock).
@@ -356,6 +464,7 @@ impl Default for ChamberSettings {
             elongation_pct: 40.0,
             room_aspect_max: 1.8,
             room_rotation_deg: 0.0,
+            room_roughness_pct: 40.0,
             gap_m: 6.0,
             rock_margin_m: 6.0,
             rock_color: [52, 47, 44],

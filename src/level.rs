@@ -705,6 +705,72 @@ impl ChamberLayout {
     }
 }
 
+/// One end of a cave tunnel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind", content = "id")]
+pub enum TunnelEnd {
+    Chamber(u16),
+    Junction(u16),
+    Gate(u32),
+    /// A dead-end stub's blind end.
+    Blind,
+}
+
+/// One cave tunnel.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Tunnel {
+    pub a: TunnelEnd,
+    pub b: TunnelEnd,
+    /// How it was dug: winding (natural) or straight runs (hand-made). The
+    /// carving node then shapes every cell by the zone it lies in.
+    pub style: CaveStyle,
+    /// An extra link closing a loop.
+    pub extra: bool,
+    /// Its ends lie in different style zones.
+    pub cross_zone: bool,
+    pub width_m: f32,
+    /// Width of its narrow stretch, if it has one.
+    pub squeeze_m: Option<f32>,
+    pub length_m: f32,
+    /// Centerline, meters (sampled about every meter).
+    pub path_m: Vec<[f32; 2]>,
+}
+
+/// A tunnel crossing with no chamber.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Junction {
+    pub id: u16,
+    pub point_m: [f32; 2],
+}
+
+/// A cave gate: an opening at the map edge with a tunnel in.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CaveGate {
+    pub id: u32,
+    pub direction_deg: f32,
+    /// The gate point at the map edge, meters.
+    pub point_m: [f32; 2],
+    /// The chamber its tunnel leads to.
+    pub chamber: u16,
+    /// Index of its marker in `GeneratedLevel::objects`.
+    pub object: usize,
+}
+
+/// The cave tunnels node's output.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TunnelLayout {
+    /// Tunnel floor (off the chambers).
+    pub mask: CellMask,
+    pub tunnels: Vec<Tunnel>,
+    pub junctions: Vec<Junction>,
+    pub gates: Vec<CaveGate>,
+    /// Walking distance from the gates (or the first chamber without
+    /// gates) to the farthest floor, meters.
+    pub main_route_m: f32,
+    /// Chambers with exactly one tunnel.
+    pub dead_end_chambers: u32,
+}
+
 /// The cave node chain's output, filled node by node (docs/cave-plan.md).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct CaveLayout {
@@ -712,6 +778,8 @@ pub struct CaveLayout {
     pub style: Option<StyleLayout>,
     #[serde(default)]
     pub chambers: Option<ChamberLayout>,
+    #[serde(default)]
+    pub tunnels: Option<TunnelLayout>,
 }
 
 /// The mobs node's output.

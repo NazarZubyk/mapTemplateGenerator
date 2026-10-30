@@ -203,7 +203,9 @@ up to 3 times, score-cut shapes, gap pass, `swamp::islands::tidy` — now
 - Natural shape = the island formula (warped, roughened ellipse, best
   cells up to the area). Hand-made = exactly the cells inside a rectangle
   of the same area (half sides (a, b)·√π/2), long side east or south,
-  tilted by up to `room_rotation_deg`.
+  tilted by up to `room_rotation_deg`. Hand-dug, not tool-cut: the score
+  is meters inside the nearest wall + `room_roughness_pct` (40%) × 3 m ×
+  noise (3.5 m features), so the walls wander ~±0.5 m at the default.
 - Style and zone come from the style layout at the center.
 - Output `ChamberLayout { ids (0 = rock), chambers: Chamber { id, kind
   (hall / grotto), style, zone, center_m, size_m, angle_deg, cells,
@@ -215,10 +217,11 @@ up to 3 times, score-cut shapes, gap pass, `swamp::islands::tidy` — now
   (`render::cave_legend`); spec.json `chambers`; MCP `generate` reports
   `chambers`.
 - UI: node "3 · Chambers" — Halls, Hall size, Grottos by count / density,
-  Grotto size, Irregularity, Elongation, Room aspect, Room rotation, Gap,
+  Grotto size, Irregularity, Elongation, Room aspect, Room rotation, Room
+  roughness, Gap,
   Rock margin, Rock color, 🎲.
 
-### Step C3 — Tunnels (node 4, cave only)
+### Step C3 — Tunnels (node 4, cave only) — done
 
 1. Link graph from **`labyrinth_pct`** (see "Complexity"): chain along a
    spine at 0, tree + loops + dead ends in the middle (as the swamp
@@ -240,6 +243,74 @@ Settings: labyrinth % (+ per style), branching, loops, dead ends,
 junctions (set by the slider, overridable), natural width range, wiggle,
 squeeze % + width, mine width, diagonal %, max turns, gates (the shared
 list). Stats: main route length, loops, dead ends, junctions.
+
+**C3 notes (as built).** `generator/cave/tunnels.rs`; reuses the roads
+node's `link_traffic`, `widths_from_traffic`, `stamp_path`,
+`segments_cross`, `cos_angle` and the swamp paths' `astar`,
+`polyline_cells`, `center` and gate anchors' `edge_hit` (now
+`pub(crate)`).
+
+- **Labyrinth mapping** (`LabyrinthParams::from_pct`, l = slider / 100):
+  branching = min(150·l, 100)%, loops = clamp(125·(l − 0.2), 0, 100)%,
+  dead ends = round(8·l), junctions = Σ over chambers max(0, 1.2·(l −
+  0.5)) — none below 50%, ~13 at 100% with 21 chambers. `auto` (default
+  on) applies it; off = the four values as set. `per_style` +
+  `handmade_labyrinth_pct`: each chamber / junction uses its style's
+  value (branching by the last node's style, loops by the average of both
+  ends, dead ends / junctions summed per chamber). The chamber count is
+  NOT scaled by the slider (the chambers node runs before) — set it there.
+- **Tree**: grown from the chamber nearest gate 1 (or chamber 1); each
+  step rolls branching of the last node's style: miss = nearest free node
+  to the last node (chain), hit = nearest (network node, free node) pair.
+  0% → a chain (degree ≤ 2, tested).
+- **Zones**: below 50% mixing a same-zone candidate always wins (so the
+  tree crosses each boundary once) and loops may cross only while the
+  crossings stay ≤ max(zone_links, tree crossings); from 50% a crossing
+  just costs ×(1 + 4·(1 − mixing)) distance.
+- **Loops**: each node's 4 nearest neighbors, chance by style, no
+  crossings, no angle under 30° at either end.
+- **Natural digging**: A* (8 directions) over exp(wiggle noise, 14 m);
+  own chambers ×0.3, other chambers ×3, rock margin ×4, dug tunnels ×0.6;
+  width by traffic 3.5–7 m (30% main; widened after the first look —
+  2–5 m read too narrow), then `width_variation_pct` (40%) swings it
+  along the tunnel (noise, 8 m features, ±60% cap) — throats and
+  bellies; round brush, at least a plus shape. Squeezes: 30% of the
+  tunnels longer than 12 m and wider than the squeeze get a 4 m stretch
+  at 2 m, with a funnel (width grows 0.6 m per m away from it).
+- **Hand-made digging**: the link's style = the zone at the straight
+  midpoint; corners with 1..=`max_turns` (2) right-angle turns along the
+  axes (legs split at random), or (`diagonal_pct` 20%) one 45° leg + one
+  straight leg; dug by hand (`dig_mine`): the centerline sways sideways
+  (`mine_roughness_pct` 50% × (2.2 m at 9 m features + 0.6 m at 2.5 m),
+  faded out over the last 3 m at both ends) and the width changes ±(0.6
+  × roughness); square brush ≥ 2 cells, `mine_width_m` (2 m). `path_m`
+  keeps the straight design corners.
+- **Dead ends**: stubs from random chambers 6–16 m past the edge, target
+  in open rock (≥ gap from any floor), never through another chamber, at
+  the min width (natural) or mine width (hand-made, ≤ 1 turn); 12 tries
+  each, a note for those that find no room.
+- **Gates**: the shared gate list; point = ray from the center to the
+  edge (inset half a marker); tunnel to the chamber nearest the point,
+  in the style of the zone at the edge (hand-made: first leg straight in
+  from the edge), at the max natural width / mine width; may cross the
+  rock margin. Marker = `Category::Gate`.
+- Output `TunnelLayout { mask (tunnel floor off the chambers), tunnels:
+  Tunnel { a, b: TunnelEnd (chamber / junction / gate / blind), style,
+  extra, cross_zone, width_m, squeeze_m, length_m, path_m }, junctions,
+  gates: CaveGate, main_route_m (walk from the gates to the farthest
+  floor), dead_end_chambers }`. Floor = chambers + tunnels, one piece
+  (tested at 0/40/70/100%).
+- Look (200 m, 21 chambers): 0% → 22 tunnels incl. gates, route ~270 m;
+  40% → ~28; 100% → ~70 tunnels, 13 junctions. ~0.2–0.3 s.
+- Map: tunnel floor in the style color of the zone under it (the carving
+  node shapes cells by zone); spec.json `tunnels`, `junctions`,
+  `cave_gates`; MCP `generate` reports `tunnels`.
+- UI: node "4 · Tunnels" — Labyrinth, Per style (+ Hand-made
+  labyrinth), Auto, Branching / Loops / Dead ends / Junctions (greyed
+  with Auto, Junctions shows the last generated count), Width, Wiggle,
+  Width variation, Squeezes, Squeeze width, Mine width, Mine roughness,
+  Diagonals, Max turns, Stub length,
+  the gate list (shared rows), 🎲.
 
 ### Step C4 — Carve & smooth (node 5, cave only)
 

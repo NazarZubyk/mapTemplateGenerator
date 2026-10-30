@@ -92,7 +92,9 @@ fn cave_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_cave_style(ui, app);
     flow_arrow(ui, "natural / hand-made zones");
     node_chambers(ui, app);
-    ui.weak("Next cave step: C3 tunnels (docs/cave-plan.md).");
+    flow_arrow(ui, "chambers, not linked yet");
+    node_tunnels(ui, app);
+    ui.weak("Next cave step: C4 carve & smooth (docs/cave-plan.md).");
     ui.add_space(4.0);
     ui.separator();
 }
@@ -184,6 +186,9 @@ hand-made rooms.";
 between 1 and this). 1 = square rooms. NO EFFECT on natural chambers.";
     const TIP_ROT: &str = "Hand-made rooms: most rotation off the map axes, degrees. 0° = \
 always axis-aligned (reads as dug / built). NO EFFECT on natural chambers.";
+    const TIP_ROOM_ROUGH: &str = "Hand-made rooms: how uneven the walls are — dug by hand, \
+not cut by tools. 0%: exact rectangles. 40%: walls wander a little. 100%: rough, bulging \
+walls (still clearly rooms). NO EFFECT on natural chambers.";
     const TIP_GAP: &str = "Least rock between two chambers, meters — chambers never merge; \
 the tunnels node links them through this rock.";
     const TIP_MARGIN: &str = "Chambers keep this far from the map edge, meters — solid \
@@ -218,6 +223,7 @@ by the style zone under it, so the zones stay readable).";
                 ui.add(egui::DragValue::new(&mut s.room_aspect_max).range(1.0..=4.0).speed(0.01).suffix("×"))
             });
             param_row(ui, "Room rotation", TIP_ROT, |ui| ui.add(egui::Slider::new(&mut s.room_rotation_deg, 0.0..=45.0).suffix("°")));
+            param_row(ui, "Room roughness", TIP_ROOM_ROUGH, |ui| ui.add(egui::Slider::new(&mut s.room_roughness_pct, 0.0..=100.0).suffix("%")));
             param_row(ui, "Gap", TIP_GAP, |ui| ui.add(meters(&mut s.gap_m, 40.0)));
             param_row(ui, "Rock margin", TIP_MARGIN, |ui| ui.add(meters(&mut s.rock_margin_m, 60.0)));
             param_row(ui, "Rock color", TIP_ROCK, |ui| ui.color_edit_button_srgb(&mut s.rock_color));
@@ -245,6 +251,7 @@ by the style zone under it, so the zones stay readable).";
                 s.elongation_pct = rng.random_range(0.0..=100.0);
                 s.room_aspect_max = rng.random_range(1.0..=3.0);
                 s.room_rotation_deg = if rng.random_bool(0.5) { 0.0 } else { rng.random_range(0.0..=30.0) };
+                s.room_roughness_pct = rng.random_range(0.0..=100.0);
                 s.gap_m = rng.random_range(2.0..=12.0);
                 s.rock_margin_m = rng.random_range(2.0..=14.0);
             }
@@ -260,6 +267,148 @@ by the style zone under it, so the zones stay readable).";
                 l.chambers.len() - halls,
                 l.chambers.len() - made,
                 l.floor_pct
+            ));
+        }
+    });
+}
+
+/// Cave node 4: tunnels linking the chambers, gate tunnels (step C3 in
+/// docs/cave-plan.md).
+fn node_tunnels(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_LAB: &str = "How the chambers are linked. 0%: straightforward — one route, \
+chamber after chamber, no branches, loops or dead ends. 40%: half labyrinth — a main route \
+with side branches, a few loops and dead ends. 100%: labyrinth — branches everywhere, many \
+loops, dead ends and tunnel crossings with no chamber (junctions). With Auto on it sets the \
+four values below.";
+    const TIP_PER_STYLE: &str = "Hand-made parts get their own labyrinth value — e.g. a \
+simple natural cavern leading into a maze of mine tunnels. NO EFFECT with Auto off (the \
+values below apply to both) or with only one style on the map.";
+    const TIP_HM_LAB: &str = "Labyrinth % of the hand-made parts (Per style on).";
+    const TIP_AUTO: &str = "On: Branching, Loops, Dead ends and Junctions follow the \
+labyrinth slider (shown greyed). Off: they are used as you set them.";
+    const TIP_BRANCH: &str = "Chance, %, that the next chamber hangs on the nearest chamber \
+of the network instead of the last one. 0%: a chain. 100%: a tree with many side branches.";
+    const TIP_LOOPS: &str = "Chance per pair of neighboring chambers of an extra tunnel \
+closing a loop, %. 0%: exactly one way between any two chambers. Tunnels never cross.";
+    const TIP_DEAD: &str = "Blind tunnel stubs from random chambers into the rock — dead \
+ends to explore. (Chambers on one tunnel only are dead ends too; the stats count them.)";
+    const TIP_JUNCTIONS: &str = "Tunnel crossings with no chamber, in open rock — tunnels \
+meet there and split again. Those that find no open rock are skipped (note).";
+    const TIP_WIDTH: &str = "Natural tunnel width range, meters, by traffic: the busiest \
+tunnels get the max, quiet ones narrow down to the min; dead ends are the narrowest. Width \
+variation then swings it along each tunnel. NO EFFECT on hand-made tunnels (Mine width).";
+    const TIP_VARY: &str = "Natural tunnels: how much the width changes along a tunnel, ± \
+around its width — narrow throats and wide bellies (every ~8 m). 0%: pipes of one width. \
+NO EFFECT on hand-made tunnels (Mine roughness).";
+    const TIP_MINE_ROUGH: &str = "Hand-made tunnels: how uneven they are — dug by hand, not \
+by tools. The line sways sideways a little and the width changes a little; the overall run \
+stays straight. 0%: ruler-straight, one width. NO EFFECT on natural tunnels.";
+    const TIP_WIGGLE: &str = "How much natural tunnels wind. 0%: the shortest way. 50%: \
+natural bends. 100%: long detours. NO EFFECT on hand-made tunnels.";
+    const TIP_SQUEEZE: &str = "Share of the natural tunnels, %, with a short narrow stretch \
+— a chokepoint. Only tunnels wider than the squeeze and long enough get one.";
+    const TIP_SQUEEZE_W: &str = "Width of a squeeze, meters. NO EFFECT with Squeezes 0%.";
+    const TIP_MINE: &str = "Hand-made tunnel width, meters — the same along the whole \
+tunnel. NO EFFECT on natural tunnels.";
+    const TIP_DIAG: &str = "Hand-made tunnels: chance, %, of one 45° leg (plus one straight \
+leg) instead of right-angle turns.";
+    const TIP_TURNS: &str = "Hand-made tunnels: most right-angle turns (rolled per tunnel, \
+1..this). 0: straight lines at any angle.";
+    const TIP_STUB: &str = "Dead-end stub length range, meters (into the rock past the \
+chamber's edge). NO EFFECT with 0 dead ends.";
+    const TIP_GATES: &str = "Gate directions from the map center (0° east, 90° north). Each \
+gate is an opening at the map edge with a tunnel to the nearest chamber, in the style of the \
+zone at the edge. Where it leads is up to the game.";
+    // With Auto the junction count depends on the chambers: show the last
+    // generated one.
+    let last_junctions = app.generated.as_ref().and_then(|l| l.cave.as_ref()).and_then(|c| c.tunnels.as_ref()).map(|t| t.junctions.len() as u32);
+    node(ui, "4 · Tunnels", |ui| {
+        ui.weak("input: chambers · output: tunnels (chain → maze), junctions, gate tunnels — one floor (cave)");
+        let s = &mut app.config.cave.tunnels;
+        egui::Grid::new("tunnels_node_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Labyrinth", TIP_LAB, |ui| ui.add(egui::Slider::new(&mut s.labyrinth_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Per style", TIP_PER_STYLE, |ui| ui.checkbox(&mut s.per_style, "hand-made own value"));
+            if s.per_style {
+                param_row(ui, "Hand-made labyrinth", TIP_HM_LAB, |ui| {
+                    ui.add(egui::Slider::new(&mut s.handmade_labyrinth_pct, 0.0..=100.0).suffix("%"))
+                });
+            }
+            param_row(ui, "Auto", TIP_AUTO, |ui| ui.checkbox(&mut s.auto, "from the labyrinth slider"));
+            if s.auto {
+                let d = crate::model::LabyrinthParams::from_pct(s.labyrinth_pct);
+                (s.branching_pct, s.loops_pct, s.dead_ends) = (d.branching_pct, d.loops_pct, d.dead_ends);
+                if let Some(j) = last_junctions {
+                    s.junctions = j;
+                }
+            }
+            let manual = !s.auto;
+            param_row(ui, "Branching", TIP_BRANCH, |ui| ui.add_enabled(manual, egui::Slider::new(&mut s.branching_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Loops", TIP_LOOPS, |ui| ui.add_enabled(manual, egui::Slider::new(&mut s.loops_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Dead ends", TIP_DEAD, |ui| ui.add_enabled(manual, egui::DragValue::new(&mut s.dead_ends).range(0..=60).speed(0.1)));
+            param_row(ui, "Junctions", TIP_JUNCTIONS, |ui| ui.add_enabled(manual, egui::DragValue::new(&mut s.junctions).range(0..=60).speed(0.1)));
+            param_row(ui, "Width", TIP_WIDTH, |ui| range_m(ui, &mut s.width_min_m, &mut s.width_max_m, 0.5..=20.0));
+            param_row(ui, "Width variation", TIP_VARY, |ui| ui.add(egui::Slider::new(&mut s.width_variation_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Wiggle", TIP_WIGGLE, |ui| ui.add(egui::Slider::new(&mut s.wiggle_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Squeezes", TIP_SQUEEZE, |ui| ui.add(egui::Slider::new(&mut s.squeeze_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Squeeze width", TIP_SQUEEZE_W, |ui| ui.add(meters(&mut s.squeeze_width_m, 10.0)));
+            param_row(ui, "Mine width", TIP_MINE, |ui| ui.add(meters(&mut s.mine_width_m, 10.0)));
+            param_row(ui, "Mine roughness", TIP_MINE_ROUGH, |ui| ui.add(egui::Slider::new(&mut s.mine_roughness_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Diagonals", TIP_DIAG, |ui| ui.add(egui::Slider::new(&mut s.diagonal_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Max turns", TIP_TURNS, |ui| ui.add(egui::DragValue::new(&mut s.max_turns).range(0..=4).speed(0.05)));
+            param_row(ui, "Stub length", TIP_STUB, |ui| range_m(ui, &mut s.stub_min_m, &mut s.stub_max_m, 1.0..=60.0));
+        });
+        let mut remove = None;
+        egui::Grid::new("cave_gates_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            remove = gate_list_rows(ui, &mut app.config.gates.gates, TIP_GATES, false);
+        });
+        if let Some(i) = remove {
+            app.config.gates.gates.remove(i);
+        }
+        ui.horizontal(|ui| gate_list_buttons(ui, &mut app.config.gates.gates));
+        let s = &mut app.config.cave.tunnels;
+        ui.horizontal(|ui| {
+            if ui
+                .button("🎲 Random params")
+                .on_hover_text("Rolls every tunnel setting independently inside its reasonable range (gates stay). Set values only; press Generate.")
+                .clicked()
+            {
+                let mut rng = rand::rng();
+                s.labyrinth_pct = rng.random_range(0.0..=100.0);
+                s.per_style = rng.random_bool(0.3);
+                s.handmade_labyrinth_pct = rng.random_range(0.0..=100.0);
+                s.auto = rng.random_bool(0.7);
+                s.branching_pct = rng.random_range(0.0..=100.0);
+                s.loops_pct = rng.random_range(0.0..=60.0);
+                s.dead_ends = rng.random_range(0..=10);
+                s.junctions = rng.random_range(0..=12);
+                s.width_min_m = rng.random_range(2.0..=5.0);
+                s.width_max_m = rng.random_range(3.0..=9.0);
+                s.width_variation_pct = rng.random_range(0.0..=80.0);
+                s.mine_roughness_pct = rng.random_range(0.0..=100.0);
+                s.wiggle_pct = rng.random_range(0.0..=100.0);
+                s.squeeze_pct = rng.random_range(0.0..=80.0);
+                s.squeeze_width_m = rng.random_range(1.0..=2.0);
+                s.mine_width_m = rng.random_range(1.0..=3.5);
+                s.diagonal_pct = rng.random_range(0.0..=60.0);
+                s.max_turns = rng.random_range(0..=3);
+                s.stub_min_m = rng.random_range(3.0..=12.0);
+                s.stub_max_m = rng.random_range(6.0..=24.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(l) = app.generated.as_ref().and_then(|l| l.cave.as_ref()).and_then(|c| c.tunnels.as_ref()) {
+            use crate::level::TunnelEnd;
+            let links = l.tunnels.iter().filter(|t| !matches!(t.a, TunnelEnd::Gate(_)) && t.b != TunnelEnd::Blind).count();
+            ui.weak(format!(
+                "generated: {links} tunnels · {} loops · {} dead ends ({} stubs, {} chambers) · {} junctions · {} squeezes · {} gates · main route {:.0} m",
+                l.tunnels.iter().filter(|t| t.extra).count(),
+                l.tunnels.iter().filter(|t| t.b == TunnelEnd::Blind).count() as u32 + l.dead_end_chambers,
+                l.tunnels.iter().filter(|t| t.b == TunnelEnd::Blind).count(),
+                l.dead_end_chambers,
+                l.junctions.len(),
+                l.tunnels.iter().filter(|t| t.squeeze_m.is_some()).count(),
+                l.gates.len(),
+                l.main_route_m
             ));
         }
     });

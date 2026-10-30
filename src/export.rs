@@ -115,6 +115,16 @@ pub struct ExportSpec {
     /// long-axis angle, area.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chambers: Option<Vec<crate::level::Chamber>>,
+    /// Cave tunnels: ends (chamber / junction / gate / blind), style, loop
+    /// and zone-crossing flags, width, squeeze width, length, centerline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tunnels: Option<Vec<crate::level::Tunnel>>,
+    /// Cave tunnel crossings with no chamber.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub junctions: Option<Vec<crate::level::Junction>>,
+    /// Cave gates: edge point, direction, the chamber their tunnel leads to.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cave_gates: Option<Vec<crate::level::CaveGate>>,
     /// Every placed object with position and size in meters.
     pub objects: Vec<crate::level::PlacedObject>,
 }
@@ -406,6 +416,9 @@ impl ExportSpec {
             gate_bridges: level.swamp.as_ref().and_then(|s| s.paths.as_ref()).map(|l| l.bridges.clone()),
             cave_zones: level.cave.as_ref().and_then(|c| c.style.as_ref()).map(|l| l.zones.clone()),
             chambers: level.cave.as_ref().and_then(|c| c.chambers.as_ref()).map(|l| l.chambers.clone()),
+            tunnels: level.cave.as_ref().and_then(|c| c.tunnels.as_ref()).map(|l| l.tunnels.clone()),
+            junctions: level.cave.as_ref().and_then(|c| c.tunnels.as_ref()).map(|l| l.junctions.clone()),
+            cave_gates: level.cave.as_ref().and_then(|c| c.tunnels.as_ref()).map(|l| l.gates.clone()),
             water: level.swamp.as_ref().and_then(|s| s.depth.as_ref()).map(|d| {
                 let s = &level.config.swamp.depth;
                 ExportWater {
