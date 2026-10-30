@@ -175,13 +175,15 @@ mod tests {
     use super::*;
     use rand_chacha::rand_core::SeedableRng;
 
-    use crate::model::{GateSpec, MapKind};
+    use crate::model::{GateAnchorSettings, GateSpec, MapKind};
 
     fn swamp(dirs: &[(f32, GateStyle)]) -> LevelConfig {
         let mut config = LevelConfig { kind: MapKind::Swamp, ..LevelConfig::default() };
         config.map.width_m = 100.0;
         config.map.height_m = 60.0;
         config.gates.gates = dirs.iter().map(|&(d, style)| GateSpec { direction_deg: d, style }).collect();
+        config.swamp.gate_anchors =
+            GateAnchorSettings { corner_snap_deg: 20.0, island_min_m: 10.0, island_max_m: 16.0, bridge_min_m: 8.0, bridge_max_m: 14.0 };
         config
     }
 

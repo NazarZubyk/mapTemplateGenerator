@@ -286,7 +286,7 @@ mod tests {
     }
 
     fn config_with(min: f32, max: f32) -> LevelConfig {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.outer_wall.segment_min_m = min;
         config.outer_wall.segment_max_m = max;
         config
@@ -391,10 +391,10 @@ mod tests {
     /// (W) around the region (#).
     #[test]
     fn ascii_wall_preview() {
-        let built = crate::generator::shape::build(&LevelConfig::default(), 42);
+        let built = crate::generator::shape::build(&LevelConfig::test_64(), 42);
         let region = built.shape.mask;
         let mut rng = ChaCha8Rng::seed_from_u64(42);
-        if let Some(w) = build(&LevelConfig::default(), &mut rng, &region) {
+        if let Some(w) = build(&LevelConfig::test_64(), &mut rng, &region) {
             for y in 0..region.height {
                 let row: String = (0..region.width)
                     .map(|x| {

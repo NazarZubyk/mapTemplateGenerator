@@ -64,7 +64,9 @@ fn swamp_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_gate_anchors(ui, app);
     flow_arrow(ui, "gate points + where their islands go");
     node_islands(ui, app);
-    ui.weak("Next swamp nodes appear here as they finish: paths, depth & border, trees, then props, interactive objects, hidden rooms and mobs (docs/swamp-plan.md).");
+    flow_arrow(ui, "islands, not linked yet");
+    node_paths(ui, app);
+    ui.weak("Next swamp nodes appear here as they finish: depth & border, trees, then props, interactive objects, hidden rooms and mobs (docs/swamp-plan.md).");
     ui.add_space(4.0);
     ui.separator();
 }
@@ -1046,6 +1048,90 @@ gate islands reach over the edge on purpose).";
                 hub + small,
                 l.requested,
                 l.land_pct
+            ));
+        }
+    });
+}
+
+/// Swamp node 4: mud paths and boardwalks linking the islands (step S3 in
+/// docs/swamp-plan.md).
+fn node_paths(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_WIDTH: &str = "Mud path width range, meters. Paths get a hierarchy by \
+traffic: the busiest links (Main paths) get the max, quiet ones narrow down to the min — \
+dead-end spurs are the narrowest. min = max: every path the same width. Boardwalks use \
+their own width.";
+    const TIP_MAIN: &str = "Share of the links, %, that are main paths at the full max \
+width (the ones most routes between islands go through). NO EFFECT when min = max width.";
+    const TIP_WIGGLE: &str = "How much mud paths wind through the water. 0%: the shortest \
+way (straight and 45° runs). 50%: natural bends. 100%: long detours. Boardwalks stay \
+straight (see Kinks).";
+    const TIP_LOOPS: &str = "Chance per pair of neighboring islands of an extra link that \
+closes a loop, %. 0%: a pure tree — exactly one way between any two islands (most \
+labyrinth-like, lots of backtracking). 25%: some loops. 60%+: an open network. Links never \
+cross each other.";
+    const TIP_DEAD: &str = "Small islands linked by exactly ONE path and never by a loop \
+— reward spots at the end of a spur. Taken at random from the small islands; NO EFFECT \
+without small islands.";
+    const TIP_BOARD: &str = "Chance per link, %, that it is a boardwalk (planks over the \
+water: straight segments with kinks) instead of a winding mud path. Bridge gates always get \
+a boardwalk to the border, whatever this says.";
+    const TIP_BOARD_W: &str = "Boardwalk width, meters — links and gate bridges.";
+    const TIP_KINKS: &str = "Most kinks in one boardwalk (rolled 0..this per boardwalk); \
+each kink bends it sideways by up to 15% of its length. 0: dead straight. NO EFFECT with \
+0% boardwalks and no bridge gates (bridges are always straight).";
+    const TIP_MUD_C: &str = "Mud path color on the map image, the preview and the legend.";
+    const TIP_BOARD_C: &str = "Boardwalk color on the map image, the preview and the legend.";
+    node(ui, "4 · Paths", |ui| {
+        ui.weak("input: islands · output: mud paths, boardwalks, gate bridges — one walkable network (swamp)");
+        let s = &mut app.config.swamp.paths;
+        egui::Grid::new("paths_node_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Width", TIP_WIDTH, |ui| range_m(ui, &mut s.width_min_m, &mut s.width_max_m, 0.5..=20.0));
+            param_row(ui, "Main paths", TIP_MAIN, |ui| ui.add(egui::Slider::new(&mut s.main_paths_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Wiggle", TIP_WIGGLE, |ui| ui.add(egui::Slider::new(&mut s.wiggle_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Loops", TIP_LOOPS, |ui| ui.add(egui::Slider::new(&mut s.extra_links_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Dead ends", TIP_DEAD, |ui| ui.add(egui::DragValue::new(&mut s.dead_ends).range(0..=64).speed(0.1)));
+            param_row(ui, "Boardwalks", TIP_BOARD, |ui| ui.add(egui::Slider::new(&mut s.boardwalk_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Boardwalk width", TIP_BOARD_W, |ui| {
+                ui.add(egui::DragValue::new(&mut s.boardwalk_width_m).range(0.5..=10.0).speed(0.05).suffix(" m"))
+            });
+            param_row(ui, "Kinks", TIP_KINKS, |ui| ui.add(egui::DragValue::new(&mut s.boardwalk_kinks).range(0..=4).speed(0.05)));
+            param_row(ui, "Mud color", TIP_MUD_C, |ui| ui.color_edit_button_srgb(&mut s.mud_color));
+            param_row(ui, "Boardwalk color", TIP_BOARD_C, |ui| ui.color_edit_button_srgb(&mut s.boardwalk_color));
+        });
+        ui.horizontal(|ui| {
+            if ui
+                .button("🎲 Random params")
+                .on_hover_text(
+                    "Rolls every path setting (not the colors) independently inside its \
+                     reasonable range — they may contradict each other. Set values only; \
+                     press Generate.",
+                )
+                .clicked()
+            {
+                let mut rng = rand::rng();
+                s.width_min_m = rng.random_range(0.5..=4.0);
+                s.width_max_m = rng.random_range(0.5..=6.0);
+                s.main_paths_pct = rng.random_range(0.0..=100.0);
+                s.wiggle_pct = rng.random_range(0.0..=100.0);
+                s.extra_links_pct = rng.random_range(0.0..=80.0);
+                s.dead_ends = rng.random_range(0..=8);
+                s.boardwalk_pct = rng.random_range(0.0..=100.0);
+                s.boardwalk_width_m = rng.random_range(0.8..=3.0);
+                s.boardwalk_kinks = rng.random_range(0..=4);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(l) = app.generated.as_ref().and_then(|l| l.swamp.as_ref()).and_then(|s| s.paths.as_ref()) {
+            let count = |f: &dyn Fn(&crate::level::SwampPath) -> bool| l.paths.iter().filter(|p| f(p)).count();
+            let water: f32 = l.paths.iter().map(|p| p.length_m).sum();
+            ui.weak(format!(
+                "generated: {} links ({} loops, {} dead ends, {} boardwalks) · {} gate bridges · {:.0} m over water",
+                l.paths.len(),
+                count(&|p| p.extra),
+                count(&|p| p.dead_end),
+                count(&|p| p.kind == crate::level::PathKind::Boardwalk),
+                l.bridges.len(),
+                water
             ));
         }
     });

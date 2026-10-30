@@ -308,8 +308,12 @@ mod tests {
             GateSpec { direction_deg: 90.0, style: GateStyle::Shore },
             GateSpec { direction_deg: 270.0, style: GateStyle::Bridge },
         ];
-        c.swamp.islands.small_amount = NodeAmount::Count;
-        c.swamp.islands.small_count = 8;
+        c.swamp.gate_anchors.island_min_m = 10.0;
+        c.swamp.gate_anchors.island_max_m = 16.0;
+        let i = &mut c.swamp.islands;
+        (i.hub_count, i.hub_min_m, i.hub_max_m) = (3, 14.0, 22.0);
+        (i.small_amount, i.small_count, i.small_min_m, i.small_max_m) = (NodeAmount::Count, 8, 4.0, 8.0);
+        (i.gap_m, i.border_m) = (4.0, 6.0);
         c
     }
 

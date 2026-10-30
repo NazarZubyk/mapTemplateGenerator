@@ -10,7 +10,7 @@ requirements, see [goals.md](goals.md).
 ```sh
 cargo run                                 # launch the app
 cargo build --release --bin mapgen-mcp    # the MCP server for Claude
-cargo test                                # unit tests
+cargo test                                # unit tests (town tests on a 64 m map)
 cargo clippy --all-targets
 ```
 
@@ -46,7 +46,8 @@ src/
 │   └── swamp/           # the swamp node chain (docs/swamp-plan.md)
 │       ├── mod.rs       #   swamp pipeline
 │       ├── gate_anchors.rs # swamp node 2: gate points + gate islands
-│       └── islands.rs   #   swamp node 3: gate, hub and small islands
+│       ├── islands.rs   #   swamp node 3: gate, hub and small islands
+│       └── paths.rs     #   swamp node 4: mud paths, boardwalks, gate bridges
 ├── render.rs            # map.png / layer.png rasterizers
 ├── export.rs            # export bundle writer + spec.json
 ├── validate.rs          # config validation (early subset; step 13 extends it)
@@ -85,11 +86,14 @@ body and apply on ⚙ Generate. The algorithms are described step by step in
 [swamp-plan.md](swamp-plan.md)): 1 Template → 2 **Gate anchors** (gate
 points on the border, shore or bridge style, corner snap, where each gate
 island goes) → 3 **Islands** (gate islands, hubs, small islands; shape
-irregularity, gap, border margin) → paths, depth & border, trees, … next.
+irregularity, gap, border margin) → 4 **Paths** (tree + loops + dead
+ends, winding mud by traffic width, boardwalks with kinks, gate bridges) →
+depth & border, trees, … next.
 
 Export: map.png (colored map), layer.png (R = category id, G/B = instance
 id), spec.json (legend, every object, regions, roads, wall gaps, interactive
-groups, hidden rooms, mobs, gates; swamp: `gate_anchors`, `islands`).
+groups, hidden rooms, mobs, gates; swamp: `gate_anchors`, `islands`,
+`paths`, `gate_bridges`).
 
 ## MCP server
 

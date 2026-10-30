@@ -232,6 +232,14 @@ fn draw_legend(painter: &egui::Painter, canvas: Rect, level: &GeneratedLevel) {
     {
         entries.push((level.config.swamp.islands.color, "island".to_owned()));
     }
+    if let Some(paths) = level.swamp.as_ref().and_then(|s| s.paths.as_ref()) {
+        let p = &level.config.swamp.paths;
+        for (mask, color, name) in [(&paths.mud, p.mud_color, "mud path"), (&paths.boardwalk, p.boardwalk_color, "boardwalk")] {
+            if mask.count_true() > 0 {
+                entries.push((color, name.to_owned()));
+            }
+        }
+    }
     if let Some(roads) = &level.roads
         && !roads.nodes.is_empty()
     {

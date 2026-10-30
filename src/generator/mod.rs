@@ -318,7 +318,7 @@ mod tests {
     #[test]
     fn progress_only_moves_forward_and_ends_at_one() {
         let seen = std::cell::RefCell::new(Vec::new());
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.shape.sections = 3;
         let level = generate_with_progress(&config, 7, &|label, f| seen.borrow_mut().push((label, f)));
         let seen = seen.into_inner();
@@ -333,14 +333,14 @@ mod tests {
 
     #[test]
     fn same_seed_same_result() {
-        let config = LevelConfig::default();
+        let config = LevelConfig::test_64();
         assert_eq!(generate(&config, 42), generate(&config, 42));
         let other = LevelConfig {
             map: crate::model::MapSettings {
                 width_m: 32.0,
                 ..crate::model::MapSettings::default()
             },
-            ..LevelConfig::default()
+            ..LevelConfig::test_64()
         };
         assert_ne!(generate(&config, 42), generate(&other, 42));
     }

@@ -376,7 +376,7 @@ mod tests {
 
     #[test]
     fn default_town_is_one_connected_shape_with_sane_coverage() {
-        let built = build(&LevelConfig::default(), 42);
+        let built = build(&LevelConfig::test_64(), 42);
         assert!(grid::is_connected(&built.shape.mask), "must be one piece");
         let coverage = built.shape.stats.coverage_pct;
         // Coverage is the share of the whole map; the default border margin
@@ -390,7 +390,7 @@ mod tests {
 
     #[test]
     fn coverage_hits_target_on_many_seeds() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.shape.coverage_target_pct = 45.0;
         config.shape.border_margin_m = 0.0; // pure percentile semantics
         for seed in 1..=10u64 {
@@ -404,13 +404,13 @@ mod tests {
 
     #[test]
     fn same_config_and_seed_give_identical_shape() {
-        let config = LevelConfig::default();
+        let config = LevelConfig::test_64();
         assert_eq!(build(&config, 7), build(&config, 7));
     }
 
     #[test]
     fn different_seed_changes_the_shape() {
-        let config = LevelConfig::default();
+        let config = LevelConfig::test_64();
         let a = build(&config, 1).shape.mask.cells;
         let b = build(&config, 2).shape.mask.cells;
         assert_ne!(a, b);
@@ -418,7 +418,7 @@ mod tests {
 
     #[test]
     fn tiny_coverage_target_yields_almost_nothing() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.shape.coverage_target_pct = 1.0;
         let built = build(&config, 42);
         assert!(
@@ -430,7 +430,7 @@ mod tests {
 
     #[test]
     fn huge_min_blob_size_yields_empty_shape() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         // Larger than any possible piece: everything gets dropped.
         config.shape.min_blob_cells = 100_000;
         let built = build(&config, 42);
@@ -440,7 +440,7 @@ mod tests {
 
     #[test]
     fn noise_preview_matches_mask_dimensions() {
-        let built = build(&LevelConfig::default(), 42);
+        let built = build(&LevelConfig::test_64(), 42);
         assert_eq!(built.noise_preview.width, built.shape.mask.width);
         assert_eq!(built.noise_preview.height, built.shape.mask.height);
         assert_eq!(built.noise_preview.values.len(), built.shape.mask.cells.len());
@@ -448,7 +448,7 @@ mod tests {
 
     #[test]
     fn margin_keeps_town_off_the_border_even_when_nearly_full() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         // Stress: even a map filled to 99% must leave the border ring empty.
         config.shape.coverage_target_pct = 99.0;
         for seed in 1..=8u64 {
@@ -470,7 +470,7 @@ mod tests {
 
     #[test]
     fn border_margin_changes_the_shape() {
-        let mut tight = LevelConfig::default();
+        let mut tight = LevelConfig::test_64();
         tight.shape.border_margin_m = 0.0;
         let mut wide = tight.clone();
         wide.shape.border_margin_m = 10.0;
@@ -484,7 +484,7 @@ mod tests {
     /// `cargo test ascii_preview -- --nocapture` to see the shape.
     #[test]
     fn ascii_preview_of_default_town() {
-        let built = build(&LevelConfig::default(), 42);
+        let built = build(&LevelConfig::test_64(), 42);
         for y in 0..built.shape.mask.height {
             let row: String = (0..built.shape.mask.width)
                 .map(|x| if built.shape.mask.get(x, y) { '#' } else { '.' })
@@ -501,8 +501,8 @@ mod scaling {
     /// With scale_with_map, a 3× larger map is the same shape, 3× larger.
     #[test]
     fn bigger_map_keeps_the_shape_character() {
-        let small = LevelConfig::default();
-        let mut big = LevelConfig::default();
+        let small = LevelConfig::test_64();
+        let mut big = LevelConfig::test_64();
         big.map.width_m *= 3.0;
         big.map.height_m *= 3.0;
         for seed in [1u64, 2, 3] {
@@ -527,7 +527,7 @@ mod sections {
     fn sections_are_islands_joined_by_wide_bridges() {
         for n in 2..=4u32 {
             for seed in 1..=5u64 {
-                let mut config = LevelConfig::default();
+                let mut config = LevelConfig::test_64();
                 config.shape.sections = n;
                 let built = build(&config, seed);
                 let stats = built.shape.stats;
@@ -540,7 +540,7 @@ mod sections {
 
     #[test]
     fn one_section_has_no_channels_or_wide_bridges() {
-        let built = build(&LevelConfig::default(), 3);
+        let built = build(&LevelConfig::test_64(), 3);
         assert_eq!(built.shape.stats.sections, 1);
         assert_eq!(built.shape.stats.section_bridges, 0);
     }

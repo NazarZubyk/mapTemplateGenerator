@@ -300,7 +300,17 @@ impl MapGenApp {
             let c = level.config.swamp.islands.color;
             let land = egui::Color32::from_rgb(c[0], c[1], c[2]);
             let water = egui::Color32::from_gray(38);
-            let pixels = islands.ids.iter().map(|&id| if id > 0 { land } else { water }).collect();
+            let mut pixels: Vec<egui::Color32> = islands.ids.iter().map(|&id| if id > 0 { land } else { water }).collect();
+            if let Some(paths) = level.swamp.as_ref().and_then(|s| s.paths.as_ref()) {
+                let p = &level.config.swamp.paths;
+                for (mask, c) in [(&paths.mud, p.mud_color), (&paths.boardwalk, p.boardwalk_color)] {
+                    for (px, &on) in pixels.iter_mut().zip(&mask.cells) {
+                        if on {
+                            *px = egui::Color32::from_rgb(c[0], c[1], c[2]);
+                        }
+                    }
+                }
+            }
             self.bench_shape = Some(upload("bench_shape", pixels, islands.width, islands.height));
         }
 

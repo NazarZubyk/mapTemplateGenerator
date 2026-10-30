@@ -406,7 +406,7 @@ mod tests {
     #[test]
     fn rooms_are_placed_and_reachable() {
         for seed in 1..=4u64 {
-            let mut config = LevelConfig::default();
+            let mut config = LevelConfig::test_64();
             config.hidden_rooms.count = 3;
             let lvl = level(&config, seed);
             let layout = lvl.hidden_rooms.as_ref().unwrap();
@@ -422,7 +422,7 @@ mod tests {
 
     #[test]
     fn outside_rooms_tunnel_through_the_wall() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.hidden_rooms.place = HiddenRoomPlace::OutsideWall;
         config.hidden_rooms.count = 2;
         let lvl = level(&config, 3);
@@ -444,7 +444,7 @@ mod tests {
     #[test]
     fn inside_rooms_keep_the_ground_one_piece() {
         for seed in 1..=4u64 {
-            let mut config = LevelConfig::default();
+            let mut config = LevelConfig::test_64();
             config.hidden_rooms.place = HiddenRoomPlace::Inside;
             config.hidden_rooms.count = 4;
             // A packed town has few big clear spots; small rooms fit anywhere.
@@ -461,7 +461,7 @@ mod tests {
     #[test]
     fn paths_never_dig_through_objects_or_region_walls() {
         for seed in 1..=4u64 {
-            let mut config = LevelConfig::default();
+            let mut config = LevelConfig::test_64();
             config.hidden_rooms.count = 4;
             config.hidden_rooms.path_width_m = 1.5;
             let lvl = level(&config, seed);
@@ -482,7 +482,7 @@ mod tests {
 
     #[test]
     fn path_width_and_mob_flag_follow_settings() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.hidden_rooms.path_width_m = 1.5;
         config.hidden_rooms.mob_passable_pct = 100.0;
         let lvl = level(&config, 2);
@@ -494,7 +494,7 @@ mod tests {
 
     #[test]
     fn impossible_rooms_leave_a_note() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.hidden_rooms.size_min_m = 60.0;
         config.hidden_rooms.size_max_m = 60.0;
         let lvl = level(&config, 1);
@@ -504,7 +504,7 @@ mod tests {
 
     #[test]
     fn non_town_maps_get_rooms() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.kind = MapKind::Cave;
         config.shape = ShapeSettings::for_kind(config.kind);
         let lvl = level(&config, 2);
@@ -514,7 +514,7 @@ mod tests {
 
     #[test]
     fn same_seed_same_rooms() {
-        let config = LevelConfig::default();
+        let config = LevelConfig::test_64();
         assert_eq!(level(&config, 8).hidden_rooms, level(&config, 8).hidden_rooms);
     }
 }

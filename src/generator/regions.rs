@@ -625,7 +625,7 @@ mod tests {
     }
 
     fn config_with(count: u32, shares: &[f32]) -> LevelConfig {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.regions.count = count;
         config.regions.shares = shares.to_vec();
         config
@@ -692,14 +692,14 @@ mod tests {
     /// (digits = region ids, '.' = outside).
     #[test]
     fn ascii_regions_preview() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         if let Ok(n) = std::env::var("NESTING") {
             config.regions.nesting_pct = n.parse().unwrap();
         }
         let shape = crate::generator::shape::build(&config, 42);
         let mut rng = ChaCha8Rng::seed_from_u64(42);
         let wall = crate::generator::walls::build(
-            &LevelConfig::default(),
+            &LevelConfig::test_64(),
             &mut rng,
             &shape.shape.mask,
         );

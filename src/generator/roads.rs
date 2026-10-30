@@ -301,7 +301,7 @@ fn town_depth(town: &[bool], w: usize, h: usize) -> Vec<u32> {
 /// in the tree, shortest first, is rolled against `extra_pct` and kept if it
 /// neither crosses a chosen link nor leaves either node at a sharp angle to
 /// one. Ties by node index — deterministic.
-fn choose_links(rng: &mut ChaCha8Rng, nodes: &[RoadNode], extra_pct: f32) -> Vec<(usize, usize, bool)> {
+pub(crate) fn choose_links(rng: &mut ChaCha8Rng, nodes: &[RoadNode], extra_pct: f32) -> Vec<(usize, usize, bool)> {
     let n = nodes.len();
     let pos = |i: usize| (nodes[i].x as f32, nodes[i].y as f32);
     let mut pairs: Vec<(u64, usize, usize)> = Vec::new();
@@ -370,7 +370,7 @@ fn choose_links(rng: &mut ChaCha8Rng, nodes: &[RoadNode], extra_pct: f32) -> Vec
 /// Trips per link: for every node pair, the shortest route over the links
 /// (straight-line lengths) counts one trip on each link it uses. Dijkstra
 /// from every node; ties go to the lower node index — deterministic.
-fn link_traffic(nodes: &[RoadNode], links: &[(usize, usize, bool)]) -> Vec<u32> {
+pub(crate) fn link_traffic(nodes: &[RoadNode], links: &[(usize, usize, bool)]) -> Vec<u32> {
     let n = nodes.len();
     let length = |a: usize, b: usize| (dist2((nodes[a].x, nodes[a].y), (nodes[b].x, nodes[b].y)) as f64).sqrt();
     let mut adjacent: Vec<Vec<(usize, usize)>> = vec![Vec::new(); n]; // (neighbor, link)
@@ -416,7 +416,7 @@ fn link_traffic(nodes: &[RoadNode], links: &[(usize, usize, bool)]) -> Vec<u32> 
 /// Road widths (meters) from traffic: the busiest `main_pct` of the links
 /// get `hi`; the others scale with their traffic relative to the quietest
 /// main road, down to `lo`.
-fn widths_from_traffic(traffic: &[u32], main_pct: f32, lo: f32, hi: f32) -> Vec<f32> {
+pub(crate) fn widths_from_traffic(traffic: &[u32], main_pct: f32, lo: f32, hi: f32) -> Vec<f32> {
     if traffic.is_empty() {
         return Vec::new();
     }
@@ -628,7 +628,7 @@ mod tests {
     #[test]
     fn every_region_gets_a_node_and_the_network_is_connected() {
         for seed in 1..=6u64 {
-            let mut config = LevelConfig::default();
+            let mut config = LevelConfig::test_64();
             config.regions.count = 4;
             config.regions.shares = vec![10.0, 20.0, 30.0, 40.0];
             config.roads.node_count = 2; // below the region count: raised to 4
@@ -646,7 +646,7 @@ mod tests {
 
     #[test]
     fn node_count_is_honored_and_bigger_regions_get_more() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.regions.count = 2;
         config.regions.shares = vec![20.0, 80.0];
         config.roads.node_count = 10;
@@ -660,7 +660,7 @@ mod tests {
 
     #[test]
     fn roads_cross_region_borders_at_passages() {
-        let config = LevelConfig::default(); // 3 regions
+        let config = LevelConfig::test_64(); // 3 regions
         let (split, mut rng) = split_for(&config, 5);
         let net = build(&config, &mut rng, &split).unwrap().network;
         assert!(!net.passages.is_empty());
@@ -677,7 +677,7 @@ mod tests {
 
     #[test]
     fn zero_extra_links_gives_a_tree() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.roads.extra_links_pct = 0.0;
         config.roads.node_count = 9;
         let (split, mut rng) = split_for(&config, 2);
@@ -688,7 +688,7 @@ mod tests {
 
     #[test]
     fn busy_roads_are_wider_than_alleys() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.roads.node_count = 12;
         config.roads.width_m = 3.0;
         config.roads.min_width_m = 1.0;
@@ -718,7 +718,7 @@ mod tests {
 
     #[test]
     fn density_mode_scales_with_area() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.roads.amount = NodeAmount::Density;
         config.roads.nodes_per_1000m2 = 2.0;
         // 4000 cells × 0.25 m² = 1000 m² → 2 nodes.
@@ -727,7 +727,7 @@ mod tests {
 
     #[test]
     fn same_seed_same_roads() {
-        let config = LevelConfig::default();
+        let config = LevelConfig::test_64();
         let (split, mut a) = split_for(&config, 9);
         let (_, mut b) = split_for(&config, 9);
         assert_eq!(build(&config, &mut a, &split).unwrap().network, build(&config, &mut b, &split).unwrap().network);
@@ -737,7 +737,7 @@ mod tests {
     /// ('=' road, 'X' crossroad, '|' passage, digits = region ids).
     #[test]
     fn ascii_roads_preview() {
-        let config = LevelConfig::default();
+        let config = LevelConfig::test_64();
         let (split, mut rng) = split_for(&config, 42);
         let net = build(&config, &mut rng, &split).unwrap().network;
         let w = split.map.width;

@@ -158,8 +158,10 @@ scale with map. Stats: islands per kind, land %.
 
 **S2 notes (as built).** `generator/swamp/islands.rs`, settings
 `config.swamp.islands: IslandSettings` (3 hubs 12–18 m, small islands by
-density 1.5 / 1000 m² — 6 on the default 64 m map — 4–8 m, irregularity
-50%, gap 4 m, border 6 m, olive). Sizes are diameters; no "scale with map"
+density, 4–8 m, irregularity 50%, gap 4 m, border 6 m, olive — re-tuned
+for the 200 m default map in S3: 6 hubs 26–40 m, small 0.6 / 1000 m²
+(24) 7–14 m, gap 6 m, border 10 m; gate islands 18–26 m, bridges
+10–20 m). Sizes are diameters; no "scale with map"
 toggle — the density covers big maps.
 
 - RNG order: the island noise seed, then per gate island (axis, stretch),
@@ -187,9 +189,10 @@ toggle — the density covers big maps.
   (like town regions/roads — S8).
 - The gate anchor overlap note now says the islands squeeze each other
   (the gap keeps them apart instead of merging).
-- 64 m default map: about 1 seed in 40 can't fit every island and gets a note.
+- The old 64 m default map left about 1 seed in 40 with a "did not fit" note;
+  the 200 m defaults fit (test `defaults_fit_the_default_map`).
 
-### Step S3 — Paths (node 4, swamp only)
+### Step S3 — Paths (node 4, swamp only) — done
 
 Input: islands. Output: path network (mud strips) + boardwalks — the
 walkable core (islands ∪ paths) is one piece.
@@ -212,6 +215,46 @@ walkable core (islands ∪ paths) is one piece.
 
 Settings: path width min/max, wiggle, extra links %, dead ends, boardwalk %,
 boardwalk width. Stats: links, loops, dead ends, boardwalks, length.
+
+**S3 notes (as built).** `generator/swamp/paths.rs`, settings
+`config.swamp.paths: PathSettings` (width 1.5–3.5 m, main 30%, wiggle 50%,
+loops 25%, 3 dead ends, boardwalks 20% at 1.5 m with ≤ 2 kinks, mud and
+plank colors). Reuses the roads node's `choose_links` (MST + loops among
+the 4 nearest, no crossings / sharp angles), `link_traffic` +
+`widths_from_traffic` (now `pub(crate)`) and `stamp_path`.
+
+- Node per island = its cell nearest the centroid. Dead ends: small
+  islands shuffled, the first `dead_ends` (keeping ≥ 2 islands in the
+  graph) are left out of `choose_links` and get one link each to the
+  nearest graph island — so `links − (islands − 1)` = loops.
+- RNG order: path noise seed, dead-end shuffle, `choose_links` rolls, then
+  per link: boardwalk roll, and for boardwalks kink count, positions,
+  offsets.
+- Routing: own A* (8 directions, no corner rule — every cell is passable)
+  in a window of the endpoints' box + max(40 cells, 60% of the span).
+  Step factor: island 0.3, water exp(±wiggle·3.5) by a 16 m fBm, ×4 in
+  the islands' border margin, ×0.6 on mud already laid. Links route in
+  order (tree, loops, dead ends) so later ones merge into earlier mud.
+- Mud = the route stamped at its traffic width on water cells only.
+  Boardwalk = shore point leaving island a → first cell of island b,
+  replaced by a polyline with 0..kinks kinks (at 20–80% of the way,
+  ±15% of the length sideways), stamped on water cells. Boardwalk cells
+  clear mud under them.
+- Gate bridges: island cell nearest the bridge gate point → the point,
+  straight, boardwalk width. Missing gate island → note.
+- Check: islands ∪ mud ∪ boardwalk one 4-connected piece, else a note
+  (tested on several seeds).
+- Output `PathLayout { mud, boardwalk, paths: [SwampPath { a, b, kind
+  mud/boardwalk, extra, dead_end, width_m, length_m (over water), path_m
+  }], bridges: [GateBridge { gate, island, from_m, to_m, length_m }] }`;
+  drawn mud then planks (map.png, preview, legend "mud path" /
+  "boardwalk"); spec.json `paths`, `gate_bridges`; MCP `generate` reports
+  links / loops / dead ends / boardwalks / bridges.
+- 200 m map, 0.5 m cells: ~130–160 ms for the whole swamp chain (release).
+
+**Map default is now 200 × 200 m** (all kinds). Town-chain tests run on
+`LevelConfig::test_64()` (the old 64 m default) — they were written for
+it and stay fast.
 
 ### Step S4 — Depth & border (node 5, swamp only)
 

@@ -684,6 +684,13 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
         "hidden_rooms": level.hidden_rooms.as_ref().map(|h| json!({"placed": h.rooms.len(), "requested": h.requested})),
         "gates": gates,
         "gate_anchors": gate_anchors,
+        "paths": level.swamp.as_ref().and_then(|s| s.paths.as_ref()).map(|l| json!({
+            "links": l.paths.len(),
+            "loops": l.paths.iter().filter(|p| p.extra).count(),
+            "dead_ends": l.paths.iter().filter(|p| p.dead_end).count(),
+            "boardwalks": l.paths.iter().filter(|p| p.kind == crate::level::PathKind::Boardwalk).count(),
+            "gate_bridges": l.bridges.len(),
+        })),
         "islands": level.swamp.as_ref().and_then(|s| s.islands.as_ref()).map(|l| {
             let count = |k| l.islands.iter().filter(|i| i.kind == k).count();
             json!({

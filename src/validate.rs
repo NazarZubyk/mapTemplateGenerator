@@ -109,12 +109,12 @@ mod tests {
 
     #[test]
     fn default_config_has_no_warnings() {
-        assert!(validate(&LevelConfig::default()).is_empty());
+        assert!(validate(&LevelConfig::test_64()).is_empty());
     }
 
     #[test]
     fn field_warnings_fire() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.map.walkable_pct = 150.0;
         config.map.width_m = -1.0;
         config.cell_size_m = 0.0;
@@ -124,7 +124,7 @@ mod tests {
 
     #[test]
     fn bad_town_coverage_warns_non_blocking() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.shape.coverage_target_pct = 150.0;
         let warnings = validate(&config);
         assert_eq!(warnings.len(), 1);
@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn wall_segment_max_below_min_warns() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.outer_wall.segment_min_m = 8.0;
         config.outer_wall.segment_max_m = 3.0;
         let warnings = validate(&config);

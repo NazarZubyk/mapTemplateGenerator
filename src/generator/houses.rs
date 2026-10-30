@@ -493,7 +493,7 @@ mod tests {
     #[test]
     fn houses_never_overlap_roads_walls_or_each_other() {
         for seed in 1..=4u64 {
-            let lvl = level(&LevelConfig::default(), seed);
+            let lvl = level(&LevelConfig::test_64(), seed);
             let layout = lvl.houses.as_ref().unwrap();
             assert!(!lvl.objects.is_empty(), "seed {seed}: no houses");
             let road = &lvl.roads.as_ref().unwrap().mask;
@@ -513,7 +513,7 @@ mod tests {
     #[test]
     fn walkable_ground_stays_one_piece() {
         for seed in 1..=4u64 {
-            let mut config = LevelConfig::default();
+            let mut config = LevelConfig::test_64();
             config.houses.density_pct = 70.0;
             let lvl = level(&config, seed);
             assert!(grid::is_connected(&walkable(&lvl)), "seed {seed}: houses sealed off a pocket");
@@ -522,7 +522,7 @@ mod tests {
 
     #[test]
     fn density_controls_coverage_and_streets_fill_first() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.houses.density_pct = 10.0;
         let sparse = level(&config, 3).houses.unwrap();
         config.houses.density_pct = 40.0;
@@ -535,7 +535,7 @@ mod tests {
 
     #[test]
     fn complex_houses_have_overlapping_wings() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.map.width_m = 128.0;
         config.map.height_m = 128.0;
         config.houses.complex_pct = 50.0;
@@ -591,7 +591,7 @@ mod tests {
 
     #[test]
     fn house_sizes_stay_in_range() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.houses.complex_pct = 0.0;
         config.houses.size_min_m = 3.0;
         config.houses.size_max_m = 5.0;
@@ -603,7 +603,7 @@ mod tests {
 
     #[test]
     fn only_towns_get_houses() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.kind = crate::model::MapKind::Forest;
         config.shape = crate::model::ShapeSettings::for_kind(config.kind);
         let lvl = level(&config, 2);
@@ -613,7 +613,7 @@ mod tests {
 
     #[test]
     fn same_seed_same_houses() {
-        let config = LevelConfig::default();
+        let config = LevelConfig::test_64();
         assert_eq!(level(&config, 5).objects, level(&config, 5).objects);
     }
 
@@ -621,7 +621,7 @@ mod tests {
     /// ('H' house, '=' road, '#' wall, '.' outside, ' ' open ground).
     #[test]
     fn ascii_houses_preview() {
-        let lvl = level(&LevelConfig::default(), 42);
+        let lvl = level(&LevelConfig::test_64(), 42);
         let houses = lvl.houses.as_ref().unwrap();
         let map = &lvl.regions.as_ref().unwrap().map;
         for y in (0..map.height).step_by(2) {

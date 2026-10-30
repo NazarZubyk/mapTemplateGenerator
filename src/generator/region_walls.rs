@@ -452,7 +452,7 @@ mod tests {
     #[test]
     fn regions_fit_the_walls_exactly() {
         for seed in 1..=5u64 {
-            let config = LevelConfig::default(); // 3 regions
+            let config = LevelConfig::test_64(); // 3 regions
             let (mut split, _, mut rng) = pipeline(&config, seed);
             let original = split.map.ids.clone();
             let walls = build(&config, &mut rng, &mut split, None).unwrap();
@@ -480,7 +480,7 @@ mod tests {
     #[test]
     fn roads_pass_through_gaps_and_every_region_stays_reachable() {
         for seed in 1..=5u64 {
-            let config = LevelConfig::default();
+            let config = LevelConfig::test_64();
             let (mut split, roads, mut rng) = pipeline(&config, seed);
             let walls = build(&config, &mut rng, &mut split, Some(&roads)).unwrap();
             let map = &split.map;
@@ -510,7 +510,7 @@ mod tests {
 
     #[test]
     fn one_region_needs_no_walls() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.regions.count = 1;
         config.regions.shares = vec![100.0];
         let (mut split, roads, mut rng) = pipeline(&config, 4);
@@ -519,7 +519,7 @@ mod tests {
 
     #[test]
     fn same_seed_same_walls() {
-        let config = LevelConfig::default();
+        let config = LevelConfig::test_64();
         let (mut sa, roads, mut a) = pipeline(&config, 8);
         let (mut sb, _, mut b) = pipeline(&config, 8);
         assert_eq!(build(&config, &mut a, &mut sa, Some(&roads)), build(&config, &mut b, &mut sb, Some(&roads)));
@@ -530,7 +530,7 @@ mod tests {
     /// ('#' region wall, '=' road, digits = region ids).
     #[test]
     fn ascii_region_walls_preview() {
-        let config = LevelConfig::default();
+        let config = LevelConfig::test_64();
         let (mut split, roads, mut rng) = pipeline(&config, 42);
         let walls = build(&config, &mut rng, &mut split, Some(&roads)).unwrap();
         let map = &split.map;

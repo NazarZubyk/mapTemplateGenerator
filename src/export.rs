@@ -91,6 +91,14 @@ pub struct ExportSpec {
     /// map.png.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub islands: Option<Vec<crate::level::Island>>,
+    /// Swamp links between islands: island ids, kind (mud / boardwalk),
+    /// loop / dead-end flags, width, length over water, centerline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paths: Option<Vec<crate::level::SwampPath>>,
+    /// Swamp bridge gates: the boardwalk from the gate island's shore to the
+    /// gate point.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gate_bridges: Option<Vec<crate::level::GateBridge>>,
     /// Every placed object with position and size in meters.
     pub objects: Vec<crate::level::PlacedObject>,
 }
@@ -224,6 +232,14 @@ impl ExportSpec {
                 category: "ground",
             });
         }
+        if let Some(paths) = level.swamp.as_ref().and_then(|s| s.paths.as_ref()) {
+            let p = &level.config.swamp.paths;
+            for (mask, color, name) in [(&paths.mud, p.mud_color, "mud path"), (&paths.boardwalk, p.boardwalk_color, "boardwalk")] {
+                if mask.count_true() > 0 {
+                    legend.push(LegendEntry { color: color_hex(color), name: name.to_owned(), category: "ground" });
+                }
+            }
+        }
         if let Some(roads) = &level.roads
             && !roads.nodes.is_empty()
         {
@@ -309,6 +325,8 @@ impl ExportSpec {
             gates: level.gates.as_ref().map(|g| g.gates.clone()),
             gate_anchors: level.swamp.as_ref().map(|s| s.gate_anchors.clone()),
             islands: level.swamp.as_ref().and_then(|s| s.islands.as_ref()).map(|l| l.islands.clone()),
+            paths: level.swamp.as_ref().and_then(|s| s.paths.as_ref()).map(|l| l.paths.clone()),
+            gate_bridges: level.swamp.as_ref().and_then(|s| s.paths.as_ref()).map(|l| l.bridges.clone()),
             objects: level.objects.clone(),
         }
     }
@@ -326,7 +344,7 @@ mod tests {
     #[test]
     fn bundle_writes_three_valid_files() {
         let level = GeneratedLevel {
-            config: crate::model::LevelConfig::default(),
+            config: crate::model::LevelConfig::test_64(),
             seed: 42,
             objects: vec![
                 PlacedObject {

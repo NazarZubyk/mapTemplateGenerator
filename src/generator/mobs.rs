@@ -388,7 +388,7 @@ mod tests {
     #[test]
     fn budget_is_spent_as_far_as_it_goes() {
         for seed in 1..=4u64 {
-            let config = LevelConfig::default();
+            let config = LevelConfig::test_64();
             let lvl = level(&config, seed);
             let mobs = lvl.mobs.as_ref().unwrap();
             let spent: f32 = mobs.spawns.iter().map(|sp| cost_of(&config, sp)).sum();
@@ -409,7 +409,7 @@ mod tests {
 
     #[test]
     fn counts_follow_the_balance() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.mobs.budget = 1000.0;
         config.mobs.max_entities = 1000;
         config.mobs.spacing_m = 2.0;
@@ -423,7 +423,7 @@ mod tests {
 
     #[test]
     fn entity_cap_holds() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.mobs.budget = 100_000.0;
         config.mobs.max_entities = 12;
         let lvl = level(&config, 3);
@@ -434,7 +434,7 @@ mod tests {
 
     #[test]
     fn forbidden_combinations_never_share_a_spawn() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.mobs.set_combines(0, 1, false);
         config.mobs.types[1].price = 10.0;
         config.mobs.types[0].balance_pct = 50.0;
@@ -454,7 +454,7 @@ mod tests {
     #[test]
     fn spawns_keep_spacing_and_stand_on_walkable_ground() {
         for seed in 1..=4u64 {
-            let config = LevelConfig::default();
+            let config = LevelConfig::test_64();
             let lvl = level(&config, seed);
             let mobs = lvl.mobs.as_ref().unwrap();
             let map = &lvl.regions.as_ref().unwrap().map;
@@ -480,7 +480,7 @@ mod tests {
 
     #[test]
     fn roads_are_used_only_when_allowed() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.mobs.budget = 2000.0;
         config.mobs.max_entities = 200;
         config.mobs.spacing_m = 3.0;
@@ -498,7 +498,7 @@ mod tests {
 
     #[test]
     fn hidden_rooms_get_mobs_only_through_passable_paths() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.hidden_rooms.count = 3;
         config.hidden_rooms.place = HiddenRoomPlace::OutsideWall;
         config.mobs.budget = 3000.0;
@@ -515,7 +515,7 @@ mod tests {
 
     #[test]
     fn minimum_count_goes_over_budget_and_relaxes_spacing() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.mobs.budget = 50.0;
         config.mobs.min_entities = 80;
         config.mobs.max_entities = 100;
@@ -538,7 +538,7 @@ mod tests {
 
     #[test]
     fn minimum_density_scales_with_walkable_ground() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.mobs.min_amount = NodeAmount::Density;
         config.mobs.min_per_100m2 = 2.0;
         config.mobs.max_entities = 2000;
@@ -550,7 +550,7 @@ mod tests {
 
     #[test]
     fn the_cap_beats_the_minimum() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.mobs.min_entities = 500;
         config.mobs.max_entities = 30;
         let lvl = level(&config, 1);
@@ -561,10 +561,10 @@ mod tests {
 
     #[test]
     fn no_types_or_budget_places_nothing() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.mobs.budget = 0.0;
         assert!(level(&config, 1).mobs.as_ref().unwrap().spawns.is_empty());
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.mobs.types.clear();
         config.mobs.combinations.clear();
         assert!(level(&config, 1).mobs.as_ref().unwrap().spawns.is_empty());
@@ -572,7 +572,7 @@ mod tests {
 
     #[test]
     fn one_marker_per_mob_at_its_type_size() {
-        let config = LevelConfig::default();
+        let config = LevelConfig::test_64();
         let lvl = level(&config, 5);
         let mobs = lvl.mobs.as_ref().unwrap();
         let markers = lvl.objects.iter().filter(|o| o.category == Category::MobSpawn).count();
@@ -629,7 +629,7 @@ mod tests {
 
     #[test]
     fn non_town_maps_get_mobs() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.kind = MapKind::Forest;
         config.shape = ShapeSettings::for_kind(config.kind);
         assert!(!level(&config, 2).mobs.as_ref().unwrap().spawns.is_empty());
@@ -637,7 +637,7 @@ mod tests {
 
     #[test]
     fn same_seed_same_mobs() {
-        let config = LevelConfig::default();
+        let config = LevelConfig::test_64();
         assert_eq!(level(&config, 8).mobs, level(&config, 8).mobs);
     }
 }

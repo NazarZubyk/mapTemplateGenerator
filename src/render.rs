@@ -102,6 +102,10 @@ pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
     if let Some(islands) = level.swamp.as_ref().and_then(|s| s.islands.as_ref()) {
         paint_mask(&mut map, &islands.mask(), px_per_m, w, h, level.config.swamp.islands.color);
     }
+    if let Some(paths) = level.swamp.as_ref().and_then(|s| s.paths.as_ref()) {
+        paint_mask(&mut map, &paths.mud, px_per_m, w, h, level.config.swamp.paths.mud_color);
+        paint_mask(&mut map, &paths.boardwalk, px_per_m, w, h, level.config.swamp.paths.boardwalk_color);
+    }
     if let Some(roads) = &level.roads {
         paint_mask(&mut map, &roads.mask, px_per_m, w, h, ROAD);
     }
@@ -189,7 +193,7 @@ mod tests {
 
     fn level_with_one_object() -> GeneratedLevel {
         GeneratedLevel {
-            config: crate::model::LevelConfig::default(),
+            config: crate::model::LevelConfig::test_64(),
             seed: 42,
             objects: vec![PlacedObject {
                 category: Category::Structure,

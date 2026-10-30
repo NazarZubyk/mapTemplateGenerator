@@ -98,6 +98,18 @@ impl Default for LevelConfig {
     }
 }
 
+impl LevelConfig {
+    /// The defaults on the old 64 m map: the town-chain tests were written
+    /// for it (and stay fast).
+    #[cfg(test)]
+    pub fn test_64() -> Self {
+        let mut c = Self::default();
+        c.map.width_m = 64.0;
+        c.map.height_m = 64.0;
+        c
+    }
+}
+
 /// Settings of the houses node (docs/workflow.md, step 6; town maps).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -269,6 +281,52 @@ pub struct SwampSettings {
     pub gate_anchors: GateAnchorSettings,
     /// Node 3: the islands of firm ground.
     pub islands: IslandSettings,
+    /// Node 4: mud paths and boardwalks linking the islands.
+    pub paths: PathSettings,
+}
+
+/// Settings of the swamp paths node (step S3).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PathSettings {
+    /// Mud path width range, meters: the busiest `main_paths_pct` of the
+    /// links get the max, quiet ones narrow down to the min.
+    pub width_min_m: f32,
+    pub width_max_m: f32,
+    pub main_paths_pct: f32,
+    /// How much mud paths wind, % (0 = shortest line).
+    pub wiggle_pct: f32,
+    /// Chance per near-neighbor pair of an extra link (a loop), %. 0 = a
+    /// pure tree: one way between any two islands.
+    pub extra_links_pct: f32,
+    /// Small islands linked by exactly one path and never by a loop.
+    pub dead_ends: u32,
+    /// Chance per link that it is a boardwalk instead of a mud path, %.
+    pub boardwalk_pct: f32,
+    /// Boardwalk width, meters (links and gate bridges).
+    pub boardwalk_width_m: f32,
+    /// Most kinks in one boardwalk (0 = straight).
+    pub boardwalk_kinks: u32,
+    pub mud_color: [u8; 3],
+    pub boardwalk_color: [u8; 3],
+}
+
+impl Default for PathSettings {
+    fn default() -> Self {
+        Self {
+            width_min_m: 1.5,
+            width_max_m: 3.5,
+            main_paths_pct: 30.0,
+            wiggle_pct: 50.0,
+            extra_links_pct: 25.0,
+            dead_ends: 3,
+            boardwalk_pct: 20.0,
+            boardwalk_width_m: 1.5,
+            boardwalk_kinks: 2,
+            mud_color: [150, 128, 92],
+            boardwalk_color: [176, 120, 64],
+        }
+    }
 }
 
 /// Settings of the swamp islands node (step S2). Sizes are diameters.
@@ -300,17 +358,17 @@ pub struct IslandSettings {
 impl Default for IslandSettings {
     fn default() -> Self {
         Self {
-            hub_count: 3,
-            hub_min_m: 12.0,
-            hub_max_m: 18.0,
+            hub_count: 6,
+            hub_min_m: 26.0,
+            hub_max_m: 40.0,
             small_amount: NodeAmount::Density,
-            small_count: 6,
-            small_per_1000m2: 1.5,
-            small_min_m: 4.0,
-            small_max_m: 8.0,
+            small_count: 30,
+            small_per_1000m2: 0.6,
+            small_min_m: 7.0,
+            small_max_m: 14.0,
             irregularity_pct: 50.0,
-            gap_m: 4.0,
-            border_m: 6.0,
+            gap_m: 6.0,
+            border_m: 10.0,
             color: [126, 138, 78],
         }
     }
@@ -335,7 +393,7 @@ pub struct GateAnchorSettings {
 
 impl Default for GateAnchorSettings {
     fn default() -> Self {
-        Self { corner_snap_deg: 20.0, island_min_m: 10.0, island_max_m: 16.0, bridge_min_m: 8.0, bridge_max_m: 14.0 }
+        Self { corner_snap_deg: 20.0, island_min_m: 18.0, island_max_m: 26.0, bridge_min_m: 10.0, bridge_max_m: 20.0 }
     }
 }
 
@@ -752,8 +810,8 @@ pub struct MapSettings {
 impl Default for MapSettings {
     fn default() -> Self {
         Self {
-            width_m: 64.0,
-            height_m: 64.0,
+            width_m: 200.0,
+            height_m: 200.0,
             walkable_pct: 60.0,
         }
     }
@@ -883,7 +941,7 @@ mod tests {
 
     #[test]
     fn default_config_json_round_trip() {
-        let config = LevelConfig::default();
+        let config = LevelConfig::test_64();
         let json = serde_json::to_string_pretty(&config).unwrap();
         let back: LevelConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(config, back);

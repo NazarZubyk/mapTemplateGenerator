@@ -308,7 +308,7 @@ mod tests {
     }
 
     fn two_types() -> LevelConfig {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.interactive.push(InteractiveType {
             name: "Chest".to_owned(),
             size_min_m: 0.8,
@@ -350,7 +350,7 @@ mod tests {
 
     #[test]
     fn group_members_stay_within_spread() {
-        let lvl = level(&LevelConfig::default(), 3);
+        let lvl = level(&LevelConfig::test_64(), 3);
         let layout = lvl.interactive.as_ref().unwrap();
         for g in &layout.groups {
             for &m in &g.members {
@@ -387,7 +387,7 @@ mod tests {
     #[test]
     fn walkable_ground_stays_one_piece() {
         for seed in 1..=4u64 {
-            let mut config = LevelConfig::default();
+            let mut config = LevelConfig::test_64();
             config.interactive[0].quantity = 400;
             config.interactive[0].group_max = 8;
             let lvl = level(&config, seed);
@@ -434,7 +434,7 @@ mod tests {
 
     #[test]
     fn too_many_ends_with_a_note() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.interactive[0].quantity = 100_000;
         let lvl = level(&config, 2);
         let layout = lvl.interactive.as_ref().unwrap();
@@ -444,7 +444,7 @@ mod tests {
 
     #[test]
     fn non_town_maps_get_interactives() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.kind = MapKind::Forest;
         config.shape = ShapeSettings::for_kind(config.kind);
         let lvl = level(&config, 2);

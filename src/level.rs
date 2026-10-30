@@ -470,12 +470,65 @@ impl IslandLayout {
     }
 }
 
+/// What a swamp link is made of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PathKind {
+    /// A winding strip of walkable mud.
+    Mud,
+    /// Planks on posts over the water: straight segments with kinks.
+    Boardwalk,
+}
+
+/// One link between two islands.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SwampPath {
+    /// Island ids at both ends.
+    pub a: u16,
+    pub b: u16,
+    pub kind: PathKind,
+    /// Added on top of the spanning tree (it closes a loop).
+    pub extra: bool,
+    /// Links a dead-end island.
+    pub dead_end: bool,
+    pub width_m: f32,
+    /// Length over water, meters (the part between the islands).
+    pub length_m: f32,
+    /// Centerline over water, meters: points every ~1 m (mud) or the
+    /// corners (boardwalk).
+    pub path_m: Vec<[f32; 2]>,
+}
+
+/// A boardwalk from a bridge gate's island out to the gate on the border.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GateBridge {
+    pub gate: u32,
+    pub island: u16,
+    /// From the island's shore to the gate point, meters.
+    pub from_m: [f32; 2],
+    pub to_m: [f32; 2],
+    pub length_m: f32,
+}
+
+/// The swamp paths node's output.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PathLayout {
+    /// Mud path cells (off the islands).
+    pub mud: CellMask,
+    /// Boardwalk cells (links and gate bridges, off the islands).
+    pub boardwalk: CellMask,
+    pub paths: Vec<SwampPath>,
+    pub bridges: Vec<GateBridge>,
+}
+
 /// The swamp node chain's output, filled node by node (docs/swamp-plan.md).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct SwampLayout {
     pub gate_anchors: Vec<GateAnchor>,
     #[serde(default)]
     pub islands: Option<IslandLayout>,
+    #[serde(default)]
+    pub paths: Option<PathLayout>,
 }
 
 /// The mobs node's output.

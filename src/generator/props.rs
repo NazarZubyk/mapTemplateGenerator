@@ -285,7 +285,7 @@ mod tests {
     #[test]
     fn quantity_is_placed_when_there_is_room() {
         for seed in 1..=4u64 {
-            let lvl = level(&LevelConfig::default(), seed);
+            let lvl = level(&LevelConfig::test_64(), seed);
             let layout = lvl.props.as_ref().unwrap();
             assert_eq!(props(&lvl).len(), 40, "seed {seed}: {:?}", lvl.notes);
             assert_eq!(layout.near_houses + layout.roadside + layout.scattered, 40);
@@ -295,7 +295,7 @@ mod tests {
 
     #[test]
     fn density_caps_the_quantity() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.props.quantity = 500;
         config.props.density_pct = 2.0;
         let lvl = level(&config, 3);
@@ -308,7 +308,7 @@ mod tests {
     #[test]
     fn props_never_overlap_roads_walls_houses_or_each_other() {
         for seed in 1..=4u64 {
-            let mut config = LevelConfig::default();
+            let mut config = LevelConfig::test_64();
             config.props.quantity = 150;
             config.props.density_pct = 30.0;
             let lvl = level(&config, seed);
@@ -331,7 +331,7 @@ mod tests {
     #[test]
     fn walkable_ground_stays_one_piece() {
         for seed in 1..=4u64 {
-            let mut config = LevelConfig::default();
+            let mut config = LevelConfig::test_64();
             config.props.quantity = 300;
             config.props.density_pct = 40.0;
             let lvl = level(&config, seed);
@@ -350,7 +350,7 @@ mod tests {
 
     #[test]
     fn near_house_props_hug_a_house() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.props.near_houses_pct = 100.0;
         config.props.roadside_pct = 0.0;
         let lvl = level(&config, 5);
@@ -376,7 +376,7 @@ mod tests {
 
     #[test]
     fn non_town_maps_get_props_without_houses() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.kind = MapKind::Cave;
         config.shape = ShapeSettings::for_kind(config.kind);
         let lvl = level(&config, 2);
@@ -387,7 +387,7 @@ mod tests {
 
     #[test]
     fn same_seed_same_props() {
-        let config = LevelConfig::default();
+        let config = LevelConfig::test_64();
         assert_eq!(level(&config, 8).objects, level(&config, 8).objects);
     }
 }

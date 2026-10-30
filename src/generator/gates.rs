@@ -324,7 +324,7 @@ mod tests {
     #[test]
     fn default_gates_open_the_wall_north_and_south() {
         for seed in 1..=4u64 {
-            let config = LevelConfig::default();
+            let config = LevelConfig::test_64();
             let lvl = level(&config, seed);
             let gates = lvl.gates.as_ref().unwrap();
             assert_eq!(gates.gates.len(), 2, "seed {seed}: {:?}", lvl.notes);
@@ -347,7 +347,7 @@ mod tests {
     #[test]
     fn gate_roads_join_the_network() {
         for seed in 1..=4u64 {
-            let lvl = level(&LevelConfig::default(), seed);
+            let lvl = level(&LevelConfig::test_64(), seed);
             let net = lvl.roads.as_ref().unwrap();
             for g in &lvl.gates.as_ref().unwrap().gates {
                 let link = &net.links[g.road_link.unwrap_or_else(|| panic!("seed {seed}: gate {} has no road", g.id))];
@@ -360,7 +360,7 @@ mod tests {
     #[test]
     fn later_nodes_keep_off_the_gate_roads() {
         for seed in 1..=3u64 {
-            let lvl = level(&LevelConfig::default(), seed);
+            let lvl = level(&LevelConfig::test_64(), seed);
             let net = lvl.roads.as_ref().unwrap();
             let solid = [
                 lvl.houses.as_ref().map(|l| &l.mask),
@@ -377,7 +377,7 @@ mod tests {
 
     #[test]
     fn mobs_keep_away_from_gates() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.mobs.min_entities = 40;
         config.mobs.max_entities = 40;
         let lvl = level(&config, 2);
@@ -392,7 +392,7 @@ mod tests {
 
     #[test]
     fn hidden_rooms_keep_clear_of_gates() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.hidden_rooms.count = 6;
         for seed in 1..=4u64 {
             let lvl = level(&config, seed);
@@ -408,7 +408,7 @@ mod tests {
 
     #[test]
     fn any_direction_finds_the_wall() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.gates.gates = (0..8).map(|k| GateSpec::at(k as f32 * 45.0)).collect();
         config.gates.road = false;
         let lvl = level(&config, 3);
@@ -417,7 +417,7 @@ mod tests {
 
     #[test]
     fn island_maps_get_gates() {
-        let mut config = LevelConfig::default();
+        let mut config = LevelConfig::test_64();
         config.kind = MapKind::Forest;
         config.shape = ShapeSettings::for_kind(config.kind);
         let lvl = level(&config, 2);
@@ -426,7 +426,7 @@ mod tests {
 
     #[test]
     fn same_seed_same_gates() {
-        let config = LevelConfig::default();
+        let config = LevelConfig::test_64();
         assert_eq!(level(&config, 8).gates, level(&config, 8).gates);
     }
 }
