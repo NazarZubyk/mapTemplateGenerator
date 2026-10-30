@@ -6,11 +6,13 @@ an AI agent (or a level designer) to build a playable prototype fast.
 > **⚠ Beta.** This is an early version. Settings and file formats may still
 > change between releases.
 >
-> **Only the Town map kind is ready.** Forest and Cave can be picked, but
-> they are experimental: their shapes work, but the content on them (props,
-> mobs and so on) is not tuned yet. Swamp has been rebuilt with its own
-> layout (islands, paths, water, border, trees, props, objects, hidden
-> islets and mobs) and is being tuned.
+> **Only the Town map kind is ready.** Forest can be picked, but it is
+> experimental: its shape works, but the content on it (props, mobs and so
+> on) is not tuned yet. Swamp has been rebuilt with its own layout
+> (islands, paths, water, border, trees, props, objects, hidden islets and
+> mobs) and is being tuned. **Cave is being rebuilt** with its own layout
+> (natural caverns + hand-made passages); the app opens on Cave for now
+> and only its first step (style zones) exists yet.
 
 ## What you get
 
@@ -65,8 +67,8 @@ see `QUICKSTART.md`.
 
 ## Known limitations (beta)
 
-- Only **Town** is tuned. Forest and Cave are experimental; Swamp is new
-  (complete, still being tuned).
+- Only **Town** is tuned. Forest is experimental; Swamp is new (complete,
+  still being tuned); Cave is being rebuilt step by step.
 - The **walkable %** setting is not used yet.
 - Few safety checks. For example, two object types with the same color are
   not flagged yet.

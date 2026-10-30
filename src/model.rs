@@ -71,6 +71,8 @@ pub struct LevelConfig {
     pub gates: GateSettings,
     /// The swamp node chain (swamp maps only; docs/swamp-plan.md).
     pub swamp: SwampSettings,
+    /// The cave node chain (cave maps only; docs/cave-plan.md).
+    pub cave: CaveSettings,
     pub cell_size_m: f32,
     pub seed: u64,
 }
@@ -92,6 +94,7 @@ impl Default for LevelConfig {
             mobs: MobSettings::default(),
             gates: GateSettings::default(),
             swamp: SwampSettings::default(),
+            cave: CaveSettings::default(),
             cell_size_m: 0.5,
             seed: 0,
         }
@@ -99,6 +102,16 @@ impl Default for LevelConfig {
 }
 
 impl LevelConfig {
+    /// The map kind the app (and the MCP server, with no config file yet)
+    /// starts on — the kind being built right now. `default()` stays Town,
+    /// the baseline the tests are written against.
+    pub const START_KIND: MapKind = MapKind::Cave;
+
+    /// The defaults with [`Self::START_KIND`] and its shape defaults.
+    pub fn starting() -> Self {
+        Self { kind: Self::START_KIND, shape: ShapeSettings::for_kind(Self::START_KIND), ..Self::default() }
+    }
+
     /// The defaults on the old 64 m map: the town-chain tests were written
     /// for it (and stay fast).
     #[cfg(test)]
@@ -279,6 +292,48 @@ impl Default for GateSettings {
             road: true,
             road_width_m: 2.5,
             color: [50, 110, 230],
+        }
+    }
+}
+
+/// Settings of the cave node chain (docs/cave-plan.md), one struct per
+/// node.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CaveSettings {
+    /// Node 2: the natural / hand-made style field and its zones.
+    pub style: CaveStyleSettings,
+}
+
+/// Settings of the cave style node (step C1): how much of the cave is
+/// natural caverns vs hand-made passages, and how the two are arranged.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CaveStyleSettings {
+    /// Share of the map, %, in the natural style; the rest is hand-made.
+    pub natural_pct: f32,
+    /// How the two styles are arranged, %: 0 = two zones split by one wavy
+    /// line, 100 = a fine patchwork (about one chamber per patch).
+    pub mixing_pct: f32,
+    /// Tunnels allowed across a natural / hand-made boundary (used by the
+    /// tunnels node at low mixing, so the zones stay separate regions).
+    pub zone_links: u32,
+    /// Patches of one style smaller than this, m², join the style around
+    /// them.
+    pub min_zone_m2: f32,
+    pub natural_color: [u8; 3],
+    pub handmade_color: [u8; 3],
+}
+
+impl Default for CaveStyleSettings {
+    fn default() -> Self {
+        Self {
+            natural_pct: 60.0,
+            mixing_pct: 30.0,
+            zone_links: 2,
+            min_zone_m2: 300.0,
+            natural_color: [122, 100, 78],
+            handmade_color: [138, 140, 150],
         }
     }
 }

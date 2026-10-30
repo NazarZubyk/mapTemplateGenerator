@@ -592,6 +592,75 @@ pub struct SwampLayout {
     pub trees: Option<TreeLayout>,
 }
 
+/// The two styles of carved cave space (docs/cave-plan.md).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CaveStyle {
+    /// Caverns: noise blobs, winding tunnels, ragged walls.
+    Natural,
+    /// Dug passages: rectangular rooms, straight tunnels, clean walls.
+    HandMade,
+}
+
+impl CaveStyle {
+    pub fn label(self) -> &'static str {
+        match self {
+            CaveStyle::Natural => "natural",
+            CaveStyle::HandMade => "hand-made",
+        }
+    }
+}
+
+/// One connected patch of one cave style.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CaveZone {
+    /// 1-based, the value in [`StyleLayout::ids`].
+    pub id: u16,
+    pub style: CaveStyle,
+    pub area_m2: f32,
+    /// Center of mass, meters (may fall outside a curved zone).
+    pub center_m: [f32; 2],
+}
+
+/// The cave style node's output: every cell belongs to exactly one zone.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StyleLayout {
+    pub width: usize,
+    pub height: usize,
+    pub cell_size_m: f32,
+    /// Zone id per cell (1-based, never 0).
+    pub ids: Vec<u16>,
+    pub zones: Vec<CaveZone>,
+    /// Direction the natural side lies toward at low mixing, degrees (0°
+    /// east, 90° north).
+    pub natural_side_deg: f32,
+    /// The natural share that came out, %.
+    pub natural_pct: f32,
+}
+
+impl StyleLayout {
+    pub fn style_at(&self, c: usize) -> CaveStyle {
+        self.zones[self.ids[c] as usize - 1].style
+    }
+
+    /// Cells in the given style.
+    pub fn mask(&self, style: CaveStyle) -> CellMask {
+        CellMask {
+            width: self.width,
+            height: self.height,
+            cell_size_m: self.cell_size_m,
+            cells: (0..self.ids.len()).map(|c| self.style_at(c) == style).collect(),
+        }
+    }
+}
+
+/// The cave node chain's output, filled node by node (docs/cave-plan.md).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct CaveLayout {
+    #[serde(default)]
+    pub style: Option<StyleLayout>,
+}
+
 /// The mobs node's output.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MobLayout {
@@ -742,6 +811,9 @@ pub struct GeneratedLevel {
     /// The swamp chain's output (swamp maps only).
     #[serde(default)]
     pub swamp: Option<SwampLayout>,
+    /// The cave chain's output (cave maps only).
+    #[serde(default)]
+    pub cave: Option<CaveLayout>,
     /// Raw noise field behind the region shape, for the bench "noise texture"
     /// view.
     pub noise_preview: Option<NoiseTexture>,

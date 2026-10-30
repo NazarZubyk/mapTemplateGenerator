@@ -1,7 +1,7 @@
 use eframe::egui;
 use egui::{Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Vec2};
 
-use crate::level::GeneratedLevel;
+use crate::level::{CaveStyle, GeneratedLevel};
 use crate::model::LevelConfig;
 
 /// Pixels per meter; clamped so the map can never get lost off-screen entirely.
@@ -232,6 +232,14 @@ fn draw_legend(painter: &egui::Painter, canvas: Rect, level: &GeneratedLevel) {
         && shape.stats.coverage_pct > 0.0
     {
         entries.push((crate::render::REGION, level.config.kind.slug().to_owned()));
+    }
+    if let Some(style) = level.cave.as_ref().and_then(|c| c.style.as_ref()) {
+        let st = &level.config.cave.style;
+        for (kind, color) in [(CaveStyle::Natural, st.natural_color), (CaveStyle::HandMade, st.handmade_color)] {
+            if style.zones.iter().any(|z| z.style == kind) {
+                entries.push((color, kind.label().to_owned()));
+            }
+        }
     }
     if let Some(depth) = level.swamp.as_ref().and_then(|s| s.depth.as_ref()) {
         let d = &level.config.swamp.depth;

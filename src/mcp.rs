@@ -132,7 +132,7 @@ impl Server {
                 Ok("config patched".to_owned())
             }),
             "reset_config" => self.edit(|c| {
-                *c = LevelConfig::default();
+                *c = LevelConfig::starting();
                 Ok("config reset to defaults".to_owned())
             }),
             "generate" => {
@@ -164,7 +164,7 @@ impl Server {
     fn load(&self) -> Result<LevelConfig, String> {
         match std::fs::read_to_string(&self.config_path) {
             Ok(text) => serde_json::from_str(&text).map_err(|e| format!("{}: {e}", self.config_path.display())),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(LevelConfig::default()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(LevelConfig::starting()),
             Err(e) => Err(format!("{}: {e}", self.config_path.display())),
         }
     }
@@ -693,6 +693,12 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
             }))
             .collect::<Vec<_>>()
     });
+    let cave_style = level.cave.as_ref().and_then(|c| c.style.as_ref()).map(|l| {
+        json!({
+            "natural_pct": l.natural_pct, "natural_side_deg": l.natural_side_deg,
+            "zones": l.zones.iter().map(|z| json!({"id": z.id, "style": z.style, "area_m2": z.area_m2})).collect::<Vec<_>>(),
+        })
+    });
     let gates = level.gates.as_ref().map(|g| {
         json!({
             "placed": g.gates.len(), "requested": g.requested,
@@ -714,6 +720,7 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
         "hidden_rooms": level.hidden_rooms.as_ref().map(|h| json!({"placed": h.rooms.len(), "requested": h.requested})),
         "gates": gates,
         "gate_anchors": gate_anchors,
+        "cave_style": cave_style,
         "trees": level.swamp.as_ref().and_then(|s| s.trees.as_ref()).map(|t| json!({
             "grove_trees": t.grove_trees, "water_trees": t.water_trees, "grove_cover_pct": t.grove_cover_pct,
         })),
@@ -852,6 +859,8 @@ mod tests {
     #[test]
     fn generate_summarizes_mobs_and_gates() {
         let s = server("gen");
+        let town = serde_json::to_value(crate::model::ShapeSettings::for_kind(crate::model::MapKind::Town)).unwrap();
+        s.call("patch_config", &json!({"patch": {"kind": "town", "shape": town}})).unwrap();
         s.call("set_gates", &json!({"count": 3})).unwrap();
         let out: Value = serde_json::from_str(&s.call("generate", &json!({"seed": 2})).unwrap()).unwrap();
         assert_eq!(out["gates"]["placed"], 3);

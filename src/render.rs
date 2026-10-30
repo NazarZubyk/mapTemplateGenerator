@@ -1,6 +1,6 @@
 use image::{ImageBuffer, Rgb, Rgba};
 
-use crate::level::{Category, GeneratedLevel};
+use crate::level::{CaveStyle, Category, GeneratedLevel};
 
 /// A level rasterized to the two exported images.
 pub struct Rasterized {
@@ -113,6 +113,12 @@ pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
         }
     } else if let Some(shape) = &level.shape {
         paint_mask(&mut map, &shape.mask, px_per_m, w, h, REGION);
+    }
+    if let Some(style) = level.cave.as_ref().and_then(|c| c.style.as_ref()) {
+        let st = &level.config.cave.style;
+        for (kind, color) in [(CaveStyle::Natural, st.natural_color), (CaveStyle::HandMade, st.handmade_color)] {
+            paint_mask(&mut map, &style.mask(kind), px_per_m, w, h, color);
+        }
     }
     if let Some(depth) = level.swamp.as_ref().and_then(|s| s.depth.as_ref()) {
         let d = &level.config.swamp.depth;
@@ -276,6 +282,7 @@ mod tests {
             mobs: None,
             gates: None,
             swamp: None,
+            cave: None,
             regions: None,
             noise_preview: None,
             notes: Vec::new(),

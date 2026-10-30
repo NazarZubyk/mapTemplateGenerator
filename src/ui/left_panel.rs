@@ -1,7 +1,7 @@
 use eframe::egui;
 use rand::Rng;
 
-use crate::level::IslandKind;
+use crate::level::{CaveStyle, IslandKind};
 use crate::model::{GateSpec, GateStyle, SpawnOn, HiddenRoomPlace, InteractiveSpot, InteractiveType, LevelConfig, MapKind, MobType, NodeAmount, ShapeSettings};
 use crate::ui::app::{ConfigStatus, MapGenApp};
 use crate::ui::widgets::param_row;
@@ -29,6 +29,10 @@ fn generation_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     flow_arrow(ui, "empty field (the map)");
     if app.config.kind == MapKind::Swamp {
         swamp_node_chain(ui, app);
+        return;
+    }
+    if app.config.kind == MapKind::Cave {
+        cave_node_chain(ui, app);
         return;
     }
     node_shape(ui, app);
@@ -78,9 +82,82 @@ fn swamp_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_interactive(ui, app);
     flow_arrow(ui, "walkable ground (paths, open islets)");
     node_mobs(ui, app);
-    ui.weak("Next swamp step: export polish — terrain and depth in layer.png (docs/swamp-plan.md).");
+    ui.weak("The swamp chain is complete (docs/swamp-plan.md).");
     ui.add_space(4.0);
     ui.separator();
+}
+
+/// The cave chain (docs/cave-plan.md), shown instead of the town nodes.
+fn cave_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    node_cave_style(ui, app);
+    ui.weak("Next cave step: C2 chambers (docs/cave-plan.md).");
+    ui.add_space(4.0);
+    ui.separator();
+}
+
+/// Cave node 2: natural vs hand-made style zones (step C1 in
+/// docs/cave-plan.md).
+fn node_cave_style(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_NATURAL: &str = "Share of the map, %, in the natural style — caverns with \
+ragged walls and winding tunnels. The rest is hand-made: rectangular rooms and straight, \
+narrow dug tunnels. 0% or 100%: one style only (Mixing has NO EFFECT then).";
+    const TIP_MIXING: &str = "How the two styles are arranged. 0%: two separate zones, \
+one natural side and one hand-made side, split by one wavy line in a random direction \
+(the tunnels node joins them with only Zone links tunnels). 100%: a fine patchwork, about \
+one chamber per patch. In between: fewer, bigger patches the lower the value.";
+    const TIP_LINKS: &str = "How many tunnels may cross a natural / hand-made boundary, \
+so at low mixing the zones stay separate regions joined by just these. NO EFFECT yet — \
+the tunnels node (C3) uses it.";
+    const TIP_MIN: &str = "Patches of one style smaller than this, m², join the style \
+around them, so there are no specks. Large values also round off the patchwork at high \
+mixing (and can move the natural share; a note says so).";
+    const TIP_COLORS: &str = "Floor tint of each style on the map image, the preview and \
+the legend.";
+    node(ui, "2 · Style", |ui| {
+        ui.weak("input: template field · output: style zones — natural / hand-made (cave)");
+        let s = &mut app.config.cave.style;
+        egui::Grid::new("cave_style_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Natural", TIP_NATURAL, |ui| ui.add(egui::Slider::new(&mut s.natural_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Mixing", TIP_MIXING, |ui| ui.add(egui::Slider::new(&mut s.mixing_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Zone links", TIP_LINKS, |ui| ui.add(egui::DragValue::new(&mut s.zone_links).range(1..=20).speed(0.1)));
+            param_row(ui, "Min zone", TIP_MIN, |ui| {
+                ui.add(egui::DragValue::new(&mut s.min_zone_m2).range(0.0..=5000.0).speed(5.0).suffix(" m²"))
+            });
+            param_row(ui, "Colors", TIP_COLORS, |ui| {
+                ui.horizontal(|ui| {
+                    ui.color_edit_button_srgb(&mut s.natural_color);
+                    ui.label("natural");
+                    ui.color_edit_button_srgb(&mut s.handmade_color);
+                    ui.label("hand-made")
+                })
+                .response
+            });
+        });
+        ui.horizontal(|ui| {
+            if ui
+                .button("🎲 Random params")
+                .on_hover_text("Rolls every style setting independently inside its reasonable range. Set values only; press Generate.")
+                .clicked()
+            {
+                let mut rng = rand::rng();
+                s.natural_pct = rng.random_range(0.0..=100.0);
+                s.mixing_pct = rng.random_range(0.0..=100.0);
+                s.zone_links = rng.random_range(1..=5);
+                s.min_zone_m2 = rng.random_range(50.0..=1500.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(l) = app.generated.as_ref().and_then(|l| l.cave.as_ref()).and_then(|c| c.style.as_ref()) {
+            let count = |k| l.zones.iter().filter(|z| z.style == k).count();
+            ui.weak(format!(
+                "generated: natural {:.0}% · {} zones ({} natural, {} hand-made)",
+                l.natural_pct,
+                l.zones.len(),
+                count(CaveStyle::Natural),
+                count(CaveStyle::HandMade)
+            ));
+        }
+    });
 }
 
 fn node<R>(ui: &mut egui::Ui, title: &str, body: impl FnOnce(&mut egui::Ui) -> R) {

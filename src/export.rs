@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::level::GeneratedLevel;
+use crate::level::{CaveStyle, GeneratedLevel};
 use crate::render;
 
 #[derive(Debug, Clone)]
@@ -107,6 +107,10 @@ pub struct ExportSpec {
     /// deep water and thicket are not.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub water: Option<ExportWater>,
+    /// Cave style zones: connected patches of natural caverns or hand-made
+    /// passages (id, style, area, center).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cave_zones: Option<Vec<crate::level::CaveZone>>,
     /// Every placed object with position and size in meters.
     pub objects: Vec<crate::level::PlacedObject>,
 }
@@ -275,6 +279,14 @@ impl ExportSpec {
                 category: "ground",
             });
         }
+        if let Some(style) = level.cave.as_ref().and_then(|c| c.style.as_ref()) {
+            let st = &level.config.cave.style;
+            for (kind, color) in [(CaveStyle::Natural, st.natural_color), (CaveStyle::HandMade, st.handmade_color)] {
+                if style.zones.iter().any(|z| z.style == kind) {
+                    legend.push(LegendEntry { color: color_hex(color), name: kind.label().to_owned(), category: "ground" });
+                }
+            }
+        }
         if let Some(depth) = level.swamp.as_ref().and_then(|s| s.depth.as_ref()) {
             let d = &level.config.swamp.depth;
             for (mask, color, name) in [
@@ -393,6 +405,7 @@ impl ExportSpec {
             islands: level.swamp.as_ref().and_then(|s| s.islands.as_ref()).map(|l| l.islands.clone()),
             paths: level.swamp.as_ref().and_then(|s| s.paths.as_ref()).map(|l| l.paths.clone()),
             gate_bridges: level.swamp.as_ref().and_then(|s| s.paths.as_ref()).map(|l| l.bridges.clone()),
+            cave_zones: level.cave.as_ref().and_then(|c| c.style.as_ref()).map(|l| l.zones.clone()),
             water: level.swamp.as_ref().and_then(|s| s.depth.as_ref()).map(|d| {
                 let s = &level.config.swamp.depth;
                 ExportWater {
@@ -464,6 +477,7 @@ mod tests {
             mobs: None,
             gates: None,
             swamp: None,
+            cave: None,
             regions: None,
             noise_preview: None,
             notes: Vec::new(),

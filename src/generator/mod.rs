@@ -22,6 +22,7 @@ pub mod regions;
 pub mod roads;
 pub mod shape;
 pub mod swamp;
+pub mod cave;
 pub mod walls;
 
 /// Progress callback: (stage label, overall fraction 0..1). Called from the
@@ -59,6 +60,10 @@ pub fn generate_with_progress(
     // Swamps have their own node chain (docs/swamp-plan.md).
     if config.kind == crate::model::MapKind::Swamp {
         return swamp::generate_with_progress(config, seed, progress);
+    }
+    // Caves too (docs/cave-plan.md).
+    if config.kind == crate::model::MapKind::Cave {
+        return cave::generate_with_progress(config, seed, progress);
     }
     let stage = |from, to| Stage { progress, from, to };
     let built = shape::build_with_progress(config, seed, &stage(0.0, 0.55));
@@ -271,6 +276,7 @@ pub fn generate_with_progress(
         mobs: None,
         gates,
         swamp: None,
+        cave: None,
         noise_preview: Some(built.noise_preview),
         notes,
     };

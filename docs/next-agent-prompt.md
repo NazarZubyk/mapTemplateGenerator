@@ -60,6 +60,12 @@ plan is done (S1–S6, S8; S7 zones dropped); open: tuning (e.g. spawn
 amounts for the 200 m map), field markers for warnings (town step 13). The default map is 200 × 200 m;
 town-chain tests use `LevelConfig::test_64()`.
 
+**Cave is next**: its own chain (`src/generator/cave/`), planned in
+`docs/cave-plan.md` (C1 style: natural % + mixing → C2 chambers → C3 tunnels +
+gates → C4 carve & smooth → C5 hazards → C6 pillars → C7 spawns → C8 export). C1 style is
+done; the user drives it one step at a time. The app / MCP start on Cave
+(`LevelConfig::starting()`); `default()` stays Town for the tests.
+
 **MCP server** `mapgen-mcp` (`src/mcp.rs`, `src/bin/mapgen-mcp.rs`,
 registered in `.mcp.json`): Claude edits the same config file
 (`configs/config.json`) — gates, mob types/settings/combinations with auto

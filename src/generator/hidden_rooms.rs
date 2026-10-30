@@ -533,7 +533,7 @@ mod tests {
     #[test]
     fn non_town_maps_get_rooms() {
         let mut config = LevelConfig::test_64();
-        config.kind = MapKind::Cave;
+        config.kind = MapKind::Forest;
         config.shape = ShapeSettings::for_kind(config.kind);
         let lvl = level(&config, 2);
         assert!(!lvl.hidden_rooms.as_ref().unwrap().rooms.is_empty(), "{:?}", lvl.notes);

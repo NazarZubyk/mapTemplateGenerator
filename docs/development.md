@@ -51,6 +51,9 @@ src/
 │       ├── depth.rs     #   swamp node 5: water bands, wading limit, hummocks, border
 │       ├── trees.rs     #   swamp node 6: groves and water trees (round objects)
 │       └── spawns.rs    #   swamp nodes 7–10: props, interactive, hidden islets, mobs
+│   └── cave/            # the cave node chain (docs/cave-plan.md)
+│       ├── mod.rs       #   cave pipeline
+│       └── style.rs     #   cave node 2: natural / hand-made style zones
 ├── render.rs            # map.png / layer.png rasterizers
 ├── export.rs            # export bundle writer + spec.json
 ├── validate.rs          # config validation (early subset; step 13 extends it)
@@ -102,12 +105,19 @@ share of mobs on hubs). Any map: **🎲 Re-roll mobs** / **⟳ Apply mobs
 only** redo just the mobs (`generator::place_mobs`, own RNG stream). Nodes 7–10 are the town nodes' cores
 on swamp ground.
 
+**Cave** has its own chain (being built, see [cave-plan.md](cave-plan.md)):
+1 Template → 2 **Style** (natural % + mixing → natural / hand-made zones;
+0% mixing = two zones, 100% = patchwork). The app and the MCP server
+(with no config file / `reset_config`) start on Cave for now
+(`LevelConfig::START_KIND`, `LevelConfig::starting()`); `default()` stays
+Town for the tests.
+
 Export: map.png (colored map), layer.png (objects: R = category id 1–7,
 G/B = instance id; swamp ground: R = ground id 8–14, G = depth, B =
 island id — spelled out in spec.json `layer_encoding`), spec.json
 (format v2) (legend, every object, regions, roads, wall gaps, interactive
 groups, hidden rooms, mobs, gates; swamp: `gate_anchors`, `islands`,
-`paths`, `gate_bridges`, `water`).
+`paths`, `gate_bridges`, `water`; cave: `cave_zones`).
 
 ## MCP server
 

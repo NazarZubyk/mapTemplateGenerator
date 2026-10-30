@@ -58,7 +58,9 @@ node, a cave has no props-on-roads node, and so on. When adding a node, state
 which kinds include it. **Swamp** branches right after the Template into its
 own chain (`generator/swamp/`, `swamp_node_chain` in left_panel.rs) — the
 list below is the town / forest / cave chain; the swamp one is in
-[swamp-plan.md](swamp-plan.md).
+[swamp-plan.md](swamp-plan.md). **Cave** has its own chain too
+(`generator/cave/`, `cave_node_chain`), built step by step from
+[cave-plan.md](cave-plan.md): C1 style done; the app starts on Cave for now.
 
 Right now:
 
