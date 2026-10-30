@@ -81,6 +81,11 @@ pub struct ExportSpec {
     /// Gates: direction asked / used (0° = east, 90° = north), point,
     /// region, wall opening width, gate road link index.
     pub gates: Option<Vec<crate::level::GateInfo>>,
+    /// Swamp gates: direction asked / used, style (shore / bridge), corner,
+    /// gate point on the map edge, where the gate island goes and its
+    /// diameter, bridge length.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gate_anchors: Option<Vec<crate::level::GateAnchor>>,
     /// Every placed object with position and size in meters.
     pub objects: Vec<crate::level::PlacedObject>,
 }
@@ -288,6 +293,7 @@ impl ExportSpec {
             hidden_rooms: level.hidden_rooms.as_ref().map(|l| l.rooms.clone()),
             mobs: level.mobs.clone(),
             gates: level.gates.as_ref().map(|g| g.gates.clone()),
+            gate_anchors: level.swamp.as_ref().map(|s| s.gate_anchors.clone()),
             objects: level.objects.clone(),
         }
     }
@@ -341,6 +347,7 @@ mod tests {
             hidden_rooms: None,
             mobs: None,
             gates: None,
+            swamp: None,
             regions: None,
             noise_preview: None,
             notes: Vec::new(),

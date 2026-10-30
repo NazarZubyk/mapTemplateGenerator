@@ -69,6 +69,8 @@ pub struct LevelConfig {
     /// Entry/exit gates on the outer wall (step 12, every map kind; runs
     /// right after the region walls so later nodes avoid the gate roads).
     pub gates: GateSettings,
+    /// The swamp node chain (swamp maps only; docs/swamp-plan.md).
+    pub swamp: SwampSettings,
     pub cell_size_m: f32,
     pub seed: u64,
 }
@@ -89,6 +91,7 @@ impl Default for LevelConfig {
             hidden_rooms: HiddenRoomSettings::default(),
             mobs: MobSettings::default(),
             gates: GateSettings::default(),
+            swamp: SwampSettings::default(),
             cell_size_m: 0.5,
             seed: 0,
         }
@@ -185,6 +188,28 @@ impl Default for PropSettings {
     }
 }
 
+/// How a swamp gate meets the map border (swamp maps only; towns ignore it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GateStyle {
+    /// On a gate island that touches the map border.
+    #[default]
+    Shore,
+    /// At the border end of a boardwalk that runs out from an island.
+    Bridge,
+}
+
+impl GateStyle {
+    pub const ALL: [GateStyle; 2] = [GateStyle::Shore, GateStyle::Bridge];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            GateStyle::Shore => "Shore",
+            GateStyle::Bridge => "Bridge",
+        }
+    }
+}
+
 /// One gate: where on the map it is generated.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -192,11 +217,19 @@ pub struct GateSpec {
     /// Direction from the map center, degrees: 0 = east (right), 90 = north
     /// (up), 180 = west, 270 = south — counterclockwise on screen.
     pub direction_deg: f32,
+    /// Swamp maps: shore island or bridge (towns ignore it).
+    pub style: GateStyle,
+}
+
+impl GateSpec {
+    pub fn at(direction_deg: f32) -> Self {
+        Self { direction_deg, ..Self::default() }
+    }
 }
 
 impl Default for GateSpec {
     fn default() -> Self {
-        Self { direction_deg: 90.0 }
+        Self { direction_deg: 90.0, style: GateStyle::Shore }
     }
 }
 
@@ -218,12 +251,44 @@ pub struct GateSettings {
 impl Default for GateSettings {
     fn default() -> Self {
         Self {
-            gates: vec![GateSpec { direction_deg: 90.0 }, GateSpec { direction_deg: 270.0 }],
+            gates: vec![GateSpec::at(90.0), GateSpec::at(270.0)],
             opening_m: 3.0,
             road: true,
             road_width_m: 2.5,
             color: [50, 110, 230],
         }
+    }
+}
+
+/// Settings of the swamp node chain (docs/swamp-plan.md), one struct per
+/// node.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SwampSettings {
+    /// Node 2: where each gate meets the map border.
+    pub gate_anchors: GateAnchorSettings,
+}
+
+/// Settings of the swamp gate anchors node (step S1). The gate list itself
+/// (directions + style) is `LevelConfig::gates`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GateAnchorSettings {
+    /// A gate whose direction is within this many degrees of a map corner
+    /// moves into that corner. 0 = never.
+    pub corner_snap_deg: f32,
+    /// Gate island diameter range, meters (shore gates: the island at the
+    /// border; bridge gates: the island the bridge starts from).
+    pub island_min_m: f32,
+    pub island_max_m: f32,
+    /// Bridge length range for bridge gates, meters (island shore → border).
+    pub bridge_min_m: f32,
+    pub bridge_max_m: f32,
+}
+
+impl Default for GateAnchorSettings {
+    fn default() -> Self {
+        Self { corner_snap_deg: 20.0, island_min_m: 10.0, island_max_m: 16.0, bridge_min_m: 8.0, bridge_max_m: 14.0 }
     }
 }
 

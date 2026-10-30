@@ -8,6 +8,9 @@ built straight into its own node of the left panel and tested in the app.
 **Status:** steps 0–6 and 8–12 are done (12 nodes), plus the `mapgen-mcp`
 server for Claude. Open: step 7 (walkable budget), step 13 (validation &
 export polish), cleanup.
+Next map kind: Swamp — its own node chain, planned in
+[swamp-plan.md](swamp-plan.md) (step list and notes live there). Done:
+S1 gate anchors. A swamp map now runs only that chain.
 
 ## Current app shell (what exists and stays)
 
@@ -46,7 +49,10 @@ not want the bench stage).
 **The kind separates node workflows.** Which nodes exist after the shape
 depends on `MapKind` (Town / Swamp / Forest / Cave): a forest has no buildings
 node, a cave has no props-on-roads node, and so on. When adding a node, state
-which kinds include it.
+which kinds include it. **Swamp** branches right after the Template into its
+own chain (`generator/swamp/`, `swamp_node_chain` in left_panel.rs) — the
+list below is the town / forest / cave chain; the swamp one is in
+[swamp-plan.md](swamp-plan.md).
 
 Right now:
 

@@ -409,7 +409,7 @@ mod tests {
     #[test]
     fn any_direction_finds_the_wall() {
         let mut config = LevelConfig::default();
-        config.gates.gates = (0..8).map(|k| GateSpec { direction_deg: k as f32 * 45.0 }).collect();
+        config.gates.gates = (0..8).map(|k| GateSpec::at(k as f32 * 45.0)).collect();
         config.gates.road = false;
         let lvl = level(&config, 3);
         assert_eq!(lvl.gates.as_ref().unwrap().gates.len(), 8, "{:?}", lvl.notes);
@@ -418,7 +418,7 @@ mod tests {
     #[test]
     fn island_maps_get_gates() {
         let mut config = LevelConfig::default();
-        config.kind = MapKind::Swamp;
+        config.kind = MapKind::Forest;
         config.shape = ShapeSettings::for_kind(config.kind);
         let lvl = level(&config, 2);
         assert!(!lvl.gates.as_ref().unwrap().gates.is_empty(), "{:?}", lvl.notes);

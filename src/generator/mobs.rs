@@ -630,7 +630,7 @@ mod tests {
     #[test]
     fn non_town_maps_get_mobs() {
         let mut config = LevelConfig::default();
-        config.kind = MapKind::Swamp;
+        config.kind = MapKind::Forest;
         config.shape = ShapeSettings::for_kind(config.kind);
         assert!(!level(&config, 2).mobs.as_ref().unwrap().spawns.is_empty());
     }

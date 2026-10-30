@@ -209,6 +209,7 @@ mod tests {
             hidden_rooms: None,
             mobs: None,
             gates: None,
+            swamp: None,
             regions: None,
             noise_preview: None,
             notes: Vec::new(),

@@ -393,6 +393,39 @@ pub struct GateInfo {
     pub object: usize,
 }
 
+/// Where one swamp gate meets the map border (swamp gate anchors node).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GateAnchor {
+    /// 1-based gate id (its place in the config list).
+    pub id: u32,
+    /// Direction asked for, and the one used (a corner's direction when the
+    /// gate snapped into a corner).
+    pub direction_deg: f32,
+    pub actual_deg: f32,
+    pub style: crate::model::GateStyle,
+    /// The gate snapped into a map corner.
+    pub corner: bool,
+    /// The gate (teleport) point on the map edge, meters.
+    pub point_m: [f32; 2],
+    /// Where firm ground must be, meters: the gate island's center (shore
+    /// gates — the island reaches over the edge) or the center of the
+    /// island the bridge starts from (bridge gates).
+    pub land_m: [f32; 2],
+    /// Diameter of that island, meters.
+    pub island_m: f32,
+    /// Bridge length from the island's shore to the gate point, meters (0
+    /// for shore gates).
+    pub bridge_m: f32,
+    /// Index of its marker in `GeneratedLevel::objects`.
+    pub object: usize,
+}
+
+/// The swamp node chain's output, filled node by node (docs/swamp-plan.md).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct SwampLayout {
+    pub gate_anchors: Vec<GateAnchor>,
+}
+
 /// The mobs node's output.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MobLayout {
@@ -534,6 +567,9 @@ pub struct GeneratedLevel {
     /// The mobs node's spawn points and spending.
     #[serde(default)]
     pub mobs: Option<MobLayout>,
+    /// The swamp chain's output (swamp maps only).
+    #[serde(default)]
+    pub swamp: Option<SwampLayout>,
     /// Raw noise field behind the region shape, for the bench "noise texture"
     /// view.
     pub noise_preview: Option<NoiseTexture>,

@@ -42,7 +42,10 @@ src/
 │   ├── interactive.rs   # node 10: interactive objects
 │   ├── hidden_rooms.rs  # node 11: hidden rooms + access paths
 │   ├── mobs.rs          # node 12: budgeted mob spawns
-│   └── placement.rs     # shared object footprint / road-angle helpers
+│   ├── placement.rs     # shared object footprint / road-angle helpers
+│   └── swamp/           # the swamp node chain (docs/swamp-plan.md)
+│       ├── mod.rs       #   swamp pipeline
+│       └── gate_anchors.rs # swamp node 2: gate points + gate islands
 ├── render.rs            # map.png / layer.png rasterizers
 ├── export.rs            # export bundle writer + spec.json
 ├── validate.rs          # config validation (early subset; step 13 extends it)
@@ -77,9 +80,14 @@ body and apply on ⚙ Generate. The algorithms are described step by step in
 12. **Mobs**: typed packs bought from a budget, with combinations, balance,
     minimum, spacing and gate clearance.
 
+**Swamp** has its own chain (being built, see
+[swamp-plan.md](swamp-plan.md)): 1 Template → 2 **Gate anchors** (gate
+points on the border, shore or bridge style, corner snap, where each gate
+island goes) → islands, paths, depth & border, trees, … next.
+
 Export: map.png (colored map), layer.png (R = category id, G/B = instance
 id), spec.json (legend, every object, regions, roads, wall gaps, interactive
-groups, hidden rooms, mobs, gates).
+groups, hidden rooms, mobs, gates; swamp: `gate_anchors`).
 
 ## MCP server
 
@@ -91,7 +99,7 @@ rebuild it after code changes.
 
 | Tool | What it does |
 |---|---|
-| `set_gates` | gates by `directions` (0° east, 90° north…) or `count` spread evenly; opening, gate road, color |
+| `set_gates` | gates by `directions` (0° east, 90° north…) or `count` spread evenly; swamp `styles` (shore / bridge); opening, gate road, color |
 | `set_mob_types` | replace all mob types (name, price, size, share, color) + `forbid_pairs` |
 | `upsert_mob_type` / `remove_mob_type` | add or change one type (rename too) / remove one |
 | `set_mob_combination` | allow/forbid two types at one spawn |

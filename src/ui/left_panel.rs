@@ -1,7 +1,7 @@
 use eframe::egui;
 use rand::Rng;
 
-use crate::model::{GateSpec, HiddenRoomPlace, InteractiveSpot, InteractiveType, LevelConfig, MapKind, MobType, NodeAmount, ShapeSettings};
+use crate::model::{GateSpec, GateStyle, HiddenRoomPlace, InteractiveSpot, InteractiveType, LevelConfig, MapKind, MobType, NodeAmount, ShapeSettings};
 use crate::ui::app::{ConfigStatus, MapGenApp};
 use crate::ui::widgets::param_row;
 
@@ -26,6 +26,10 @@ pub fn show(ui: &mut egui::Ui, app: &mut MapGenApp) {
 fn generation_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_template(ui, app);
     flow_arrow(ui, "empty field (the map)");
+    if app.config.kind == MapKind::Swamp {
+        swamp_node_chain(ui, app);
+        return;
+    }
     node_shape(ui, app);
     flow_arrow(ui, "region mask");
     node_outer_walls(ui, app);
@@ -50,6 +54,14 @@ fn generation_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     flow_arrow(ui, "walkable ground (roads, open hidden rooms)");
     node_mobs(ui, app);
     ui.weak("Next nodes appear here as sections finish; which nodes exist depends on the map kind (docs/workflow.md).");
+    ui.add_space(4.0);
+    ui.separator();
+}
+
+/// The swamp chain after the template (docs/swamp-plan.md).
+fn swamp_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    node_gate_anchors(ui, app);
+    ui.weak("Next swamp nodes appear here as they finish: islands, paths, depth & border, trees, then props, interactive objects, hidden rooms and mobs (docs/swamp-plan.md).");
     ui.add_space(4.0);
     ui.separator();
 }
@@ -79,9 +91,10 @@ builds is quantized to this grid. 0.5 m: fine, crisp edges, but 4× more cells t
 (and slower). 1–2 m: chunkier edges, faster. Changing it re-samples the noise, so the \
 region shape can shift.";
     const TIP_KIND: &str = "What this map is. It picks the shape defaults (a TOWN keeps \
-most of the map and cuts the rest away; swamp / forest / cave scatter islands and \
-bridge them) and decides which nodes the pipeline gets — a forest has no buildings \
-node, for example. Switching the kind loads that kind's shape defaults.";
+most of the map and cuts the rest away; forest / cave scatter islands and bridge them) \
+and decides which nodes the pipeline gets — a forest has no buildings node, for example. \
+SWAMP has its own node chain (gate anchors first, islands, paths and water next — still \
+being built). Switching the kind loads that kind's shape defaults.";
     node(ui, "1 · Template", |ui| {
         ui.weak("input: nothing · output: empty field + map kind");
         egui::Grid::new("template_node_grid")
@@ -751,8 +764,6 @@ fn node_gates(ui: &mut egui::Ui, app: &mut MapGenApp) {
     const TIP_DIRECTION: &str = "Direction from the map center, degrees: 0 = east (right), \
 90 = north (up), 180 = west, 270 = south. The gate sits where that ray crosses the outer \
 wall; if it meets no wall, it turns up to 45° to find one (spec.json gives the angle used).";
-    const TIP_COUNT: &str = "Number of gates. Raising it adds gates spread evenly between \
-the existing ones; lowering it removes the last ones. Each gate's direction is set below.";
     const TIP_OPENING: &str = "Width of the gap cut into the outer wall at each gate, meters.";
     const TIP_ROAD: &str = "Lay a road from each gate to the nearest road, inside the gate's \
 region. Houses, props and everything after keep off it.";
@@ -763,20 +774,7 @@ region. Houses, props and everything after keep off it.";
         let g = &mut app.config.gates;
         let mut remove = None;
         egui::Grid::new("gates_node_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
-            let mut count = g.gates.len();
-            param_row(ui, "Count", TIP_COUNT, |ui| ui.add(egui::DragValue::new(&mut count).range(0..=32).speed(0.1)));
-            set_gate_count(&mut g.gates, count);
-            for (i, spec) in g.gates.iter_mut().enumerate() {
-                param_row(ui, &format!("Gate #{}", i + 1), TIP_DIRECTION, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.add(egui::Slider::new(&mut spec.direction_deg, 0.0..=359.0).suffix("°"));
-                        if ui.small_button("🗑").on_hover_text("Remove this gate").clicked() {
-                            remove = Some(i);
-                        }
-                    })
-                    .response
-                });
-            }
+            remove = gate_list_rows(ui, &mut g.gates, TIP_DIRECTION, false);
             param_row(ui, "Opening", TIP_OPENING, |ui| {
                 ui.add(egui::DragValue::new(&mut g.opening_m).range(0.5..=20.0).speed(0.05).suffix(" m"))
             });
@@ -791,25 +789,7 @@ region. Houses, props and everything after keep off it.";
         if let Some(i) = remove {
             g.gates.remove(i);
         }
-        ui.horizontal(|ui| {
-            if ui.button("➕ Add gate").clicked() {
-                // Opposite the last gate: a fair first guess.
-                let deg = g.gates.last().map_or(90.0, |l| (l.direction_deg + 180.0).rem_euclid(360.0));
-                g.gates.push(GateSpec { direction_deg: deg });
-            }
-            if ui
-                .button("⟳ Spread evenly")
-                .on_hover_text("Spreads the gates evenly around the map, keeping the first one's direction.")
-                .clicked()
-                && !g.gates.is_empty()
-            {
-                let n = g.gates.len() as f32;
-                let start = g.gates[0].direction_deg;
-                for (k, spec) in g.gates.iter_mut().enumerate() {
-                    spec.direction_deg = (start + k as f32 * 360.0 / n).rem_euclid(360.0);
-                }
-            }
-        });
+        ui.horizontal(|ui| gate_list_buttons(ui, &mut g.gates));
         ui.weak("Changes apply on ⚙ Generate");
         if let Some(l) = app.generated.as_ref().and_then(|l| l.gates.as_ref()) {
             let parts: Vec<String> = l
@@ -825,6 +805,154 @@ region. Houses, props and everything after keep off it.";
                 })
                 .collect();
             ui.weak(format!("generated: {} of {} gates · {}", l.gates.len(), l.requested, parts.join(" · ")));
+        }
+    });
+}
+
+const TIP_GATE_COUNT: &str = "Number of gates. Raising it adds gates spread evenly \
+between the existing ones; lowering it removes the last ones. Each gate's direction is set below.";
+
+/// The Count row plus one row per gate (direction slider, the style picker
+/// when `styles`, 🗑) inside a node's grid. Returns the gate to remove.
+fn gate_list_rows(ui: &mut egui::Ui, gates: &mut Vec<GateSpec>, tip_direction: &str, styles: bool) -> Option<usize> {
+    const TIP_STYLE: &str = "Shore: the gate stands on an island that touches the map \
+border (the swamp runs on into the big land there). Bridge: an island sits inland and a \
+boardwalk runs from it out to the border; the gate is at the bridge's end.";
+    let mut count = gates.len();
+    param_row(ui, "Count", TIP_GATE_COUNT, |ui| ui.add(egui::DragValue::new(&mut count).range(0..=32).speed(0.1)));
+    set_gate_count(gates, count);
+    let mut remove = None;
+    for (i, spec) in gates.iter_mut().enumerate() {
+        param_row(ui, &format!("Gate #{}", i + 1), tip_direction, |ui| {
+            ui.horizontal(|ui| {
+                ui.add(egui::Slider::new(&mut spec.direction_deg, 0.0..=359.0).suffix("°"));
+                if styles {
+                    egui::ComboBox::from_id_salt(("gate_style", i))
+                        .width(70.0)
+                        .selected_text(spec.style.label())
+                        .show_ui(ui, |ui| {
+                            for style in GateStyle::ALL {
+                                ui.selectable_value(&mut spec.style, style, style.label());
+                            }
+                        })
+                        .response
+                        .on_hover_text(TIP_STYLE);
+                }
+                if ui.small_button("🗑").on_hover_text("Remove this gate").clicked() {
+                    remove = Some(i);
+                }
+            })
+            .response
+        });
+    }
+    remove
+}
+
+/// ➕ Add gate and ⟳ Spread evenly.
+fn gate_list_buttons(ui: &mut egui::Ui, gates: &mut Vec<GateSpec>) {
+    if ui.button("➕ Add gate").clicked() {
+        // Opposite the last gate: a fair first guess.
+        let deg = gates.last().map_or(90.0, |l| (l.direction_deg + 180.0).rem_euclid(360.0));
+        gates.push(GateSpec::at(deg));
+    }
+    if ui
+        .button("⟳ Spread evenly")
+        .on_hover_text("Spreads the gates evenly around the map, keeping the first one's direction.")
+        .clicked()
+        && !gates.is_empty()
+    {
+        let n = gates.len() as f32;
+        let start = gates[0].direction_deg;
+        for (k, spec) in gates.iter_mut().enumerate() {
+            spec.direction_deg = (start + k as f32 * 360.0 / n).rem_euclid(360.0);
+        }
+    }
+}
+
+/// Swamp node 2: where each gate meets the map border (step S1 in
+/// docs/swamp-plan.md). Uses the same gate list as the town gates node.
+fn node_gate_anchors(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_DIRECTION: &str = "Direction from the map center, degrees: 0 = east (right), \
+90 = north (up), 180 = west, 270 = south. The gate sits where that ray leaves the map — or \
+in a corner, see Corner snap. The picker next to it sets the gate style.";
+    const TIP_SNAP: &str = "A gate whose direction is within this many degrees of a map \
+corner (as seen from the center) moves into that corner — a corner island leading out to \
+the big land. 0° = never. NO EFFECT when no gate points near a corner.";
+    const TIP_ISLAND: &str = "Gate island diameter range, meters (rolled per gate). Shore \
+gates: the island at the border, its center half a radius in from the edge. Bridge gates: \
+the island the bridge starts from. Capped at 40% of the shorter map side.";
+    const TIP_BRIDGE: &str = "Bridge length range, meters (rolled per gate): from the \
+gate island's shore out to the gate on the border. Island + bridge are capped at 40% of the \
+shorter map side. NO EFFECT when no gate has the Bridge style.";
+    const TIP_COLOR: &str = "Gate marker color on the map image, the preview and the legend.";
+    node(ui, "2 · Gate anchors", |ui| {
+        ui.weak("input: empty field · output: gate points on the border + where their islands go (swamp)");
+        let g = &mut app.config.gates;
+        let a = &mut app.config.swamp.gate_anchors;
+        let mut remove = None;
+        egui::Grid::new("gate_anchors_node_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            remove = gate_list_rows(ui, &mut g.gates, TIP_DIRECTION, true);
+            param_row(ui, "Corner snap", TIP_SNAP, |ui| {
+                ui.add(egui::DragValue::new(&mut a.corner_snap_deg).range(0.0..=45.0).speed(0.2).suffix("°"))
+            });
+            param_row(ui, "Island size", TIP_ISLAND, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add(egui::DragValue::new(&mut a.island_min_m).range(1.0..=100.0).speed(0.1).suffix(" m"));
+                    ui.label("–");
+                    ui.add(egui::DragValue::new(&mut a.island_max_m).range(1.0..=100.0).speed(0.1).suffix(" m"));
+                })
+                .response
+            });
+            param_row(ui, "Bridge length", TIP_BRIDGE, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add(egui::DragValue::new(&mut a.bridge_min_m).range(0.0..=100.0).speed(0.1).suffix(" m"));
+                    ui.label("–");
+                    ui.add(egui::DragValue::new(&mut a.bridge_max_m).range(0.0..=100.0).speed(0.1).suffix(" m"));
+                })
+                .response
+            });
+            param_row(ui, "Color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut g.color));
+        });
+        if let Some(i) = remove {
+            g.gates.remove(i);
+        }
+        ui.horizontal(|ui| gate_list_buttons(ui, &mut g.gates));
+        ui.horizontal(|ui| {
+            if ui
+                .button("🎲 Random params")
+                .on_hover_text(
+                    "Rolls the corner snap, island sizes, bridge lengths and every gate's \
+                     style independently inside their reasonable ranges — they may \
+                     contradict each other. Directions stay. Set values only; press Generate.",
+                )
+                .clicked()
+            {
+                let mut rng = rand::rng();
+                a.corner_snap_deg = rng.random_range(0.0..=30.0);
+                a.island_min_m = rng.random_range(4.0..=20.0);
+                a.island_max_m = rng.random_range(4.0..=24.0);
+                a.bridge_min_m = rng.random_range(2.0..=16.0);
+                a.bridge_max_m = rng.random_range(2.0..=20.0);
+                for spec in &mut g.gates {
+                    spec.style = if rng.random_bool(0.5) { GateStyle::Shore } else { GateStyle::Bridge };
+                }
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(s) = app.generated.as_ref().and_then(|l| l.swamp.as_ref()) {
+            let parts: Vec<String> = s
+                .gate_anchors
+                .iter()
+                .map(|x| {
+                    let style = match x.style {
+                        GateStyle::Shore => "shore".to_owned(),
+                        GateStyle::Bridge => format!("bridge {:.0} m", x.bridge_m),
+                    };
+                    let corner = if x.corner { ", corner" } else { "" };
+                    format!("#{} {style}{corner}, island {:.0} m", x.id, x.island_m)
+                })
+                .collect();
+            ui.weak(format!("generated: {} gates · {}", s.gate_anchors.len(), parts.join(" · ")));
         }
     });
 }
@@ -850,7 +978,7 @@ fn set_gate_count(gates: &mut Vec<GateSpec>, count: usize) {
                 from + gap / 2.0
             }
         };
-        gates.push(GateSpec { direction_deg: deg.rem_euclid(360.0) });
+        gates.push(GateSpec::at(deg.rem_euclid(360.0)));
     }
 }
 

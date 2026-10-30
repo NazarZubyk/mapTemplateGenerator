@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
-use crate::model::{GateSpec, LevelConfig, MobType};
+use crate::model::{GateSpec, GateStyle, LevelConfig, MapKind, MobType};
 
 pub const DEFAULT_CONFIG: &str = "configs/config.json";
 const PROTOCOL_VERSION: &str = "2025-06-18";
@@ -211,16 +211,17 @@ fn tool_list() -> Value {
     json!([
         {
             "name": "get_config",
-            "description": "Read the current config (whole, or one section: map, kind, shape, outer_wall, regions, roads, region_walls, gates, houses, props, interactive, hidden_rooms, mobs, cell_size_m, seed).",
+            "description": "Read the current config (whole, or one section: map, kind, shape, outer_wall, regions, roads, region_walls, gates, houses, props, interactive, hidden_rooms, mobs, swamp, cell_size_m, seed).",
             "inputSchema": { "type": "object", "properties": { "section": { "type": "string" } } }
         },
         {
             "name": "set_gates",
-            "description": "Set the level's entry/exit gates. Either `directions` (degrees from map center: 0 east, 90 north, 180 west, 270 south) or `count` (spread evenly starting at `start_deg`, default 90). Optional opening width, gate road toggle/width, color.",
+            "description": "Set the level's entry/exit gates. Either `directions` (degrees from map center: 0 east, 90 north, 180 west, 270 south) or `count` (spread evenly starting at `start_deg`, default 90). Optional `styles` (swamp maps: \"shore\" = gate island touching the border, \"bridge\" = boardwalk out to the border; one per gate, the last repeats), opening width, gate road toggle/width, color. Swamp corner snap / island size / bridge length: patch_config `swamp.gate_anchors`.",
             "inputSchema": { "type": "object", "properties": {
                 "directions": { "type": "array", "items": { "type": "number" } },
                 "count": { "type": "integer", "minimum": 0 },
                 "start_deg": { "type": "number" },
+                "styles": { "type": "array", "items": { "type": "string", "enum": ["shore", "bridge"] } },
                 "opening_m": { "type": "number" },
                 "road": { "type": "boolean" },
                 "road_width_m": { "type": "number" },
@@ -337,18 +338,30 @@ fn mob_index(c: &LevelConfig, name: &str) -> Result<usize, String> {
 }
 
 fn set_gates(c: &mut LevelConfig, args: &Value) -> Result<String, String> {
+    let swamp = c.kind == MapKind::Swamp;
     let g = &mut c.gates;
     if let Some(dirs) = args.get("directions").and_then(Value::as_array) {
         g.gates = dirs
             .iter()
-            .map(|d| d.as_f64().map(|d| GateSpec { direction_deg: (d as f32).rem_euclid(360.0) }))
+            .map(|d| d.as_f64().map(|d| GateSpec::at((d as f32).rem_euclid(360.0))))
             .collect::<Option<Vec<_>>>()
             .ok_or("directions must be numbers (degrees)")?;
     } else if let Some(n) = u32_arg(args, "count") {
         let start = f32_arg(args, "start_deg").unwrap_or(90.0);
         g.gates = (0..n)
-            .map(|k| GateSpec { direction_deg: (start + k as f32 * 360.0 / n as f32).rem_euclid(360.0) })
+            .map(|k| GateSpec::at((start + k as f32 * 360.0 / n as f32).rem_euclid(360.0)))
             .collect();
+    }
+    if let Some(styles) = args.get("styles").and_then(Value::as_array) {
+        let styles = styles
+            .iter()
+            .map(|v| serde_json::from_value::<GateStyle>(v.clone()).map_err(|_| "styles must be \"shore\" or \"bridge\""))
+            .collect::<Result<Vec<_>, _>>()?;
+        if let Some(&last) = styles.last() {
+            for (i, spec) in g.gates.iter_mut().enumerate() {
+                spec.style = styles.get(i).copied().unwrap_or(last);
+            }
+        }
     }
     if let Some(v) = f32_arg(args, "opening_m") {
         g.opening_m = v.max(0.1);
@@ -362,7 +375,14 @@ fn set_gates(c: &mut LevelConfig, args: &Value) -> Result<String, String> {
     if let Some(col) = color_arg(args)? {
         g.color = col;
     }
-    let dirs: Vec<String> = g.gates.iter().map(|s| format!("{:.0}°", s.direction_deg)).collect();
+    let dirs: Vec<String> = g
+        .gates
+        .iter()
+        .map(|s| {
+            let style = if swamp { format!(" {}", s.style.label().to_lowercase()) } else { String::new() };
+            format!("{:.0}°{style}", s.direction_deg)
+        })
+        .collect();
     Ok(format!(
         "{} gate(s) at {} · opening {:.1} m · road {}",
         g.gates.len(),
@@ -634,6 +654,15 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
             "in_hidden_rooms": m.spawns.iter().filter(|s| s.hidden_room.is_some()).count(),
         })
     });
+    let gate_anchors = level.swamp.as_ref().map(|s| {
+        s.gate_anchors
+            .iter()
+            .map(|x| json!({
+                "id": x.id, "asked_deg": x.direction_deg, "actual_deg": x.actual_deg, "style": x.style,
+                "corner": x.corner, "point_m": x.point_m, "island_m": x.island_m, "bridge_m": x.bridge_m,
+            }))
+            .collect::<Vec<_>>()
+    });
     let gates = level.gates.as_ref().map(|g| {
         json!({
             "placed": g.gates.len(), "requested": g.requested,
@@ -654,6 +683,7 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
         "interactive": level.interactive.as_ref().map(|l| l.types.iter().map(|t| json!({"name": t.name, "placed": t.placed, "requested": t.requested})).collect::<Vec<_>>()),
         "hidden_rooms": level.hidden_rooms.as_ref().map(|h| json!({"placed": h.rooms.len(), "requested": h.requested})),
         "gates": gates,
+        "gate_anchors": gate_anchors,
         "mobs": mobs,
         "notes": level.notes,
     })
@@ -695,6 +725,10 @@ mod tests {
         s.call("set_gates", &json!({"directions": [45, -90], "opening_m": 5, "road": false})).unwrap();
         let g = saved(&s).gates;
         assert_eq!(g.gates.iter().map(|g| g.direction_deg).collect::<Vec<_>>(), vec![45.0, 270.0]);
+        s.call("set_gates", &json!({"count": 3, "styles": ["shore", "bridge"]})).unwrap();
+        let styles: Vec<GateStyle> = saved(&s).gates.gates.iter().map(|g| g.style).collect();
+        assert_eq!(styles, vec![GateStyle::Shore, GateStyle::Bridge, GateStyle::Bridge], "the last style repeats");
+        assert!(s.call("set_gates", &json!({"styles": ["moat"]})).is_err());
         assert_eq!(g.opening_m, 5.0);
         assert!(!g.road);
     }
