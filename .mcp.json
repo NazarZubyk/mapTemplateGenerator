@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mapgen": {
+      "command": "./target/release/mapgen-mcp",
+      "args": ["--config", "configs/config.json"]
+    }
+  }
+}

@@ -18,6 +18,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut MapGenApp) {
         &mut app.config,
         &mut app.config_path,
         &mut app.config_status,
+        &mut app.live_sync,
     );
 }
 
@@ -1603,6 +1604,7 @@ fn config_file_section(
     config: &mut LevelConfig,
     config_path: &mut String,
     config_status: &mut Option<ConfigStatus>,
+    live_sync: &mut bool,
 ) {
     section(ui, "Config file", |ui| {
         ui.horizontal(|ui| {
@@ -1629,6 +1631,10 @@ fn config_file_section(
                 }
             }
         });
+        ui.checkbox(live_sync, "🔄 Live sync").on_hover_text(
+            "Reload this file whenever it changes on disk and regenerate — e.g. when Claude edits \
+             it through the MCP server (mapgen-mcp). Your own Save never triggers a reload.",
+        );
         if let Some(status) = config_status {
             let color = if status.ok {
                 egui::Color32::from_rgb(140, 210, 140)

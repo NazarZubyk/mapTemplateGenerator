@@ -1,6 +1,6 @@
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant, SystemTime};
 
 use eframe::egui;
 use rand::Rng;
@@ -37,7 +37,18 @@ pub struct MapGenApp {
     pub bench_shape: Option<egui::TextureHandle>,
     /// The generation running on a background thread, if any.
     pub job: Option<GenJob>,
+    /// Live sync: reload the config file when it changes on disk (e.g. edited
+    /// by the MCP server, `mapgen-mcp`) and regenerate.
+    pub live_sync: bool,
+    /// Modification time of the config file when last checked.
+    pub config_mtime: Option<SystemTime>,
+    pub last_sync_check: Instant,
+    /// A reload arrived while a generation was running: generate again after.
+    pub regen_pending: bool,
 }
+
+/// How often live sync looks at the config file.
+const SYNC_EVERY: Duration = Duration::from_millis(500);
 
 /// A generation running on a background thread.
 pub struct GenJob {
@@ -72,6 +83,10 @@ impl Default for MapGenApp {
             bench_noise: None,
             bench_shape: None,
             job: None,
+            live_sync: true,
+            config_mtime: None,
+            last_sync_check: Instant::now() - SYNC_EVERY,
+            regen_pending: false,
         }
     }
 }
@@ -115,6 +130,9 @@ impl MapGenApp {
             Ok(level) => {
                 self.job = None;
                 self.finish_level(ctx, level);
+                if std::mem::take(&mut self.regen_pending) {
+                    self.generate_level(ctx);
+                }
             }
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => {
@@ -125,6 +143,51 @@ impl MapGenApp {
                     message: "Generation crashed — try other settings or another seed".to_owned(),
                     blocking: false,
                 }];
+            }
+        }
+    }
+
+    /// Live sync: when the config file changed on disk and now differs from
+    /// the config in the app, load it and regenerate. The app's own Save
+    /// writes the same config, so it never triggers a reload.
+    fn sync_config_file(&mut self, ctx: &egui::Context) {
+        if !self.live_sync {
+            return;
+        }
+        ctx.request_repaint_after(SYNC_EVERY);
+        if self.last_sync_check.elapsed() < SYNC_EVERY {
+            return;
+        }
+        self.last_sync_check = Instant::now();
+        let Ok(mtime) = std::fs::metadata(&self.config_path).and_then(|m| m.modified()) else {
+            return;
+        };
+        if self.config_mtime == Some(mtime) {
+            return;
+        }
+        self.config_mtime = Some(mtime);
+        let loaded = std::fs::read_to_string(&self.config_path)
+            .map_err(|e| e.to_string())
+            .and_then(|text| serde_json::from_str::<LevelConfig>(&text).map_err(|e| e.to_string()));
+        match loaded {
+            Ok(config) if config != self.config => {
+                self.config = config;
+                self.config_status = Some(ConfigStatus {
+                    ok: true,
+                    text: format!("Reloaded {} (changed on disk)", self.config_path),
+                });
+                if !validate(&self.config).iter().any(|w| w.blocking) {
+                    if self.job.is_some() {
+                        self.regen_pending = true;
+                    } else {
+                        self.generate_level(ctx);
+                    }
+                }
+            }
+            Ok(_) => {}
+            // Half-written files show up mid-save; the next change retries.
+            Err(e) => {
+                self.config_status = Some(ConfigStatus { ok: false, text: format!("Live sync: {e}") });
             }
         }
     }
@@ -237,6 +300,7 @@ impl MapGenApp {
 impl eframe::App for MapGenApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_job(ctx);
+        self.sync_config_file(ctx);
         // The config is small: re-validate every frame so warnings stay current.
         self.warnings = validate(&self.config);
         self.warnings.extend(self.gen_warnings.iter().cloned());

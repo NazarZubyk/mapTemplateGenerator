@@ -71,6 +71,41 @@ body, every control has a tooltip, and changes apply on **⚙ Generate**.
 Plus app features: **Export** (map.png + layer.png + spec.json) and
 **Config file** (save/load JSON; older configs keep loading).
 
+## Claude MCP server
+
+`mapgen-mcp` lets Claude configure the generator through MCP (Model Context
+Protocol over stdio). It focuses on gates and mobs, and fills in any names and
+colors you leave out. It edits the same config file the app uses
+(`configs/config.json`). The app's **🔄 Live sync** (Config file section, on by
+default) reloads that file whenever it changes and regenerates, so each
+change shows up in the preview.
+
+```sh
+cargo build --release --bin mapgen-mcp   # once, and after code changes
+```
+
+`.mcp.json` in the repo registers it for Claude Code as `mapgen`. Approve it
+when Claude Code asks, or register it by hand:
+`claude mcp add mapgen -- ./target/release/mapgen-mcp --config configs/config.json`.
+
+| Tool | What it does |
+|---|---|
+| `set_gates` | gates by `directions` (0° east, 90° north…) or `count` spread evenly; opening, gate road, color |
+| `set_mob_types` | replace all mob types (name, price, size, share, color) + `forbid_pairs` |
+| `upsert_mob_type` / `remove_mob_type` | add or change one type (rename too) / remove one |
+| `set_mob_combination` | allow/forbid two types at one spawn |
+| `set_mob_settings` | budget, max, minimum (count or density), pack size, spacing, on roads, gate clearance |
+| `patch_config` | JSON merge patch for any other node (map, regions, roads, houses, props, …) |
+| `get_config` / `reset_config` | read the config (or one section) / back to defaults |
+| `generate` / `export` | generate and summarize (mobs per type, budget, gates, notes) / write the bundle |
+
+Example prompt: *"Make it a bandit camp: 2 gates east and west, rats, bandits
+and a bandit chief, chief never with rats, crowded — at least 2 mobs per
+100 m²."*
+
+Unsaved edits in the app are replaced when the file changes on disk. Save
+first, or turn Live sync off while editing by hand.
+
 ## App layout
 
 - **Top bar**: seed, ⚙ Generate, 🎲 Re-roll. Generation runs in the
@@ -85,6 +120,7 @@ Plus app features: **Export** (map.png + layer.png + spec.json) and
 
 ```sh
 cargo run      # launch the app
+cargo build --release --bin mapgen-mcp   # the MCP server for Claude
 cargo test     # unit tests
 cargo clippy --all-targets
 ```
@@ -95,6 +131,7 @@ cargo clippy --all-targets
 src/
 ├── main.rs              # eframe entry shim
 ├── lib.rs
+├── mcp.rs               # MCP server logic (tools, JSON-RPC); bin/mapgen-mcp.rs runs it
 ├── model.rs             # serde config: per-node settings structs
 ├── level.rs             # level model (PlacedObject, roads, walls, layouts)
 ├── generator/

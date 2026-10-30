@@ -787,6 +787,30 @@ on town ground (north top half, south bottom half), gate roads join a
 connected network, later objects keep off gate roads, mobs and hidden rooms
 keep clear, 8 directions all find the wall, island maps, determinism.
 
+## MCP server (mapgen-mcp)
+
+`src/mcp.rs` (logic + tests) and `src/bin/mapgen-mcp.rs` (entry). JSON-RPC
+2.0, newline-delimited over stdio, hand-rolled (no extra crates):
+`initialize` (echoes the client's protocol version, tools capability,
+instructions), `ping`, `tools/list`, `tools/call`; notifications get no
+reply; unknown methods → -32601. Every editing tool loads the config file
+(defaults if missing), changes it, saves it and reports the change plus
+`validate` warnings. Auto-filled values: names "Mob #n", colors from a
+golden-angle HSV set, picking the one farthest from every color already in
+the config; mob shares are re-normalized to 100 (`set_mob_types` gives
+types without a share an equal part of what is left; `upsert_mob_type`
+keeps the touched type's share and scales the others). `patch_config` is an
+RFC 7396 merge patch on the serialized config, then deserialized back (bad
+types → error). `generate` / `export` return a JSON summary.
+
+App side: `MapGenApp::sync_config_file` checks the config file's mtime
+every 500 ms while **Live sync** is on; a changed file that differs from the
+app's config is loaded and regenerated (queued with `regen_pending` if a
+generation is running). The app's own Save writes an equal config, so it
+never triggers a reload. `.mcp.json` registers the release binary for
+Claude Code. When a new node gets settings, give it a dedicated tool if it
+is used often; `patch_config` covers it meanwhile.
+
 ## Done-ness checklist for every step
 
 - [ ] logic lives in `src/generator`, deterministic, unit-tested

@@ -2,6 +2,8 @@
 name = "mapTemplateGenerator"
 version = "0.1.0"
 edition = "2024"
+# `cargo run` starts the app; the MCP server is `--bin mapgen-mcp`.
+default-run = "mapTemplateGenerator"
 
 [lib]
 name = "map_template_generator"
