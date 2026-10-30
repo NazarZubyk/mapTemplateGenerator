@@ -1,177 +1,79 @@
 # mapTemplateGenerator
-A simple tool for generating 2D map layouts that can be used with AI to create prototype levels for ARPG games.
 
-Docs:
-- [docs/goals.md](docs/goals.md): goals and feature requirements.
-- [docs/workflow.md](docs/workflow.md): how the generator is built. Includes
-  the node chain, step list, per-step algorithm notes and the MCP server.
-- [docs/next-agent-prompt.md](docs/next-agent-prompt.md): a handoff prompt
-  for a fresh Claude session.
-- [docs/plan.md](docs/plan.md): the first build's plan (outdated, history
-  only).
+Make 2D map blueprints for ARPG levels in a few clicks. Hand the result to
+an AI agent (or a level designer) to build a playable prototype fast.
 
-## Status: generator rebuild in progress
+> **⚠ Beta.** This is an early version. Settings and file formats may still
+> change between releases.
+>
+> **Only the Town map kind is ready.** Swamp, Forest and Cave can be picked,
+> but they are experimental: their shapes work, but the content on them
+> (props, mobs and so on) is not tuned yet.
 
-The first full generator grew too complex in one shot, so it was moved to
-[`reference/`](reference/README.md) (dead code, kept for reuse) and the
-generator is being rebuilt **one step at a time**. Each finished step is a
-node in the left panel. All 12 generation nodes and the Claude MCP server
-are done. Still open: the walkable budget (`map.walkable_pct`), validation
-and export polish (feasibility pre-check, blocking duplicate colors), and
-deleting `reference/`.
+## What you get
 
-Generation is **deterministic**: the same config + seed always gives the same map.
+Each map is exported as three files:
 
-## Map kinds
+- **map.png**: the colored map. Walls, roads, houses, props, mobs, gates
+  and everything else each have their own color.
+- **layer.png**: the same layout as machine-readable data, for tools and AI
+  agents.
+- **spec.json**: a legend plus the exact position and size of every
+  object.
 
-**Town**, **Swamp**, **Forest**, **Cave**. The kind picks the shape defaults
-and which nodes run (houses are town only; every other node runs for all
-kinds).
+The same settings and the same seed always give the same map. Re-roll the
+seed for a new variant.
 
-## Generation pipeline (left panel nodes)
+## Download
 
-Each node's input is the previous node's output. Settings live in the node
-body, every control has a tooltip, and changes apply on **⚙ Generate**.
+Get the zip for **Windows** or **Linux** from the
+[Releases page](https://github.com/NazarZubyk/mapTemplateGenerator/releases),
+unzip it, and run `mapTemplateGenerator`. `QUICKSTART.md` in the zip covers
+the details.
 
-1. **Template**: map width / height, cell size, map kind.
-2. **Region shape**: noise-based shape with domain warp and a silhouette.
-   Optional multi-section islands joined by wide bridges, and scaling with
-   map size.
-3. **Outer walls**: a wall walked around the border in random-length
-   segments, with adjustable thickness. The region becomes the wall's interior.
-4. **Regions**: splits the area into N regions with % shares. Includes
-   nesting (regions inside other regions) and irregular, organic borders.
-5. **Roads**: junctions (count or density, at least one per region) linked
-   by a spanning tree plus extra links, routed as gently winding roads.
-   Road width follows traffic: main roads are wide, side roads are narrower,
-   between a min and max width.
-6. **Region walls**: walls along the borders between regions, opened where
-   roads cross. Region colors are refit to the walls.
-7. **Gates**: entry/exit points, each with a direction from the map
-   center (0° east, 90° north). A gate opens the outer wall where that
-   ray crosses it, and an optional road links it to the network. This
-   node runs before the objects, so houses and props keep off gate roads,
-   and mobs and hidden rooms keep away from gates.
-8. **Houses** (town only): street-front houses facing the roads, then yard
-   houses. They are rotated and can be compound L/T/U shapes. Options:
-   density, size, spacing, setback, wings and color.
-9. **Props**: quantity with a density cap and size range. Props are placed
-   against houses, at road edges, or scattered.
-10. **Interactive objects**: a list of types (herbs, chests, ...), each
-   with its own size, quantity, group size, group spread, spot (anywhere,
-   along walls, or open ground) and color. Objects are placed in groups,
-   and spec.json lists each group's members.
-11. **Hidden rooms**: small walled rooms, each reached by ONE narrow path
-    (always wide enough for the player; a per-room roll decides whether
-    mobs can use it). Rooms sit outside the outer wall, with the path
-    tunnelling through it, or inside on free ground. Options: count, size,
-    wall thickness, path width, max path length, place and colors.
-12. **Mobs**: any number of mob types, each with a price, size, color
-    and balance share (sliders auto-balance). A combination matrix sets
-    which types may share a spawn point. The generator buys packs from the
-    budget until it can't afford any more, capped by a max entity count.
-    A minimum (a count, or a density per 100 m²) fills crowded maps: it
-    buys past the budget and relaxes spacing if needed.
-    Pack size and spacing between spawns are configurable. Spawns may
-    stand on roads (toggle), and inside hidden rooms only if that room's
-    path is mob-passable. A gate clearance keeps spawns away from gates.
+- **Windows** may warn "Windows protected your PC", because the app is not
+  code-signed. Click **More info → Run anyway**.
+- **Linux**: run `./mapTemplateGenerator` from the unzipped folder.
 
-Plus app features:
-- **Export** writes map.png (colored map), layer.png (R = category id,
-  G/B = instance id) and spec.json (legend, every object, regions, roads,
-  wall gaps, interactive groups, hidden rooms, mobs, gates).
-- **Config file** saves and loads JSON; older configs keep loading.
-  **🔄 Live sync** reloads the file when it changes on disk.
+## How to use
 
-## Claude MCP server
+1. In **1 · Template**, pick the map size (keep **Town** as the kind).
+2. Go down the panel on the left. Each block is one step of the map, from
+   the outline to walls, regions, roads, gates, houses, props, interactive
+   objects, hidden rooms and mobs. Hover any setting to see what it does.
+3. Press **⚙ Generate**. Press **🎲 Re-roll** for another variant.
+4. Drag or swipe to move the preview, and pinch or Ctrl+scroll to zoom.
+5. Use **Export** to write the three files, and **Config file → Save**
+   to keep your settings.
 
-`mapgen-mcp` lets Claude configure the generator through MCP (Model Context
-Protocol over stdio). It focuses on gates and mobs, and fills in any names and
-colors you leave out. It edits the same config file the app uses
-(`configs/config.json`). The app's **🔄 Live sync** (Config file section, on by
-default) reloads that file whenever it changes and regenerates, so each
-change shows up in the preview.
+Not sure where to start? Every block has a **🎲 Random params** button.
 
-```sh
-cargo build --release --bin mapgen-mcp   # once, and after code changes
-```
+## Let Claude set up the map (optional)
 
-`.mcp.json` in the repo registers it for Claude Code as `mapgen`. Approve it
-when Claude Code asks, or register it by hand:
-`claude mcp add mapgen -- ./target/release/mapgen-mcp --config configs/config.json`.
+The download also includes `mapgen-mcp`, which lets
+[Claude Code](https://claude.com/claude-code) change the settings for you.
+Just describe what you want:
 
-| Tool | What it does |
-|---|---|
-| `set_gates` | gates by `directions` (0° east, 90° north…) or `count` spread evenly; opening, gate road, color |
-| `set_mob_types` | replace all mob types (name, price, size, share, color) + `forbid_pairs` |
-| `upsert_mob_type` / `remove_mob_type` | add or change one type (rename too) / remove one |
-| `set_mob_combination` | allow/forbid two types at one spawn |
-| `set_mob_settings` | budget, max, minimum (count or density), pack size, spacing, on roads, gate clearance |
-| `patch_config` | JSON merge patch for any other node (map, regions, roads, houses, props, …) |
-| `get_config` / `reset_config` | read the config (or one section) / back to defaults |
-| `generate` / `export` | generate and summarize (mobs per type, budget, gates, notes) / write the bundle |
+> *"Bandit camp: gates east and west, rats, bandits and a bandit chief, the
+> chief never with rats, crowded."*
 
-Example prompt: *"Make it a bandit camp: 2 gates east and west, rats, bandits
-and a bandit chief, chief never with rats, crowded — at least 2 mobs per
-100 m²."*
+The open app picks up each change and regenerates. Setup takes one command;
+see `QUICKSTART.md`.
 
-Unsaved edits in the app are replaced when the file changes on disk. Save
-first, or turn Live sync off while editing by hand.
+## Known limitations (beta)
 
-## App layout
+- Only **Town** is tuned. Swamp, Forest and Cave are experimental.
+- The **walkable %** setting is not used yet.
+- Few safety checks. For example, two object types with the same color are
+  not flagged yet.
+- Windows builds are not code-signed, so expect the SmartScreen warning.
 
-- **Top bar**: seed, ⚙ Generate, 🎲 Re-roll. Generation runs in the
-  background with a progress bar showing the current stage.
-- **Left panel**: the node chain above, plus Export and Config file (with
-  🔄 Live sync). Every setting has a hover tooltip. Most nodes have a
-  🎲 Random params button and a "generated: …" stats line.
-- **Center**: pan/zoom preview. Swipe with two fingers or drag to pan; pinch
-  or Ctrl+scroll to zoom.
-- **Bottom**: warnings panel + the **Current workflow** bench (currently empty).
+Found a bug or have an idea? Open an
+[issue](https://github.com/NazarZubyk/mapTemplateGenerator/issues).
 
-## Development
+## For developers
 
-```sh
-cargo run      # launch the app
-cargo build --release --bin mapgen-mcp   # the MCP server for Claude
-cargo test     # unit tests
-cargo clippy --all-targets
-```
-
-### Project structure
-
-```
-src/
-├── main.rs              # eframe entry shim (the app, `cargo run`)
-├── bin/mapgen-mcp.rs    # MCP server entry
-├── lib.rs
-├── mcp.rs               # MCP server logic (tools, JSON-RPC); bin/mapgen-mcp.rs runs it
-├── model.rs             # serde config: per-node settings structs
-├── level.rs             # level model (PlacedObject, roads, walls, layouts)
-├── generator/
-│   ├── mod.rs           # pipeline + progress stages
-│   ├── noise.rs         # seeded fBm value noise
-│   ├── grid.rs          # CellMask + grid helpers
-│   ├── shape.rs         # node 2: region shape
-│   ├── walls.rs         # node 3: outer walls
-│   ├── regions.rs       # node 4: regions
-│   ├── roads.rs         # node 5: roads
-│   ├── region_walls.rs  # node 6: region walls
-│   ├── gates.rs         # node 7: gates, wall openings, gate roads
-│   ├── houses.rs        # node 8: houses
-│   ├── props.rs         # node 9: props
-│   ├── interactive.rs   # node 10: interactive objects
-│   ├── hidden_rooms.rs  # node 11: hidden rooms + access paths
-│   ├── mobs.rs          # node 12: budgeted mob spawns
-│   └── placement.rs     # shared object footprint / road-angle helpers
-├── render.rs            # map.png / layer.png rasterizers
-├── export.rs            # export bundle writer + spec.json
-├── validate.rs          # config validation (early subset; step 13 extends it)
-└── ui/                  # app shell, node panel, preview, warnings, bench
-reference/               # previous full generator (dead code, copy pieces from here)
-.mcp.json                # registers mapgen-mcp for Claude Code
-docs/                    # goals, workflow + step notes, next-agent prompt, plan
-```
-
-Requires the usual Wayland/X11 dev libraries (already present on a stock Fedora/Linux
-desktop).
+Building from source, project layout, the MCP tools and how to make a
+release are in [docs/development.md](docs/development.md). How the
+generator works, step by step, is in [docs/workflow.md](docs/workflow.md).
+The requirements are in [docs/goals.md](docs/goals.md).

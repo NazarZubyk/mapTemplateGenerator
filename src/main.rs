@@ -1,3 +1,6 @@
+// No console window behind the app on Windows (the MCP server keeps its console).
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 use map_template_generator::ui::app::MapGenApp;
 
 fn main() -> eframe::Result<()> {

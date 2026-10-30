@@ -12,7 +12,10 @@ layer.png + spec.json. Everything is deterministic: same config + same seed
 
 **Read first:** `docs/workflow.md` — the source of truth: the node chain, the
 step list with per-step notes, the MCP server and the done-ness checklist.
-`docs/goals.md` holds the requirements. `reference/` holds the old dead-code
+`docs/goals.md` holds the requirements; `docs/development.md` covers build,
+project layout, MCP tools and releases. README.md is user-facing (beta,
+only Town ready) — keep it short and friendly; developer detail goes into
+docs/development.md. `reference/` holds the old dead-code
 generator — copy small pieces from it when useful, never re-import it
 wholesale; it gets deleted when the rebuild finishes.
 
@@ -68,7 +71,8 @@ The app's 🔄 Live sync reloads the file and regenerates. Rebuild it with
 4. Check visuals by rendering PNG snapshots (a temporary `examples/` file
    calling `render::rasterize`, deleted afterwards) with several seeds.
 5. Keep `cargo test` and `cargo clippy --all-targets` green. Update
-   `docs/workflow.md` (step tick, notes, node list), README.md and this file.
+   `docs/workflow.md` (step tick, notes, node list), docs/development.md,
+   README.md (only if users see the change) and this file.
    Add an MCP tool when the step is something Claude will configure often.
 6. The user commits themselves and asks for a **one-line commit message**.
    Do not commit.

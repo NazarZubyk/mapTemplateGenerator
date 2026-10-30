@@ -17,6 +17,11 @@ rand = "0.9"
 rand_chacha = "0.9"
 image = { version = "0.25", default-features = false, features = ["png"] }
 
+[profile.release]
+# Smaller download: drop symbols; thin LTO trims a bit more without slow builds.
+strip = true
+lto = "thin"
+
 [profile.dev]
 # Fast iteration: minimal debuginfo keeps incremental rebuilds and linking quick.
 debug = "line-tables-only"

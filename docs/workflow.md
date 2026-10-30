@@ -170,7 +170,8 @@ docs/workflow.md       # this file
 3. **Test**: unit tests for the logic + render snapshots with several seeds.
    `cargo test && cargo clippy --all-targets` stay green at every step.
 4. **Document**: tick the step here, add a "Step N notes" section, update
-   the node list above, README.md and docs/next-agent-prompt.md. If the
+   the node list above, docs/development.md and docs/next-agent-prompt.md
+   (README.md is for users: only user-visible changes, kept short). If the
    step is often configured by Claude, add an MCP tool (`src/mcp.rs`);
    `patch_config` covers it meanwhile.
 5. The user commits; give them a one-line commit message.
@@ -835,5 +836,6 @@ is used often; `patch_config` covers it meanwhile.
 - [ ] walkable ground stays one piece; solid objects never overlap
 - [ ] old config files still load
 - [ ] `cargo test`, `cargo clippy --all-targets` green
-- [ ] this file (step ticked, notes, node list), README.md and
-      docs/next-agent-prompt.md updated; MCP tool if useful
+- [ ] this file (step ticked, notes, node list), docs/development.md,
+      docs/next-agent-prompt.md updated (README.md only for user-visible
+      changes — it stays short); MCP tool if useful
