@@ -24,16 +24,16 @@ use crate::level::{
     Category, CellMask, InteractiveGroup, InteractiveLayout, InteractiveTypeStats, PlacedObject, RegionMap,
     RoadNetwork,
 };
-use crate::model::{InteractiveSpot, InteractiveType, LevelConfig};
+use crate::model::{InteractiveSpot, InteractiveTerrain, InteractiveType, LevelConfig};
 
 /// Group centers tried per group before the type gives up.
 const CENTER_TRIES: usize = 40;
 /// Spots tried per member around its group center.
 const MEMBER_TRIES: usize = 25;
 /// Distance, cells, from an obstacle that still counts as "along walls".
-const ALONG_WALLS_CELLS: i64 = 2;
+pub(crate) const ALONG_WALLS_CELLS: i64 = 2;
 /// Clearance, meters, from obstacles and roads that makes "open ground".
-const OPEN_GROUND_M: f32 = 3.0;
+pub(crate) const OPEN_GROUND_M: f32 = 3.0;
 
 pub struct InteractiveBuild {
     pub layout: InteractiveLayout,
@@ -89,6 +89,49 @@ pub(crate) fn build_with_progress(
     let open_reach = (OPEN_GROUND_M / cell).ceil().max(1.0) as i64;
     let blocked_or_road: Vec<bool> = (0..w * h).map(|i| obstacles[i] || is_road(i)).collect();
     let crowded = dilate(&blocked_or_road, w, h, open_reach);
+    let area = Area { w, h, cell, free: std::mem::take(&mut free), along_walls, crowded, terrain: None };
+    Some(place_types(config, rng, area, stage))
+}
+
+/// Where interactive objects may go, worked out by the caller (town or
+/// swamp chain).
+pub(crate) struct Area {
+    pub w: usize,
+    pub h: usize,
+    pub cell: f32,
+    /// Cells an object may cover: off every obstacle and its one-cell ring.
+    pub free: Vec<bool>,
+    /// Near an obstacle ("along walls" spot).
+    pub along_walls: Vec<bool>,
+    /// Too close to obstacles or roads for the "open ground" spot.
+    pub crowded: Vec<bool>,
+    /// Swamp maps: the terrain each type may stand on.
+    pub terrain: Option<TerrainMasks>,
+}
+
+/// Swamp terrain for the interactive types.
+pub(crate) struct TerrainMasks {
+    pub land: Vec<bool>,
+    /// Shallow water and deep mud within reach.
+    pub water: Vec<bool>,
+    /// Distance from the nearest land cell, meters.
+    pub to_land_m: Vec<f32>,
+}
+
+impl TerrainMasks {
+    fn fits(&self, terrain: InteractiveTerrain, shore_m: f32, i: usize) -> bool {
+        match terrain {
+            InteractiveTerrain::Land => self.land[i],
+            InteractiveTerrain::Water => self.water[i],
+            InteractiveTerrain::Both => self.land[i] || self.water[i],
+            InteractiveTerrain::ShoreWater => self.water[i] && self.to_land_m[i] <= shore_m,
+        }
+    }
+}
+
+/// Place every configured type in groups on `area`.
+pub(crate) fn place_types(config: &LevelConfig, rng: &mut ChaCha8Rng, area: Area, stage: &Stage) -> InteractiveBuild {
+    let Area { w, h, cell, mut free, along_walls, crowded, terrain } = area;
     let fits_spot = |spot: InteractiveSpot, i: usize| match spot {
         InteractiveSpot::Anywhere => true,
         InteractiveSpot::AlongWalls => along_walls[i],
@@ -112,11 +155,12 @@ pub(crate) fn build_with_progress(
         let spread = it.spread_m.max(0.0);
 
         let mut stats = InteractiveTypeStats { name: name.clone(), requested: it.quantity, placed: 0, groups: 0 };
+        let fits_terrain = |i: usize| terrain.as_ref().is_none_or(|t| t.fits(it.terrain, it.shore_dist_m, i));
         let mut fell_back = false;
         let mut remaining = it.quantity;
         // Candidate centers, built once per type; cells taken since are
         // dropped lazily when drawn.
-        let mut centers: Vec<usize> = (0..w * h).filter(|&i| free[i] && fits_spot(it.spot, i)).collect();
+        let mut centers: Vec<usize> = (0..w * h).filter(|&i| free[i] && fits_spot(it.spot, i) && fits_terrain(i)).collect();
         while remaining > 0 {
             stage.report("Placing interactive objects", done as f32 / total.max(1) as f32);
             let want = rng.random_range(gmin..=gmax).min(remaining);
@@ -129,7 +173,7 @@ pub(crate) fn build_with_progress(
                         break;
                     }
                     fell_back = true;
-                    centers = (0..w * h).filter(|&i| free[i]).collect();
+                    centers = (0..w * h).filter(|&i| free[i] && fits_terrain(i)).collect();
                     continue;
                 }
                 let k = rng.random_range(0..centers.len());
@@ -140,7 +184,14 @@ pub(crate) fn build_with_progress(
                 }
                 tries += 1;
                 let center = (((c % w) as f32 + 0.5) * cell, ((c / w) as f32 + 0.5) * cell);
-                let members = try_group(rng, &free, center, want, spread, (lo, hi), w, h, cell);
+                // A group stays on the terrain of its center (land or water).
+                let on_land = terrain.as_ref().is_some_and(|t| t.land[c]);
+                let ok = |i: usize| {
+                    free[i]
+                        && fits_terrain(i)
+                        && terrain.as_ref().is_none_or(|t| it.terrain != InteractiveTerrain::Both || t.land[i] == on_land)
+                };
+                let members = try_group(rng, &ok, center, want, spread, (lo, hi), w, h, cell);
                 if members.len() as u32 >= need {
                     group = Some(members);
                     break;
@@ -197,7 +248,7 @@ pub(crate) fn build_with_progress(
         per_type.push(stats);
     }
 
-    Some(InteractiveBuild { layout: InteractiveLayout { mask, groups, types: per_type }, objects, notes })
+    InteractiveBuild { layout: InteractiveLayout { mask, groups, types: per_type }, objects, notes }
 }
 
 /// The type's display name, or "Interactive #n" when it has none.
@@ -219,7 +270,7 @@ struct Placement {
 #[allow(clippy::too_many_arguments)]
 fn try_group(
     rng: &mut ChaCha8Rng,
-    free: &[bool],
+    free: &dyn Fn(usize) -> bool,
     center: (f32, f32),
     want: u32,
     spread: f32,
@@ -246,7 +297,7 @@ fn try_group(
             let Some(cells) = cells_of(at, size, angle_deg, w, h, cell) else {
                 continue;
             };
-            if cells.iter().all(|&c| free[c] && !taken.contains(&c)) {
+            if cells.iter().all(|&c| free(c) && !taken.contains(&c)) {
                 taken.extend(ring(&cells, w, h));
                 members.push(Placement { center: at, size, angle_deg, cells });
                 break;
@@ -320,6 +371,7 @@ mod tests {
             spread_m: 0.0,
             spot: InteractiveSpot::AlongWalls,
             color: [200, 160, 40],
+            ..InteractiveType::default()
         });
         config
     }

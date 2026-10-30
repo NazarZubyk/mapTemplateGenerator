@@ -54,10 +54,10 @@ a node, state which kinds include it.
 
 **Swamp has its own chain** (`src/generator/swamp/`, planned step by step
 in `docs/swamp-plan.md`): Template → Gate anchors (done) → Islands
-(done) → Paths (done) → Depth & border (done) → Trees (done) → props /
-interactive / hidden rooms / mobs with swamp ground (S6). A swamp map
-currently shows gates, islands, hummocks, mud paths, boardwalks, shallow
-water, deep mud, deep water, the thicket border and trees. The default map is 200 × 200 m;
+(done) → Paths (done) → Depth & border (done) → Trees (done) → Props /
+Interactive / Hidden rooms / Mobs on swamp ground (done, S6). The swamp
+chain is complete; open: S7 zones (optional), S8 export polish (terrain
+in layer.png, depth channel, warnings), tuning. The default map is 200 × 200 m;
 town-chain tests use `LevelConfig::test_64()`.
 
 **MCP server** `mapgen-mcp` (`src/mcp.rs`, `src/bin/mapgen-mcp.rs`,
@@ -114,8 +114,8 @@ Ctrl+scroll zooms). Bottom: warnings panel, then the (empty) bench.
 ## Current state
 
 Steps 0–6 and 8–12 and the MCP server are done; swamp steps S1 (gate
-anchors), S2 (islands), S3 (paths), S4 (depth & border) and S5 (trees)
-are done — S6 spawns (props, interactive, hidden rooms, mobs) is next. Open:
+anchors), S2 (islands), S3 (paths), S4 (depth & border), S5 (trees) and
+S6 (spawns) are done — S8 export polish (or S7 zones) is next. Open:
 - **Step 7 — walkable budget**: `map.walkable_pct` vs what houses and later
   objects take.
 - **Step 13 — validation & export polish**: feasibility pre-check, blocking

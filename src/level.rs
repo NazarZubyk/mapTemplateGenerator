@@ -333,6 +333,16 @@ pub struct PropLayout {
     pub near_houses: u32,
     pub roadside: u32,
     pub scattered: u32,
+    /// Swamp maps: against trees / on the shore / in the water / beside
+    /// paths (scattered ones count in `scattered`).
+    #[serde(default)]
+    pub near_trees: u32,
+    #[serde(default)]
+    pub shore: u32,
+    #[serde(default)]
+    pub in_water: u32,
+    #[serde(default)]
+    pub path_edge: u32,
     /// The quantity asked for, and the cap the density allowed.
     pub requested: u32,
     pub density_cap: u32,

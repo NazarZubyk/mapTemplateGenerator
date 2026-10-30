@@ -39,7 +39,7 @@ pub const ROOM_NAME: &str = "hidden room";
 pub const PATH_NAME: &str = "hidden room path";
 /// No room block closer than this to a gate, meters — the gate's way in
 /// stays clear.
-const GATE_CLEARANCE_M: f32 = 6.0;
+pub(crate) const GATE_CLEARANCE_M: f32 = 6.0;
 /// Spots tried per room (per side of the wall).
 const TRIES: usize = 300;
 
@@ -77,10 +77,7 @@ pub(crate) fn build_with_progress(
     let (w, h) = (map.width, map.height);
     let cell = map.cell_size_m.max(0.05);
     let s = &config.hidden_rooms;
-    let lo = s.size_min_m.min(s.size_max_m).max(cell);
-    let hi = s.size_min_m.max(s.size_max_m).max(cell);
     let t = (s.wall_thickness_m / cell).round().max(1.0) as usize;
-    let pw = (s.path_width_m / cell).round().max(1.0) as usize;
     let max_len = (s.path_max_m / cell).round().max(1.0) as u32;
 
     let in_mask = |m: Option<&CellMask>, i: usize| m.is_some_and(|m| m.cells[i]);
@@ -112,7 +109,36 @@ pub(crate) fn build_with_progress(
     };
     // Cells a path may never dig through (rooms and paths join this as they
     // are placed).
-    let mut blocked: Vec<bool> = (0..w * h).map(|i| object(i) || region_wall(i)).collect();
+    let blocked: Vec<bool> = (0..w * h).map(|i| object(i) || region_wall(i)).collect();
+    let area = RoomArea { w, h, cell, walkable, outside_ok, inside_ok, blocked, wall_cells: t, max_len };
+    Some(place_rooms(config, rng, area, stage))
+}
+
+/// Where hidden rooms may go, worked out by the caller (town or swamp).
+pub(crate) struct RoomArea {
+    pub w: usize,
+    pub h: usize,
+    pub cell: f32,
+    /// Ground a path ends on.
+    pub walkable: Vec<bool>,
+    /// Cells a whole room block may cover, "outside" and "inside".
+    pub outside_ok: Vec<bool>,
+    pub inside_ok: Vec<bool>,
+    /// Cells a path may never dig through.
+    pub blocked: Vec<bool>,
+    /// Thickness of the room's own wall in cells (0 = none: swamp islets).
+    pub wall_cells: usize,
+    /// Longest path, cells.
+    pub max_len: u32,
+}
+
+/// Dig `hidden_rooms.count` rooms with one access path each on `area`.
+pub(crate) fn place_rooms(config: &LevelConfig, rng: &mut ChaCha8Rng, area: RoomArea, stage: &Stage) -> HiddenRoomBuild {
+    let RoomArea { w, h, cell, walkable, outside_ok, inside_ok, mut blocked, wall_cells: t, max_len } = area;
+    let s = &config.hidden_rooms;
+    let lo = s.size_min_m.min(s.size_max_m).max(cell);
+    let hi = s.size_min_m.max(s.size_max_m).max(cell);
+    let pw = (s.path_width_m / cell).round().max(1.0) as usize;
     // Rooms, paths and their rings: no later block may touch them.
     let mut taken = vec![false; w * h];
 
@@ -261,11 +287,11 @@ pub(crate) fn build_with_progress(
         });
     }
 
-    Some(HiddenRoomBuild {
+    HiddenRoomBuild {
         layout: HiddenRoomLayout { wall_mask, floor_mask, rooms, requested: s.count },
         objects,
         notes,
-    })
+    }
 }
 
 /// Every top-left cell where a `bw`×`bh` block lies wholly on `ok` cells

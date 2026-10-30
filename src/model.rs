@@ -184,6 +184,13 @@ pub struct PropSettings {
     pub roadside_pct: f32,
     /// Prop color on map.png, the preview and the legend.
     pub color: [u8; 3],
+    /// Swamp maps: shares of props, %, against trees / on the shore (land
+    /// next to water) / in the water (within reach) / beside paths and
+    /// boardwalks; the rest are scattered over the islands.
+    pub near_trees_pct: f32,
+    pub shore_pct: f32,
+    pub in_water_pct: f32,
+    pub path_edge_pct: f32,
 }
 
 impl Default for PropSettings {
@@ -196,6 +203,10 @@ impl Default for PropSettings {
             near_houses_pct: 50.0,
             roadside_pct: 25.0,
             color: [92, 110, 140],
+            near_trees_pct: 25.0,
+            shore_pct: 25.0,
+            in_water_pct: 20.0,
+            path_edge_pct: 15.0,
         }
     }
 }
@@ -511,11 +522,45 @@ pub struct MobType {
     pub balance_pct: f32,
     /// Color on map.png, the preview and the legend.
     pub color: [u8; 3],
+    /// Swamp maps: land / water / both.
+    pub habitat: Habitat,
 }
 
 impl Default for MobType {
     fn default() -> Self {
-        Self { name: "Goblin".to_owned(), price: 10.0, size_m: 0.8, balance_pct: 100.0, color: [200, 60, 50] }
+        Self {
+            name: "Goblin".to_owned(),
+            price: 10.0,
+            size_m: 0.8,
+            balance_pct: 100.0,
+            color: [200, 60, 50],
+            habitat: Habitat::Both,
+        }
+    }
+}
+
+/// Where a mob type lives on a swamp map (towns ignore it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Habitat {
+    /// Islands only.
+    Land,
+    /// Shallow water and deep mud within reach only.
+    Water,
+    /// Either.
+    #[default]
+    Both,
+}
+
+impl Habitat {
+    pub const ALL: [Habitat; 3] = [Habitat::Land, Habitat::Water, Habitat::Both];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Habitat::Land => "Land",
+            Habitat::Water => "Water",
+            Habitat::Both => "Both",
+        }
     }
 }
 
@@ -550,6 +595,9 @@ pub struct MobSettings {
     /// No spawn closer than this to a gate, meters (gates are where the
     /// player arrives).
     pub gate_clearance_m: f32,
+    /// Swamp maps: chance, %, that a dead-end island gets a guard pack
+    /// before the rest are spread (the reward at the end is guarded).
+    pub dead_end_guard_pct: f32,
 }
 
 impl Default for MobSettings {
@@ -562,7 +610,7 @@ impl Default for MobSettings {
             min_per_100m2: 0.0,
             types: vec![
                 MobType { balance_pct: 70.0, ..MobType::default() },
-                MobType { name: "Orc".to_owned(), price: 25.0, size_m: 1.2, balance_pct: 30.0, color: [150, 40, 90] },
+                MobType { name: "Orc".to_owned(), price: 25.0, size_m: 1.2, balance_pct: 30.0, color: [150, 40, 90], ..MobType::default() },
             ],
             combinations: vec![vec![true, true], vec![true, true]],
             pack_min: 1,
@@ -570,6 +618,7 @@ impl Default for MobSettings {
             spacing_m: 5.0,
             on_roads: true,
             gate_clearance_m: 8.0,
+            dead_end_guard_pct: 50.0,
         }
     }
 }
@@ -715,6 +764,36 @@ impl InteractiveSpot {
     }
 }
 
+/// Which swamp terrain an interactive type's groups stand on (towns ignore
+/// it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InteractiveTerrain {
+    /// Islands only.
+    Land,
+    /// Shallow water and deep mud within reach.
+    Water,
+    /// Land or water; one group stays on one of them.
+    #[default]
+    Both,
+    /// Water within `shore_dist_m` of an island.
+    ShoreWater,
+}
+
+impl InteractiveTerrain {
+    pub const ALL: [InteractiveTerrain; 4] =
+        [InteractiveTerrain::Land, InteractiveTerrain::Water, InteractiveTerrain::Both, InteractiveTerrain::ShoreWater];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            InteractiveTerrain::Land => "Land",
+            InteractiveTerrain::Water => "Water",
+            InteractiveTerrain::Both => "Both",
+            InteractiveTerrain::ShoreWater => "Shore water",
+        }
+    }
+}
+
 /// One interactive object type of the interactive node (docs/workflow.md,
 /// step 9): e.g. a plant that can be gathered.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -736,6 +815,10 @@ pub struct InteractiveType {
     pub spot: InteractiveSpot,
     /// Color on map.png, the preview and the legend.
     pub color: [u8; 3],
+    /// Swamp maps: which terrain the groups stand on.
+    pub terrain: InteractiveTerrain,
+    /// Swamp maps, `ShoreWater` terrain: farthest from an island, meters.
+    pub shore_dist_m: f32,
 }
 
 impl Default for InteractiveType {
@@ -750,6 +833,8 @@ impl Default for InteractiveType {
             spread_m: 2.0,
             spot: InteractiveSpot::Anywhere,
             color: [120, 200, 80],
+            terrain: InteractiveTerrain::Both,
+            shore_dist_m: 3.0,
         }
     }
 }

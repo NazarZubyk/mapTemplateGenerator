@@ -30,7 +30,7 @@ use crate::model::LevelConfig;
 /// Display name of a prop (map legend, spec.json).
 pub const PROP_NAME: &str = "prop";
 /// Spots tried per prop in its mode before it falls back to scattering.
-const TRIES: usize = 30;
+pub(crate) const TRIES: usize = 30;
 
 pub struct PropBuild {
     pub layout: PropLayout,
@@ -213,6 +213,10 @@ pub(crate) fn build_with_progress(
             scattered,
             requested: s.quantity,
             density_cap,
+            near_trees: 0,
+            shore: 0,
+            in_water: 0,
+            path_edge: 0,
         },
         objects,
         notes,

@@ -2,7 +2,7 @@ use eframe::egui;
 use rand::Rng;
 
 use crate::level::IslandKind;
-use crate::model::{GateSpec, GateStyle, HiddenRoomPlace, InteractiveSpot, InteractiveType, LevelConfig, MapKind, MobType, NodeAmount, ShapeSettings};
+use crate::model::{GateSpec, GateStyle, Habitat, InteractiveTerrain, HiddenRoomPlace, InteractiveSpot, InteractiveType, LevelConfig, MapKind, MobType, NodeAmount, ShapeSettings};
 use crate::ui::app::{ConfigStatus, MapGenApp};
 use crate::ui::widgets::param_row;
 
@@ -70,7 +70,15 @@ fn swamp_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_depth(ui, app);
     flow_arrow(ui, "islands, paths, water bands");
     node_trees(ui, app);
-    ui.weak("Next swamp nodes appear here as they finish: depth & border, trees, then props, interactive objects, hidden rooms and mobs (docs/swamp-plan.md).");
+    flow_arrow(ui, "land, water within reach, minus paths and trees");
+    node_props(ui, app);
+    flow_arrow(ui, "free ground after props");
+    node_interactive(ui, app);
+    flow_arrow(ui, "deep water and thicket left over");
+    node_hidden_rooms(ui, app);
+    flow_arrow(ui, "walkable ground (paths, open islets)");
+    node_mobs(ui, app);
+    ui.weak("Later swamp steps: zones, export polish (docs/swamp-plan.md): depth & border, trees, then props, interactive objects, hidden rooms and mobs (docs/swamp-plan.md).");
     ui.add_space(4.0);
     ui.separator();
 }
@@ -1490,8 +1498,22 @@ instead. If this and Roadside add up to more than 100% they are scaled down.";
 Props never stand ON a road. Whatever is left after Near houses and Roadside is scattered \
 over open ground at random angles.";
     const TIP_COLOR: &str = "Prop color on the map image, the preview and the legend.";
-    node(ui, "9 · Props", |ui| {
-        ui.weak("input: free ground left over · output: props (every map kind)");
+    const TIP_TREES: &str = "Swamp: share of props, %, set against trees and groves on the \
+islands (roots, stumps, bushes). A prop that finds no spot of its kind is scattered instead.";
+    const TIP_SHORE: &str = "Swamp: share of props, %, on island ground right at the water \
+(rocks, logs, reeds).";
+    const TIP_WATER: &str = "Swamp: share of props, %, standing in shallow water or deep mud \
+within the spawn reach of the depth node (lily pads, fallen logs, dead trunks).";
+    const TIP_PATH: &str = "Swamp: share of props, %, beside mud paths and boardwalks (posts, \
+lanterns, bones) — never on them. What is left of the four shares is scattered over the \
+islands.";
+    let swamp = app.config.kind == MapKind::Swamp;
+    node(ui, if swamp { "7 · Props" } else { "9 · Props" }, |ui| {
+        ui.weak(if swamp {
+            "input: land + water within reach, minus paths and trees · output: props (swamp)"
+        } else {
+            "input: free ground left over · output: props (every map kind)"
+        });
         let town = app.config.kind == MapKind::Town;
         egui::Grid::new("props_node_grid")
             .num_columns(2)
@@ -1520,14 +1542,25 @@ over open ground at random angles.";
                             .suffix(" m"),
                     )
                 });
-                if town {
-                    param_row(ui, "Near houses", TIP_NEAR, |ui| {
-                        ui.add(egui::Slider::new(&mut props.near_houses_pct, 0.0..=100.0).suffix(" %"))
+                if swamp {
+                    for (label, tip, v) in [
+                        ("Near trees", TIP_TREES, &mut props.near_trees_pct),
+                        ("Shore", TIP_SHORE, &mut props.shore_pct),
+                        ("In water", TIP_WATER, &mut props.in_water_pct),
+                        ("Path edge", TIP_PATH, &mut props.path_edge_pct),
+                    ] {
+                        param_row(ui, label, tip, |ui| ui.add(egui::Slider::new(v, 0.0..=100.0).suffix(" %")));
+                    }
+                } else {
+                    if town {
+                        param_row(ui, "Near houses", TIP_NEAR, |ui| {
+                            ui.add(egui::Slider::new(&mut props.near_houses_pct, 0.0..=100.0).suffix(" %"))
+                        });
+                    }
+                    param_row(ui, "Roadside", TIP_ROADSIDE, |ui| {
+                        ui.add(egui::Slider::new(&mut props.roadside_pct, 0.0..=100.0).suffix(" %"))
                     });
                 }
-                param_row(ui, "Roadside", TIP_ROADSIDE, |ui| {
-                    ui.add(egui::Slider::new(&mut props.roadside_pct, 0.0..=100.0).suffix(" %"))
-                });
                 param_row(ui, "Color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut props.color));
             });
         ui.horizontal(|ui| {
@@ -1547,10 +1580,28 @@ over open ground at random angles.";
                 props.size_max_m = rng.random_range(0.5..=3.0);
                 props.near_houses_pct = rng.random_range(0.0..=100.0);
                 props.roadside_pct = rng.random_range(0.0..=100.0);
+                props.near_trees_pct = rng.random_range(0.0..=60.0);
+                props.shore_pct = rng.random_range(0.0..=60.0);
+                props.in_water_pct = rng.random_range(0.0..=60.0);
+                props.path_edge_pct = rng.random_range(0.0..=60.0);
             }
             ui.weak("Changes apply on ⚙ Generate");
         });
-        if let Some(p) = app.generated.as_ref().and_then(|l| l.props.as_ref()) {
+        if let Some(p) = app.generated.as_ref().and_then(|l| l.props.as_ref())
+            && swamp
+        {
+            ui.weak(format!(
+                "generated: {} props ({} near trees, {} shore, {} in water, {} path edge, {} scattered) · asked {}, density allows {}",
+                p.near_trees + p.shore + p.in_water + p.path_edge + p.scattered,
+                p.near_trees,
+                p.shore,
+                p.in_water,
+                p.path_edge,
+                p.scattered,
+                p.requested,
+                p.density_cap
+            ));
+        } else if let Some(p) = app.generated.as_ref().and_then(|l| l.props.as_ref()) {
             ui.weak(format!(
                 "generated: {} props ({} near houses, {} roadside, {} scattered) · asked {}, density allows {}",
                 p.near_houses + p.roadside + p.scattered,
@@ -1587,8 +1638,18 @@ two are swapped.";
 to a wall, house or prop. Open ground: at least 3 m from every obstacle and road. If no spot \
 of that kind is left, the rest go anywhere (with a note).";
     const TIP_COLOR: &str = "Color of this type on the map image, the preview and the legend.";
-    node(ui, "10 · Interactive objects", |ui| {
-        ui.weak("input: free ground after props · output: interactive objects in groups (every map kind)");
+    const TIP_TERRAIN: &str = "Swamp: where this type's groups stand. Land: islands only. \
+Water: shallow water / deep mud within the spawn reach. Both: either — one group stays on \
+one of them. Shore water: in the water, at most Shore distance from an island (herbs at the \
+edge).";
+    const TIP_SHORE_D: &str = "Swamp, Shore water terrain: farthest from an island, meters.";
+    let swamp = app.config.kind == MapKind::Swamp;
+    node(ui, if swamp { "8 · Interactive objects" } else { "10 · Interactive objects" }, |ui| {
+        ui.weak(if swamp {
+            "input: free ground after props · output: interactive objects in groups, by terrain (swamp)"
+        } else {
+            "input: free ground after props · output: interactive objects in groups (every map kind)"
+        });
         let mut remove = None;
         for (i, it) in app.config.interactive.iter_mut().enumerate() {
             let title = crate::generator::interactive::type_name(it, i);
@@ -1646,6 +1707,21 @@ of that kind is left, the rest go anywhere (with a note).";
                                     })
                                     .response
                             });
+                            if swamp {
+                                param_row(ui, "Terrain", TIP_TERRAIN, |ui| {
+                                    egui::ComboBox::from_id_salt(("interactive_terrain", i))
+                                        .selected_text(it.terrain.label())
+                                        .show_ui(ui, |ui| {
+                                            for t in InteractiveTerrain::ALL {
+                                                ui.selectable_value(&mut it.terrain, t, t.label());
+                                            }
+                                        })
+                                        .response
+                                });
+                                if it.terrain == InteractiveTerrain::ShoreWater {
+                                    param_row(ui, "Shore distance", TIP_SHORE_D, |ui| ui.add(meters(&mut it.shore_dist_m, 30.0)));
+                                }
+                            }
                             param_row(ui, "Color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut it.color));
                         });
                     if ui.button("🗑 Remove type").clicked() {
@@ -1682,6 +1758,8 @@ of that kind is left, the rest go anywhere (with a note).";
                     it.size_min_m = rng.random_range(0.2..=1.0);
                     it.size_max_m = rng.random_range(0.3..=1.5);
                     it.spot = InteractiveSpot::ALL[rng.random_range(0..InteractiveSpot::ALL.len())];
+                    it.terrain = InteractiveTerrain::ALL[rng.random_range(0..InteractiveTerrain::ALL.len())];
+                    it.shore_dist_m = rng.random_range(1.0..=8.0);
                 }
             }
         });
@@ -1718,8 +1796,18 @@ only everywhere, 100% = everyone everywhere; in between each path rolls on its o
 (spec.json says which).";
     const TIP_COLOR_ROOM: &str = "Room floor color on the map image, the preview and the legend.";
     const TIP_COLOR_PATH: &str = "Access path color.";
-    node(ui, "11 · Hidden rooms", |ui| {
-        ui.weak("input: everything placed so far · output: walled rooms + one access path each (every map kind)");
+    const TIP_PLACE_SWAMP: &str = "Swamp: hidden rooms are islets with no walls (the water \
+around them is the wall), reached by ONE narrow ford no longer than Path max length and the \
+wading limit. Outside the wall: in the thicket of the border. Inside: in deep water inside \
+the map. Either: thicket first, deep water otherwise.";
+    let swamp = app.config.kind == MapKind::Swamp;
+    let tip_place = if swamp { TIP_PLACE_SWAMP } else { TIP_PLACE };
+    node(ui, if swamp { "9 · Hidden rooms" } else { "11 · Hidden rooms" }, |ui| {
+        ui.weak(if swamp {
+            "input: deep water + thicket left over · output: hidden islets + one ford each (swamp)"
+        } else {
+            "input: everything placed so far · output: walled rooms + one access path each (every map kind)"
+        });
         egui::Grid::new("hidden_rooms_node_grid")
             .num_columns(2)
             .spacing([10.0, 3.0])
@@ -1734,21 +1822,23 @@ only everywhere, 100% = everyone everywhere; in between each path rolls on its o
                 param_row(ui, "Size max", TIP_SIZE_MAX, |ui| {
                     ui.add(egui::DragValue::new(&mut r.size_max_m).range(0.5..=30.0).speed(0.05).suffix(" m"))
                 });
-                param_row(ui, "Wall thickness", TIP_WALL, |ui| {
-                    ui.add(
-                        egui::DragValue::new(&mut r.wall_thickness_m)
-                            .range(0.1..=5.0)
-                            .speed(0.05)
-                            .suffix(" m"),
-                    )
-                });
+                if !swamp {
+                    param_row(ui, "Wall thickness", TIP_WALL, |ui| {
+                        ui.add(
+                            egui::DragValue::new(&mut r.wall_thickness_m)
+                                .range(0.1..=5.0)
+                                .speed(0.05)
+                                .suffix(" m"),
+                        )
+                    });
+                }
                 param_row(ui, "Path width", TIP_PATH_W, |ui| {
                     ui.add(egui::DragValue::new(&mut r.path_width_m).range(0.1..=5.0).speed(0.05).suffix(" m"))
                 });
                 param_row(ui, "Path max length", TIP_PATH_MAX, |ui| {
                     ui.add(egui::DragValue::new(&mut r.path_max_m).range(1.0..=100.0).speed(0.1).suffix(" m"))
                 });
-                param_row(ui, "Place", TIP_PLACE, |ui| {
+                param_row(ui, "Place", tip_place, |ui| {
                     egui::ComboBox::from_id_salt("hidden_room_place")
                         .selected_text(r.place.label())
                         .show_ui(ui, |ui| {
@@ -1835,8 +1925,22 @@ budget allow. 0% = never placed.";
 biggest group's color).";
     const TIP_COMBINE: &str = "Which types may appear together at one spawn point. A type \
 always combines with itself.";
-    node(ui, "12 · Mobs", |ui| {
-        ui.weak("input: walkable ground (roads, open hidden rooms) · output: mob spawn points (every map kind)");
+    const TIP_PATHS: &str = "Swamp: let spawn points stand on mud paths and boardwalks. \
+Spawns are markers, not obstacles — they never block a path.";
+    const TIP_GUARD: &str = "Swamp: chance, %, that each dead-end island (paths node) gets \
+a guard pack before the other packs are spread — the reward at the end of the spur is \
+guarded. The guard packs are paid from the budget like the rest.";
+    const TIP_HABITAT: &str = "Swamp: where this type stands. Land: islands (and \
+boardwalks). Water: shallow water / deep mud within the spawn reach (and mud paths). Both: \
+anywhere walkable. A pack must suit every member: a pack with land and water types stands on \
+the shoreline.";
+    let swamp = app.config.kind == MapKind::Swamp;
+    node(ui, if swamp { "10 · Mobs" } else { "12 · Mobs" }, |ui| {
+        ui.weak(if swamp {
+            "input: land, water within reach, paths, open islets · output: mob spawn points (swamp)"
+        } else {
+            "input: walkable ground (roads, open hidden rooms) · output: mob spawn points (every map kind)"
+        });
         let mobs = &mut app.config.mobs;
         egui::Grid::new("mobs_node_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
             param_row(ui, "Budget", TIP_BUDGET, |ui| {
@@ -1872,7 +1976,14 @@ always combines with itself.";
             param_row(ui, "Spawn spacing", TIP_SPACING, |ui| {
                 ui.add(egui::DragValue::new(&mut mobs.spacing_m).range(0.0..=50.0).speed(0.1).suffix(" m"))
             });
-            param_row(ui, "Spawn on roads", TIP_ROADS, |ui| ui.checkbox(&mut mobs.on_roads, ""));
+            if swamp {
+                param_row(ui, "Spawn on paths", TIP_PATHS, |ui| ui.checkbox(&mut mobs.on_roads, ""));
+                param_row(ui, "Dead-end guards", TIP_GUARD, |ui| {
+                    ui.add(egui::Slider::new(&mut mobs.dead_end_guard_pct, 0.0..=100.0).suffix(" %"))
+                });
+            } else {
+                param_row(ui, "Spawn on roads", TIP_ROADS, |ui| ui.checkbox(&mut mobs.on_roads, ""));
+            }
             param_row(ui, "Gate clearance", TIP_GATE_CLEAR, |ui| {
                 ui.add(egui::DragValue::new(&mut mobs.gate_clearance_m).range(0.0..=50.0).speed(0.1).suffix(" m"))
             });
@@ -1901,6 +2012,18 @@ always combines with itself.";
                         }
                         r
                     });
+                    if swamp {
+                        param_row(ui, "Habitat", TIP_HABITAT, |ui| {
+                            egui::ComboBox::from_id_salt(("mob_habitat", i))
+                                .selected_text(t.habitat.label())
+                                .show_ui(ui, |ui| {
+                                    for hab in Habitat::ALL {
+                                        ui.selectable_value(&mut t.habitat, hab, hab.label());
+                                    }
+                                })
+                                .response
+                        });
+                    }
                     param_row(ui, "Color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut t.color));
                 });
                 if ui.button("🗑 Remove type").clicked() {

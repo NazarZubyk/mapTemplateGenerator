@@ -363,7 +363,7 @@ at 1.5 / 1000 m² of walkable water, dark green / sage).
   water_trees, grove_cover_pct }`; MCP `generate` reports `trees`.
 - Default 200 m map: ~300 grove trees, ~20 water trees.
 
-### Step S6 — Spawns: props, interactive objects, mobs (existing nodes)
+### Step S6 — Spawns: props, interactive objects, mobs (existing nodes) — done
 
 The same three nodes as Town, with a swamp-aware `Ground`. Shared terms:
 
@@ -418,6 +418,51 @@ linked by one narrow hidden ford (the access path, length ≤ wade limit);
 
 New settings are `#[serde(default)]` and only shown for Swamp; Town keeps
 its current props / interactive / mobs behavior.
+
+**S6 notes (as built).** `generator/swamp/spawns.rs` (`SwampGround` +
+one function per node); swamp nodes 7 Props, 8 Interactive objects, 9
+Hidden rooms, 10 Mobs — the same UI nodes as Town, renumbered, with swamp
+rows. Results go into the level's usual `props` / `interactive` /
+`hidden_rooms` / `mobs` fields, so render, legend, spec.json and MCP need
+no swamp code.
+
+- The town modules were split into "work out the area" + a shared core:
+  `interactive::place_types(Area)` (optional `TerrainMasks`),
+  `hidden_rooms::place_rooms(RoomArea)` (wall thickness in cells, 0 =
+  none), `mobs::spend(MobArea)` (optional `HabitatMasks`, guard areas),
+  `mobs::room_cells`. Town behavior is unchanged (all town tests pass).
+- Ground: land = island ids (hummocks too); water = shallow / mud with
+  depth value ≤ 1 + reach / limit · 253 (the depth node's reach); paths =
+  mud + boardwalk; blockers = deep, thicket, trees (+ placed objects).
+  Props and interactives keep the trees node's gate clearing.
+- Props: shares `near_trees_pct` 25 / `shore_pct` 25 / `in_water_pct` 20 /
+  `path_edge_pct` 15 (new `PropSettings` fields), rest scattered on land;
+  per mode a spot mask (≤ 2 cells from trees / from non-land / from
+  paths) and the terrain the footprint must be on (land; water for in
+  water; either for path edge); a prop with no spot of its kind is
+  scattered. `PropLayout` gained `near_trees / shore / in_water /
+  path_edge` (serde default).
+- Interactive: `InteractiveType.terrain` (land / water / both / shore
+  water, default both) + `shore_dist_m` (3 m, distance from land by an
+  8-direction search). A "both" group stays on its center's terrain.
+  "Along walls" = within 2 cells of a blocker; "open ground" = 3 m from
+  blockers and paths.
+- Hidden rooms: unwalled islets; outside = thicket, inside = deep water
+  (block a cell clear of walkable terrain, 6 m from gates); ford ≤
+  min(`path_max_m`, wade limit); dug cells join the floor mask. Wall
+  thickness hidden in the swamp UI.
+- Mobs: `MobType.habitat` (land / water / both, default both). Land =
+  islands, boardwalks, open islet floors; water = the rest of spawnable
+  (water within reach, mud paths). A pack's class: land + water members →
+  shoreline (cells within 2 m of both), else land / water / any; one
+  candidate list per class. `on_roads` = "Spawn on paths".
+  `dead_end_guard_pct` (50%): each dead-end island rolls; guards are
+  bought first, a guard that finds no spot is skipped.
+  Not built: `hub_bias_pct` (packs preferring hubs).
+- MCP: mob types take `habitat`, `set_mob_settings` takes
+  `dead_end_guard_pct`; the summary's prop count includes swamp props.
+- RNG order after trees: props (per prop a size, then spot draws and
+  angle), interactive, hidden rooms, mobs (guard rolls, then spending).
 
 ### Step S7 — Zones (optional, later)
 

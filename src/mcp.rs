@@ -206,6 +206,7 @@ fn tool_list() -> Value {
             "size_m": { "type": "number", "description": "body diameter, meters (default 0.8)" },
             "balance_pct": { "type": "number", "description": "desired share among mobs; all shares are normalized to 100 (default: equal)" },
             "color": color,
+            "habitat": { "type": "string", "enum": ["land", "water", "both"], "description": "swamp maps: islands / water within reach / either (default both)" },
         }
     });
     json!([
@@ -241,6 +242,7 @@ fn tool_list() -> Value {
                 "spacing_m": { "type": "number" },
                 "on_roads": { "type": "boolean" },
                 "gate_clearance_m": { "type": "number" },
+                "dead_end_guard_pct": { "type": "number", "description": "swamp maps: chance a dead-end island gets a guard pack" },
             } }
         },
         {
@@ -258,6 +260,7 @@ fn tool_list() -> Value {
                 "name": { "type": "string" }, "rename_to": { "type": "string" },
                 "price": { "type": "number" }, "size_m": { "type": "number" },
                 "balance_pct": { "type": "number" }, "color": color,
+                "habitat": { "type": "string", "enum": ["land", "water", "both"] },
             } }
         },
         {
@@ -424,6 +427,9 @@ fn set_mob_settings(c: &mut LevelConfig, args: &Value) -> Result<String, String>
     if let Some(v) = f32_arg(args, "gate_clearance_m") {
         m.gate_clearance_m = v.max(0.0);
     }
+    if let Some(v) = f32_arg(args, "dead_end_guard_pct") {
+        m.dead_end_guard_pct = v.clamp(0.0, 100.0);
+    }
     let min = match m.min_amount {
         NodeAmount::Count => format!("{}", m.min_entities),
         NodeAmount::Density => format!("{}/100 m²", m.min_per_100m2),
@@ -447,6 +453,9 @@ fn apply_mob_fields(t: &mut MobType, args: &Value) -> Result<(), String> {
     }
     if let Some(col) = color_arg(args)? {
         t.color = col;
+    }
+    if let Some(v) = args.get("habitat") {
+        t.habitat = serde_json::from_value(v.clone()).map_err(|_| "habitat must be \"land\", \"water\" or \"both\"")?;
     }
     Ok(())
 }
@@ -679,7 +688,7 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
         "regions": level.regions.as_ref().map(|r| r.stats.len()),
         "roads": level.roads.as_ref().map(|r| r.links.len()),
         "houses": level.houses.as_ref().map(|h| h.street_houses + h.yard_houses),
-        "props": level.props.as_ref().map(|p| p.near_houses + p.roadside + p.scattered),
+        "props": level.props.as_ref().map(|p| p.near_houses + p.roadside + p.scattered + p.near_trees + p.shore + p.in_water + p.path_edge),
         "interactive": level.interactive.as_ref().map(|l| l.types.iter().map(|t| json!({"name": t.name, "placed": t.placed, "requested": t.requested})).collect::<Vec<_>>()),
         "hidden_rooms": level.hidden_rooms.as_ref().map(|h| json!({"placed": h.rooms.len(), "requested": h.requested})),
         "gates": gates,

@@ -49,7 +49,8 @@ src/
 │       ├── islands.rs   #   swamp node 3: gate, hub and small islands
 │       ├── paths.rs     #   swamp node 4: mud paths, boardwalks, gate bridges
 │       ├── depth.rs     #   swamp node 5: water bands, wading limit, hummocks, border
-│       └── trees.rs     #   swamp node 6: groves and water trees (round objects)
+│       ├── trees.rs     #   swamp node 6: groves and water trees (round objects)
+│       └── spawns.rs    #   swamp nodes 7–10: props, interactive, hidden islets, mobs
 ├── render.rs            # map.png / layer.png rasterizers
 ├── export.rs            # export bundle writer + spec.json
 ├── validate.rs          # config validation (early subset; step 13 extends it)
@@ -92,8 +93,11 @@ irregularity, gap, border margin) → 4 **Paths** (tree + loops + dead
 ends, winding mud by traffic width, boardwalks with kinks, gate bridges) →
 5 **Depth & border** (shallow water, deep mud, deep water by distance;
 wading limit with hummocks; deep water / thicket border) → 6 **Trees**
-(groves on islands, water trees) → props, interactive objects, hidden
-rooms, mobs next.
+(groves on islands, water trees) → 7 **Props** (near trees, shore, in
+water, path edge) → 8 **Interactive objects** (per-type terrain) → 9
+**Hidden rooms** (islets in thicket / deep water, one ford) → 10 **Mobs**
+(per-type habitat, dead-end guards). Nodes 7–10 are the town nodes' cores
+on swamp ground.
 
 Export: map.png (colored map), layer.png (R = category id, G/B = instance
 id), spec.json (legend, every object, regions, roads, wall gaps, interactive
@@ -112,7 +116,7 @@ rebuild it after code changes.
 |---|---|
 | `set_gates` | gates by `directions` (0° east, 90° north…) or `count` spread evenly; swamp `styles` (shore / bridge); opening, gate road, color |
 | `set_mob_types` | replace all mob types (name, price, size, share, color) + `forbid_pairs` |
-| `upsert_mob_type` / `remove_mob_type` | add or change one type (rename too) / remove one |
+| `upsert_mob_type` / `remove_mob_type` | add or change one type (rename too, swamp `habitat`) / remove one |
 | `set_mob_combination` | allow/forbid two types at one spawn |
 | `set_mob_settings` | budget, max, minimum (count or density), pack size, spacing, on roads, gate clearance |
 | `patch_config` | JSON merge patch for any other node (map, regions, roads, houses, props, …) |

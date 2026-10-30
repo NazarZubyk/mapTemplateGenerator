@@ -31,7 +31,7 @@ use crate::generator::Stage;
 use crate::level::{
     Category, CellMask, GateInfo, HiddenRoomLayout, MobLayout, MobPackMember, MobSpawn, PlacedObject, RegionMap, RoadNetwork,
 };
-use crate::model::{LevelConfig, NodeAmount};
+use crate::model::{Habitat, LevelConfig, NodeAmount};
 
 /// Cells drawn per pack while looking for a spot.
 const TRIES: usize = 60;
@@ -71,26 +71,11 @@ pub(crate) fn build_with_progress(
     let (w, h) = (map.width, map.height);
     let cell = map.cell_size_m.max(0.05);
     let s = &config.mobs;
-    let n_types = s.types.len();
 
     // 1. Spawnable ground, and which hidden room (if any) each cell is in.
     let in_mask = |m: Option<&CellMask>, i: usize| m.is_some_and(|m| m.cells[i]);
     let road = |i: usize| ground.roads.is_some_and(|r| r.mask.cells[i]);
-    let mut room_of: Vec<u32> = vec![0; w * h];
-    let mut room_ok: Vec<bool> = vec![false; w * h];
-    if let Some(rooms) = ground.hidden_rooms {
-        for r in &rooms.rooms {
-            let [x, y, rw, rh] = r.rect_m;
-            let (x0, y0) = ((x / cell).round() as usize, (y / cell).round() as usize);
-            let (x1, y1) = (((x + rw) / cell).round() as usize, ((y + rh) / cell).round() as usize);
-            for cy in y0..y1.min(h) {
-                for cx in x0..x1.min(w) {
-                    room_of[cy * w + cx] = r.id;
-                    room_ok[cy * w + cx] = r.mob_passable;
-                }
-            }
-        }
-    }
+    let (room_of, room_ok) = room_cells(ground.hidden_rooms, w, h, cell);
     let hidden = |m: fn(&HiddenRoomLayout) -> &CellMask, i: usize| ground.hidden_rooms.is_some_and(|l| m(l).cells[i]);
     let spawnable: Vec<bool> = (0..w * h)
         .map(|i| {
@@ -112,6 +97,78 @@ pub(crate) fn build_with_progress(
         })
         .collect();
 
+    let road_mask: Vec<bool> = (0..w * h).map(road).collect();
+    let area = MobArea { w, h, cell, spawnable, room_of, road: road_mask, habitat: None, guards: Vec::new() };
+    Some(spend(config, rng, &area, stage))
+}
+
+/// Which hidden room each cell's floor belongs to (0 = none), and whether
+/// mobs may go there (the room's path is mob-passable).
+pub(crate) fn room_cells(rooms: Option<&HiddenRoomLayout>, w: usize, h: usize, cell: f32) -> (Vec<u32>, Vec<bool>) {
+    let mut room_of: Vec<u32> = vec![0; w * h];
+    let mut room_ok: Vec<bool> = vec![false; w * h];
+    for r in rooms.map(|l| l.rooms.as_slice()).unwrap_or_default() {
+        let [x, y, rw, rh] = r.rect_m;
+        let (x0, y0) = ((x / cell).round() as usize, (y / cell).round() as usize);
+        let (x1, y1) = (((x + rw) / cell).round() as usize, ((y + rh) / cell).round() as usize);
+        for cy in y0..y1.min(h) {
+            for cx in x0..x1.min(w) {
+                room_of[cy * w + cx] = r.id;
+                room_ok[cy * w + cx] = r.mob_passable;
+            }
+        }
+    }
+    (room_of, room_ok)
+}
+
+/// Where mobs may stand, worked out by the caller (town or swamp chain).
+pub(crate) struct MobArea {
+    pub w: usize,
+    pub h: usize,
+    pub cell: f32,
+    pub spawnable: Vec<bool>,
+    /// Hidden room id per cell (0 = none): a pack stays in one place.
+    pub room_of: Vec<u32>,
+    /// Road (swamp: path or boardwalk) cells, for `MobSpawn::on_road`.
+    pub road: Vec<bool>,
+    /// Swamp maps: where each habitat may stand (subsets of `spawnable`).
+    pub habitat: Option<HabitatMasks>,
+    /// Areas that each get one pack before the rest are spread (swamp:
+    /// guarded dead-end islands); subsets of `spawnable`.
+    pub guards: Vec<Vec<bool>>,
+}
+
+pub(crate) struct HabitatMasks {
+    pub land: Vec<bool>,
+    pub water: Vec<bool>,
+    /// Both sides of the shoreline: where a land + water pack stands.
+    pub shore: Vec<bool>,
+}
+
+/// The cells a pack may cover, and their class (index into the per-class
+/// candidate lists): every member's habitat must fit (a land + water pack
+/// stands on the shoreline). Without habitats, all spawnable.
+fn pack_cells<'a>(area: &'a MobArea, pack: &[usize], s: &crate::model::MobSettings) -> (usize, &'a [bool]) {
+    let Some(hab) = &area.habitat else {
+        return (0, &area.spawnable);
+    };
+    let has = |want: Habitat| pack.iter().any(|&t| s.types[t].habitat == want);
+    match (has(Habitat::Land), has(Habitat::Water)) {
+        (true, true) => (3, &hab.shore),
+        (true, false) => (1, &hab.land),
+        (false, true) => (2, &hab.water),
+        (false, false) => (0, &area.spawnable),
+    }
+}
+
+/// Buy packs from the budget and spread them over `area` (steps 2–4 in the
+/// module docs). Guard areas get one pack each first.
+pub(crate) fn spend(config: &LevelConfig, rng: &mut ChaCha8Rng, area: &MobArea, stage: &Stage) -> MobBuild {
+    let (w, h, cell) = (area.w, area.h, area.cell);
+    let s = &config.mobs;
+    let n_types = s.types.len();
+    let spawnable = &area.spawnable;
+    let room_of = &area.room_of;
     let mut layout = MobLayout {
         spawns: Vec::new(),
         per_type: vec![0; n_types],
@@ -133,7 +190,7 @@ pub(crate) fn build_with_progress(
     layout.min_target = min_target;
     if n_types == 0 || s.max_entities == 0 || (s.budget <= 0.0 && min_target == 0) {
         layout.stop_reason = "nothing to place".to_owned();
-        return Some(MobBuild { layout, objects, notes });
+        return MobBuild { layout, objects, notes };
     }
 
     // Balance targets; zero-share types are never bought (all zero → equal).
@@ -147,9 +204,15 @@ pub(crate) fn build_with_progress(
     let mut spacing = s.spacing_m.max(0.0);
     let cheapest = (0..n_types).filter(|&t| target[t] > 0.0).map(price).fold(f32::MAX, f32::min);
 
-    let mut candidates: Vec<usize> = (0..w * h).filter(|&i| spawnable[i]).collect();
+    // One candidate list per pack class (see `pack_cells`), built on first use.
+    let mut candidates: [Option<Vec<usize>>; 4] = Default::default();
     let mut remaining = s.budget;
+    let mut guards = area.guards.iter();
+    let mut guarding = true;
     let stop_reason = loop {
+        // Guard areas first, one pack each; then the whole ground.
+        let guard = if guarding { guards.next() } else { None };
+        guarding &= guard.is_some();
         let goal = s.budget.max(1.0).max(min_target as f32 * cheapest.min(1e6));
         stage.report("Placing mobs", (layout.spent / goal).max(layout.entities as f32 / min_target.max(1) as f32));
         if layout.entities >= s.max_entities {
@@ -186,17 +249,40 @@ pub(crate) fn build_with_progress(
         }
 
         // 4. Find a spot; a pack that fits nowhere shrinks to one mob.
-        let mut spot = find_spot(rng, &mut candidates, &spawnable, &room_of, &layout.spawns, spacing, &pack, s, w, h, cell);
-        if spot.is_none() && pack.len() > 1 {
-            pack.truncate(1);
-            cost = price(pack[0]);
-            spot = find_spot(rng, &mut candidates, &spawnable, &room_of, &layout.spawns, spacing, &pack, s, w, h, cell);
+        let mut spot = None;
+        for attempt in 0..2 {
+            if attempt == 1 {
+                if pack.len() <= 1 {
+                    break;
+                }
+                pack.truncate(1);
+                cost = price(pack[0]);
+            }
+            let (class, cells) = pack_cells(area, &pack, s);
+            spot = match guard {
+                Some(g) => {
+                    let inside: Vec<bool> = (0..w * h).map(|i| g[i] && cells[i]).collect();
+                    let mut pool: Vec<usize> = (0..w * h).filter(|&i| inside[i]).collect();
+                    find_spot(rng, &mut pool, &inside, room_of, &layout.spawns, spacing, &pack, s, w, h, cell)
+                }
+                None => {
+                    let pool = candidates[class].get_or_insert_with(|| (0..w * h).filter(|&i| cells[i]).collect());
+                    find_spot(rng, pool, cells, room_of, &layout.spawns, spacing, &pack, s, w, h, cell)
+                }
+            };
+            if spot.is_some() {
+                break;
+            }
+        }
+        if guard.is_some() && spot.is_none() {
+            // An unguardable area is skipped, not the end of spending.
+            continue;
         }
         let Some((c, radius)) = spot else {
             if below_min && spacing > 0.0 {
                 // Relax the spacing and give the dropped cells another chance.
                 spacing = if spacing > 0.5 { spacing / 2.0 } else { 0.0 };
-                candidates = (0..w * h).filter(|&i| spawnable[i]).collect();
+                candidates = Default::default();
                 continue;
             }
             break "no free spot left";
@@ -239,7 +325,7 @@ pub(crate) fn build_with_progress(
             radius_m: radius,
             members,
             cost,
-            on_road: road(c),
+            on_road: area.road[c],
             hidden_room: (room_of[c] != 0).then_some(room_of[c]),
             objects: (first..objects.len()).collect(),
         });
@@ -278,7 +364,7 @@ pub(crate) fn build_with_progress(
             s.max_entities, remaining
         ));
     }
-    Some(MobBuild { layout, objects, notes })
+    MobBuild { layout, objects, notes }
 }
 
 /// The biggest body in the pack (at least a cell): the spiral's step.
