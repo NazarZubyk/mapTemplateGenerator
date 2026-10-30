@@ -9,7 +9,7 @@ an AI agent (or a level designer) to build a playable prototype fast.
 > **Only the Town map kind is ready.** Forest and Cave can be picked, but
 > they are experimental: their shapes work, but the content on them (props,
 > mobs and so on) is not tuned yet. Swamp is being rebuilt with its own
-> layout and for now only places its gates.
+> layout and for now places its gates and islands.
 
 ## What you get
 
@@ -64,7 +64,7 @@ see `QUICKSTART.md`.
 ## Known limitations (beta)
 
 - Only **Town** is tuned. Forest and Cave are experimental; Swamp is being
-  rebuilt (gates only for now).
+  rebuilt (gates and islands for now).
 - The **walkable %** setting is not used yet.
 - Few safety checks. For example, two object types with the same color are
   not flagged yet.

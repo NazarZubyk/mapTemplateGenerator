@@ -45,7 +45,8 @@ src/
 │   ├── placement.rs     # shared object footprint / road-angle helpers
 │   └── swamp/           # the swamp node chain (docs/swamp-plan.md)
 │       ├── mod.rs       #   swamp pipeline
-│       └── gate_anchors.rs # swamp node 2: gate points + gate islands
+│       ├── gate_anchors.rs # swamp node 2: gate points + gate islands
+│       └── islands.rs   #   swamp node 3: gate, hub and small islands
 ├── render.rs            # map.png / layer.png rasterizers
 ├── export.rs            # export bundle writer + spec.json
 ├── validate.rs          # config validation (early subset; step 13 extends it)
@@ -83,11 +84,12 @@ body and apply on ⚙ Generate. The algorithms are described step by step in
 **Swamp** has its own chain (being built, see
 [swamp-plan.md](swamp-plan.md)): 1 Template → 2 **Gate anchors** (gate
 points on the border, shore or bridge style, corner snap, where each gate
-island goes) → islands, paths, depth & border, trees, … next.
+island goes) → 3 **Islands** (gate islands, hubs, small islands; shape
+irregularity, gap, border margin) → paths, depth & border, trees, … next.
 
 Export: map.png (colored map), layer.png (R = category id, G/B = instance
 id), spec.json (legend, every object, regions, roads, wall gaps, interactive
-groups, hidden rooms, mobs, gates; swamp: `gate_anchors`).
+groups, hidden rooms, mobs, gates; swamp: `gate_anchors`, `islands`).
 
 ## MCP server
 

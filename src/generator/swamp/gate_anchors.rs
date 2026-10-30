@@ -121,7 +121,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng) -> AnchorBuild {
             let d = (x.land_m[0] - y.land_m[0]).hypot(x.land_m[1] - y.land_m[1]);
             if d < (x.island_m + y.island_m) / 2.0 {
                 notes.push(format!(
-                    "Gates #{} and #{}: their islands overlap and will merge — spread the directions",
+                    "Gates #{} and #{}: their islands overlap and squeeze each other — spread the directions",
                     x.id, y.id
                 ));
             }

@@ -53,9 +53,10 @@ Which nodes run depends on the map kind (houses are town only) — when adding
 a node, state which kinds include it.
 
 **Swamp has its own chain** (`src/generator/swamp/`, planned step by step
-in `docs/swamp-plan.md`): Template → Gate anchors (done) → Islands →
-Paths → Depth & border → Trees → props / interactive / hidden rooms / mobs
-with swamp ground. A swamp map currently shows only its gates.
+in `docs/swamp-plan.md`): Template → Gate anchors (done) → Islands
+(done) → Paths → Depth & border → Trees → props / interactive / hidden
+rooms / mobs with swamp ground. A swamp map currently shows its gates and
+unlinked islands.
 
 **MCP server** `mapgen-mcp` (`src/mcp.rs`, `src/bin/mapgen-mcp.rs`,
 registered in `.mcp.json`): Claude edits the same config file
@@ -110,8 +111,8 @@ Ctrl+scroll zooms). Bottom: warnings panel, then the (empty) bench.
 
 ## Current state
 
-Steps 0–6 and 8–12 and the MCP server are done; swamp step S1 (gate
-anchors) is done — S2 Islands is next. Open:
+Steps 0–6 and 8–12 and the MCP server are done; swamp steps S1 (gate
+anchors) and S2 (islands) are done — S3 Paths is next. Open:
 - **Step 7 — walkable budget**: `map.walkable_pct` vs what houses and later
   objects take.
 - **Step 13 — validation & export polish**: feasibility pre-check, blocking

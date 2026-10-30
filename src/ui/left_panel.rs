@@ -1,6 +1,7 @@
 use eframe::egui;
 use rand::Rng;
 
+use crate::level::IslandKind;
 use crate::model::{GateSpec, GateStyle, HiddenRoomPlace, InteractiveSpot, InteractiveType, LevelConfig, MapKind, MobType, NodeAmount, ShapeSettings};
 use crate::ui::app::{ConfigStatus, MapGenApp};
 use crate::ui::widgets::param_row;
@@ -61,7 +62,9 @@ fn generation_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
 /// The swamp chain after the template (docs/swamp-plan.md).
 fn swamp_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_gate_anchors(ui, app);
-    ui.weak("Next swamp nodes appear here as they finish: islands, paths, depth & border, trees, then props, interactive objects, hidden rooms and mobs (docs/swamp-plan.md).");
+    flow_arrow(ui, "gate points + where their islands go");
+    node_islands(ui, app);
+    ui.weak("Next swamp nodes appear here as they finish: paths, depth & border, trees, then props, interactive objects, hidden rooms and mobs (docs/swamp-plan.md).");
     ui.add_space(4.0);
     ui.separator();
 }
@@ -895,22 +898,8 @@ shorter map side. NO EFFECT when no gate has the Bridge style.";
             param_row(ui, "Corner snap", TIP_SNAP, |ui| {
                 ui.add(egui::DragValue::new(&mut a.corner_snap_deg).range(0.0..=45.0).speed(0.2).suffix("°"))
             });
-            param_row(ui, "Island size", TIP_ISLAND, |ui| {
-                ui.horizontal(|ui| {
-                    ui.add(egui::DragValue::new(&mut a.island_min_m).range(1.0..=100.0).speed(0.1).suffix(" m"));
-                    ui.label("–");
-                    ui.add(egui::DragValue::new(&mut a.island_max_m).range(1.0..=100.0).speed(0.1).suffix(" m"));
-                })
-                .response
-            });
-            param_row(ui, "Bridge length", TIP_BRIDGE, |ui| {
-                ui.horizontal(|ui| {
-                    ui.add(egui::DragValue::new(&mut a.bridge_min_m).range(0.0..=100.0).speed(0.1).suffix(" m"));
-                    ui.label("–");
-                    ui.add(egui::DragValue::new(&mut a.bridge_max_m).range(0.0..=100.0).speed(0.1).suffix(" m"));
-                })
-                .response
-            });
+            param_row(ui, "Island size", TIP_ISLAND, |ui| range_m(ui, &mut a.island_min_m, &mut a.island_max_m, 1.0..=100.0));
+            param_row(ui, "Bridge length", TIP_BRIDGE, |ui| range_m(ui, &mut a.bridge_min_m, &mut a.bridge_max_m, 0.0..=100.0));
             param_row(ui, "Color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut g.color));
         });
         if let Some(i) = remove {
@@ -953,6 +942,111 @@ shorter map side. NO EFFECT when no gate has the Bridge style.";
                 })
                 .collect();
             ui.weak(format!("generated: {} gates · {}", s.gate_anchors.len(), parts.join(" · ")));
+        }
+    });
+}
+
+/// A "min – max" pair of meter fields on one row.
+fn range_m(ui: &mut egui::Ui, min: &mut f32, max: &mut f32, range: std::ops::RangeInclusive<f32>) -> egui::Response {
+    ui.horizontal(|ui| {
+        ui.add(egui::DragValue::new(min).range(range.clone()).speed(0.1).suffix(" m"));
+        ui.label("–");
+        ui.add(egui::DragValue::new(max).range(range).speed(0.1).suffix(" m"));
+    })
+    .response
+}
+
+/// Swamp node 3: the islands of firm ground (step S2 in docs/swamp-plan.md).
+fn node_islands(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_HUBS: &str = "Number of big islands — clearings, camps, arenas where the \
+content goes. Placed after the gate islands, each in the open spot farthest from the islands \
+already there. Those that find no room shrink, then are skipped (a note says how many).";
+    const TIP_HUB_SIZE: &str = "Hub island diameter range, meters (rolled per island). The \
+island gets about the area of a circle this wide; its shape is set by Irregularity. NO \
+EFFECT with 0 hubs.";
+    const TIP_SMALL_BY: &str = "Small islands as a total count, or as a density (islands \
+per 1000 m² of map, so a bigger map gets more).";
+    const TIP_SMALL: &str = "Number of small islands — stepping stones between the hubs. \
+Placed after the hubs in the open spots left over.";
+    const TIP_SMALL_DENSITY: &str = "Small islands per 1000 m² of map (capped at 400).";
+    const TIP_SMALL_SIZE: &str = "Small island diameter range, meters (rolled per island). \
+NO EFFECT with no small islands.";
+    const TIP_IRR: &str = "How far island shapes stray from a circle. 0%: round blobs. \
+50%: natural, stretched up to 1.5× with a rough coast. 100%: long, warped, ragged islands \
+(stretched up to 2×). The area stays about the same.";
+    const TIP_GAP: &str = "Least water between two islands, meters — islands never merge; \
+where two would come closer, the weaker coast gives way. Later the paths node links them \
+across this water. 0 m: islands may touch (still separate ids).";
+    const TIP_BORDER: &str = "Hub and small islands keep this far from the map edge, \
+meters — that strip becomes the deep-water / thicket border. Gate islands ignore it (shore \
+gate islands reach over the edge on purpose).";
+    const TIP_COLOR: &str = "Island color on the map image, the preview and the legend.";
+    node(ui, "3 · Islands", |ui| {
+        ui.weak("input: gate anchors · output: islands (gate, hub, small) — not linked yet (swamp)");
+        let s = &mut app.config.swamp.islands;
+        egui::Grid::new("islands_node_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Hubs", TIP_HUBS, |ui| ui.add(egui::DragValue::new(&mut s.hub_count).range(0..=64).speed(0.1)));
+            param_row(ui, "Hub size", TIP_HUB_SIZE, |ui| range_m(ui, &mut s.hub_min_m, &mut s.hub_max_m, 2.0..=200.0));
+            param_row(ui, "Small islands by", TIP_SMALL_BY, |ui| {
+                ui.horizontal(|ui| {
+                    ui.radio_value(&mut s.small_amount, NodeAmount::Count, "count");
+                    ui.radio_value(&mut s.small_amount, NodeAmount::Density, "density")
+                })
+                .response
+            });
+            match s.small_amount {
+                NodeAmount::Count => param_row(ui, "Small islands", TIP_SMALL, |ui| {
+                    ui.add(egui::DragValue::new(&mut s.small_count).range(0..=400).speed(0.1))
+                }),
+                NodeAmount::Density => param_row(ui, "Small / 1000 m²", TIP_SMALL_DENSITY, |ui| {
+                    ui.add(egui::DragValue::new(&mut s.small_per_1000m2).range(0.0..=50.0).speed(0.01))
+                }),
+            };
+            param_row(ui, "Small size", TIP_SMALL_SIZE, |ui| range_m(ui, &mut s.small_min_m, &mut s.small_max_m, 1.0..=100.0));
+            param_row(ui, "Irregularity", TIP_IRR, |ui| ui.add(egui::Slider::new(&mut s.irregularity_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Gap", TIP_GAP, |ui| {
+                ui.add(egui::DragValue::new(&mut s.gap_m).range(0.0..=40.0).speed(0.1).suffix(" m"))
+            });
+            param_row(ui, "Border", TIP_BORDER, |ui| {
+                ui.add(egui::DragValue::new(&mut s.border_m).range(0.0..=60.0).speed(0.1).suffix(" m"))
+            });
+            param_row(ui, "Color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut s.color));
+        });
+        ui.horizontal(|ui| {
+            if ui
+                .button("🎲 Random params")
+                .on_hover_text(
+                    "Rolls every island setting independently inside its reasonable range — \
+                     they may contradict each other (too many islands for the map, say). \
+                     Set values only; press Generate.",
+                )
+                .clicked()
+            {
+                let mut rng = rand::rng();
+                s.hub_count = rng.random_range(0..=6);
+                s.hub_min_m = rng.random_range(8.0..=30.0);
+                s.hub_max_m = rng.random_range(8.0..=36.0);
+                s.small_amount = if rng.random_bool(0.5) { NodeAmount::Count } else { NodeAmount::Density };
+                s.small_count = rng.random_range(0..=20);
+                s.small_per_1000m2 = rng.random_range(0.0..=5.0);
+                s.small_min_m = rng.random_range(2.0..=10.0);
+                s.small_max_m = rng.random_range(2.0..=12.0);
+                s.irregularity_pct = rng.random_range(0.0..=100.0);
+                s.gap_m = rng.random_range(1.0..=10.0);
+                s.border_m = rng.random_range(0.0..=12.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(l) = app.generated.as_ref().and_then(|l| l.swamp.as_ref()).and_then(|s| s.islands.as_ref()) {
+            let count = |k| l.islands.iter().filter(|i| i.kind == k).count();
+            let (gate, hub, small) = (count(IslandKind::Gate), count(IslandKind::Hub), count(IslandKind::Small));
+            ui.weak(format!(
+                "generated: {} islands ({gate} gate, {hub} hub, {small} small; {} of {} hub + small asked) · land {:.0}%",
+                l.islands.len(),
+                hub + small,
+                l.requested,
+                l.land_pct
+            ));
         }
     });
 }

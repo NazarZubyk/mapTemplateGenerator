@@ -267,6 +267,53 @@ impl Default for GateSettings {
 pub struct SwampSettings {
     /// Node 2: where each gate meets the map border.
     pub gate_anchors: GateAnchorSettings,
+    /// Node 3: the islands of firm ground.
+    pub islands: IslandSettings,
+}
+
+/// Settings of the swamp islands node (step S2). Sizes are diameters.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct IslandSettings {
+    /// Big islands (clearings, camps, arenas).
+    pub hub_count: u32,
+    pub hub_min_m: f32,
+    pub hub_max_m: f32,
+    /// Whether the small islands are a total count or a density.
+    pub small_amount: NodeAmount,
+    pub small_count: u32,
+    /// Small islands per 1000 m² of map.
+    pub small_per_1000m2: f32,
+    pub small_min_m: f32,
+    pub small_max_m: f32,
+    /// How far shapes stray from a circle, %: stretch, warp and a rough coast.
+    pub irregularity_pct: f32,
+    /// Least water between two islands, meters (they never merge).
+    pub gap_m: f32,
+    /// Hub and small islands keep this far from the map edge, meters (gate
+    /// islands reach over it).
+    pub border_m: f32,
+    /// Island color on map.png, the preview and the legend.
+    pub color: [u8; 3],
+}
+
+impl Default for IslandSettings {
+    fn default() -> Self {
+        Self {
+            hub_count: 3,
+            hub_min_m: 12.0,
+            hub_max_m: 18.0,
+            small_amount: NodeAmount::Density,
+            small_count: 6,
+            small_per_1000m2: 1.5,
+            small_min_m: 4.0,
+            small_max_m: 8.0,
+            irregularity_pct: 50.0,
+            gap_m: 4.0,
+            border_m: 6.0,
+            color: [126, 138, 78],
+        }
+    }
 }
 
 /// Settings of the swamp gate anchors node (step S1). The gate list itself

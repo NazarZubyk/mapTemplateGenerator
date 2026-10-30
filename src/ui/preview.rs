@@ -227,6 +227,11 @@ fn draw_legend(painter: &egui::Painter, canvas: Rect, level: &GeneratedLevel) {
     {
         entries.push((crate::render::REGION, level.config.kind.slug().to_owned()));
     }
+    if let Some(islands) = level.swamp.as_ref().and_then(|s| s.islands.as_ref())
+        && !islands.islands.is_empty()
+    {
+        entries.push((level.config.swamp.islands.color, "island".to_owned()));
+    }
     if let Some(roads) = &level.roads
         && !roads.nodes.is_empty()
     {

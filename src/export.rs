@@ -86,6 +86,11 @@ pub struct ExportSpec {
     /// diameter, bridge length.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gate_anchors: Option<Vec<crate::level::GateAnchor>>,
+    /// Swamp islands: id, kind (gate / hub / small), gate id, centroid,
+    /// asked diameter, cells, area. Their cells are the "island" color on
+    /// map.png.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub islands: Option<Vec<crate::level::Island>>,
     /// Every placed object with position and size in meters.
     pub objects: Vec<crate::level::PlacedObject>,
 }
@@ -210,6 +215,15 @@ impl ExportSpec {
                 category: "ground",
             });
         }
+        if let Some(islands) = level.swamp.as_ref().and_then(|s| s.islands.as_ref())
+            && !islands.islands.is_empty()
+        {
+            legend.push(LegendEntry {
+                color: color_hex(level.config.swamp.islands.color),
+                name: "island".to_owned(),
+                category: "ground",
+            });
+        }
         if let Some(roads) = &level.roads
             && !roads.nodes.is_empty()
         {
@@ -294,6 +308,7 @@ impl ExportSpec {
             mobs: level.mobs.clone(),
             gates: level.gates.as_ref().map(|g| g.gates.clone()),
             gate_anchors: level.swamp.as_ref().map(|s| s.gate_anchors.clone()),
+            islands: level.swamp.as_ref().and_then(|s| s.islands.as_ref()).map(|l| l.islands.clone()),
             objects: level.objects.clone(),
         }
     }

@@ -420,10 +420,62 @@ pub struct GateAnchor {
     pub object: usize,
 }
 
+/// What an island is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IslandKind {
+    /// At a gate (shore gates: touching the border; bridge gates: where the
+    /// bridge starts).
+    Gate,
+    /// Big island: clearing, camp, arena.
+    Hub,
+    /// Small island: stepping stone.
+    Small,
+}
+
+/// One island of firm ground.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Island {
+    /// 1-based id, the value in `IslandLayout::ids`.
+    pub id: u16,
+    pub kind: IslandKind,
+    /// The gate it belongs to (gate islands).
+    pub gate: Option<u32>,
+    /// Centroid of its cells, meters.
+    pub center_m: [f32; 2],
+    /// Diameter asked for, meters.
+    pub size_m: f32,
+    pub cells: u32,
+    pub area_m2: f32,
+}
+
+/// The swamp islands node's output.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct IslandLayout {
+    pub width: usize,
+    pub height: usize,
+    pub cell_size_m: f32,
+    /// Island id per cell (0 = no island).
+    pub ids: Vec<u16>,
+    pub islands: Vec<Island>,
+    /// Hub + small islands asked for (gate islands not counted).
+    pub requested: u32,
+    /// Share of the map that is island, %.
+    pub land_pct: f32,
+}
+
+impl IslandLayout {
+    pub fn mask(&self) -> CellMask {
+        CellMask { width: self.width, height: self.height, cell_size_m: self.cell_size_m, cells: self.ids.iter().map(|&i| i > 0).collect() }
+    }
+}
+
 /// The swamp node chain's output, filled node by node (docs/swamp-plan.md).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct SwampLayout {
     pub gate_anchors: Vec<GateAnchor>,
+    #[serde(default)]
+    pub islands: Option<IslandLayout>,
 }
 
 /// The mobs node's output.

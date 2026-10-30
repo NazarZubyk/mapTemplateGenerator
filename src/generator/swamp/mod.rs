@@ -4,6 +4,7 @@
 //! islands. Nodes so far:
 //!
 //! 2. **Gate anchors** — where each gate meets the map border.
+//! 3. **Islands** — the firm ground: gate islands, hubs, small islands.
 
 use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 
@@ -12,6 +13,7 @@ use crate::level::{GeneratedLevel, SwampLayout};
 use crate::model::LevelConfig;
 
 pub mod gate_anchors;
+pub mod islands;
 
 /// Generate a swamp level: one RNG stream, nodes in fixed order.
 pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progress) -> GeneratedLevel {
@@ -22,6 +24,10 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
     let anchors = gate_anchors::build(config, &mut rng);
     notes.extend(anchors.notes);
     let objects = anchors.objects;
+
+    progress("Raising islands", 0.05);
+    let islands = islands::build(config, &mut rng, &anchors.anchors);
+    notes.extend(islands.notes);
 
     progress("Done", 1.0);
     GeneratedLevel {
@@ -39,7 +45,7 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
         hidden_rooms: None,
         mobs: None,
         gates: None,
-        swamp: Some(SwampLayout { gate_anchors: anchors.anchors }),
+        swamp: Some(SwampLayout { gate_anchors: anchors.anchors, islands: Some(islands.layout) }),
         noise_preview: None,
         notes,
     }

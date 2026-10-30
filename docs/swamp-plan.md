@@ -137,7 +137,7 @@ is skipped, so a swamp level has `shape/regions/... = None` and
   rows are shared with the town node (`gate_list_rows`,
   `gate_list_buttons`).
 
-### Step S2 — Islands (node 3, swamp only)
+### Step S2 — Islands (node 3, swamp only) — done
 
 Input: gate anchors. Output: island mask + island list
 (`Island { id, kind: hub | small | gate, center, cells }`).
@@ -155,6 +155,39 @@ Input: gate anchors. Output: island mask + island list
 
 Settings: hub count + size, small count/density + size, irregularity,
 scale with map. Stats: islands per kind, land %.
+
+**S2 notes (as built).** `generator/swamp/islands.rs`, settings
+`config.swamp.islands: IslandSettings` (3 hubs 12–18 m, small islands by
+density 1.5 / 1000 m² — 6 on the default 64 m map — 4–8 m, irregularity
+50%, gap 4 m, border 6 m, olive). Sizes are diameters; no "scale with map"
+toggle — the density covers big maps.
+
+- RNG order: the island noise seed, then per gate island (axis, stretch),
+  then per hub / small island (diameter, axis, stretch, 32 candidate
+  spots per try).
+- Centers: best of 32 spots by clearance (center distance − both radii −
+  gap) inside border + radius; no spot with clearance ≥ 0 → radius ×0.8,
+  up to 3 times, then skipped ("did not fit" note).
+- Shape: ellipse with the target area (axes r·√stretch, r/√stretch,
+  stretch 1..1+irr), sampled at warped coordinates (±irr·r/2), score =
+  1 − d² + roughness (±0.8·irr, 4-octave fBm); the top π r² cells of the
+  window are kept; a contested cell goes to the higher score.
+- Gap: of two cells of different islands within `gap_m`, the lower score
+  (ties: later island) is cleared — no pair stays closer. Hub and small
+  islands never enter the border margin; gate islands may.
+- Tidy (in the island's bounding box): largest 4-connected piece, enclosed
+  holes filled with unowned cells; < 20% of the target → dropped (note).
+- Output `IslandLayout { width, height, cell_size_m, ids (u16 per cell),
+  islands: [Island { id, kind gate/hub/small, gate, center_m, size_m,
+  cells, area_m2 }], requested, land_pct }`. Islands are NOT linked —
+  the walkable-one-piece rule starts holding again after the paths node.
+- Drawn in `swamp.islands.color` (map.png, preview texture, legend
+  "island"); spec.json `islands`; MCP `generate` reports counts; settings
+  via `patch_config` `swamp.islands`. Terrain is not in layer.png yet
+  (like town regions/roads — S8).
+- The gate anchor overlap note now says the islands squeeze each other
+  (the gap keeps them apart instead of merging).
+- 64 m default map: about 1 seed in 40 can't fit every island and gets a note.
 
 ### Step S3 — Paths (node 4, swamp only)
 

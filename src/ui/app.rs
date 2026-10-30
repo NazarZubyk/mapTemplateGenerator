@@ -212,6 +212,10 @@ impl MapGenApp {
                 egui::TextureOptions::NEAREST,
             )
         };
+        // A level without a layer (a swamp has no noise view or town shape)
+        // must not keep showing the previous level's.
+        self.bench_noise = None;
+        self.bench_shape = None;
         if let Some(noise) = &level.noise_preview {
             let pixels = noise
                 .values
@@ -291,6 +295,13 @@ impl MapGenApp {
                 shape.mask.width,
                 shape.mask.height,
             ));
+        } else if let Some(islands) = level.swamp.as_ref().and_then(|s| s.islands.as_ref()) {
+            // Swamp: islands on the dark preview background.
+            let c = level.config.swamp.islands.color;
+            let land = egui::Color32::from_rgb(c[0], c[1], c[2]);
+            let water = egui::Color32::from_gray(38);
+            let pixels = islands.ids.iter().map(|&id| if id > 0 { land } else { water }).collect();
+            self.bench_shape = Some(upload("bench_shape", pixels, islands.width, islands.height));
         }
 
         self.generated = Some(level);
