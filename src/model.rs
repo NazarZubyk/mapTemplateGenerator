@@ -73,6 +73,8 @@ pub struct LevelConfig {
     pub swamp: SwampSettings,
     /// The cave node chain (cave maps only; docs/cave-plan.md).
     pub cave: CaveSettings,
+    /// The forest node chain (forest maps only; docs/forest-plan.md).
+    pub forest: ForestSettings,
     pub cell_size_m: f32,
     pub seed: u64,
 }
@@ -95,6 +97,7 @@ impl Default for LevelConfig {
             gates: GateSettings::default(),
             swamp: SwampSettings::default(),
             cave: CaveSettings::default(),
+            forest: ForestSettings::default(),
             cell_size_m: 0.5,
             seed: 0,
         }
@@ -105,7 +108,7 @@ impl LevelConfig {
     /// The map kind the app (and the MCP server, with no config file yet)
     /// starts on — the kind being built right now. `default()` stays Town,
     /// the baseline the tests are written against.
-    pub const START_KIND: MapKind = MapKind::Cave;
+    pub const START_KIND: MapKind = MapKind::Forest;
 
     /// The defaults with [`Self::START_KIND`] and its shape defaults.
     pub fn starting() -> Self {
@@ -580,6 +583,88 @@ impl Default for CaveStyleSettings {
             min_zone_m2: 300.0,
             natural_color: [122, 100, 78],
             handmade_color: [138, 140, 150],
+        }
+    }
+}
+
+/// Settings of the forest node chain (docs/forest-plan.md), one struct per
+/// node.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ForestSettings {
+    /// Node 2: the big areas, their style (wild / managed) and character.
+    pub areas: ForestAreaSettings,
+}
+
+/// Settings of the forest areas node (step F1): the map split into a few
+/// large areas, each wild or managed and with its own character.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ForestAreaSettings {
+    /// How many areas the map is split into.
+    pub count: u32,
+    /// How much the area sizes differ, %: 0 = all about the same size.
+    pub size_variation_pct: f32,
+    /// How far the borders between areas stray from straight lines, %.
+    pub irregularity_pct: f32,
+    /// Share of the map, %, in wild areas; the rest is managed.
+    pub wild_pct: f32,
+    /// How the styles are arranged, %: 0 = managed areas gather on one
+    /// side (the style changes from managed to wild across the map),
+    /// 100 = styles alternate area by area.
+    pub mixing_pct: f32,
+    /// The managed side starts at the first gate (else a random side).
+    pub managed_near_gate: bool,
+    /// Weight of each area character (the style picks which apply).
+    pub characters: CharacterWeights,
+}
+
+impl Default for ForestAreaSettings {
+    fn default() -> Self {
+        Self {
+            count: 6,
+            size_variation_pct: 40.0,
+            irregularity_pct: 50.0,
+            wild_pct: 60.0,
+            mixing_pct: 20.0,
+            managed_near_gate: true,
+            characters: CharacterWeights::default(),
+        }
+    }
+}
+
+/// Weights of the forest area characters. Wild areas roll meadow, open
+/// woods, dense woods or old growth; managed areas meadow, logged,
+/// plantation or camp grounds.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CharacterWeights {
+    pub meadow: f32,
+    pub open_woods: f32,
+    pub dense_woods: f32,
+    pub old_growth: f32,
+    pub logged: f32,
+    pub plantation: f32,
+    pub camp_grounds: f32,
+}
+
+impl Default for CharacterWeights {
+    fn default() -> Self {
+        Self { meadow: 20.0, open_woods: 30.0, dense_woods: 35.0, old_growth: 20.0, logged: 35.0, plantation: 25.0, camp_grounds: 15.0 }
+    }
+}
+
+impl CharacterWeights {
+    pub fn of(&self, c: crate::level::ForestCharacter) -> f32 {
+        use crate::level::ForestCharacter as F;
+        match c {
+            F::Meadow => self.meadow,
+            F::OpenWoods => self.open_woods,
+            F::DenseWoods => self.dense_woods,
+            F::OldGrowth => self.old_growth,
+            F::Logged => self.logged,
+            F::Plantation => self.plantation,
+            F::CampGrounds => self.camp_grounds,
         }
     }
 }

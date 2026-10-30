@@ -108,6 +108,7 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
         gates: None,
         swamp: Some(SwampLayout { gate_anchors, islands: Some(islands.layout), paths: Some(paths.layout), depth: Some(depth.layout), trees: Some(trees.layout) }),
         cave: None,
+        forest: None,
         noise_preview: None,
         notes,
     };

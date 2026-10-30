@@ -535,7 +535,7 @@ mod tests {
         let mut config = LevelConfig::test_64();
         config.kind = MapKind::Forest;
         config.shape = ShapeSettings::for_kind(config.kind);
-        let lvl = level(&config, 2);
+        let lvl = crate::generator::town_chain(&config, 2, &|_, _| {});
         assert!(!lvl.hidden_rooms.as_ref().unwrap().rooms.is_empty(), "{:?}", lvl.notes);
         assert!(grid::is_connected(&open_ground(&lvl)));
     }

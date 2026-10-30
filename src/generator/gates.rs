@@ -421,7 +421,7 @@ mod tests {
         let mut config = LevelConfig::test_64();
         config.kind = MapKind::Forest;
         config.shape = ShapeSettings::for_kind(config.kind);
-        let lvl = level(&config, 2);
+        let lvl = crate::generator::town_chain(&config, 2, &|_, _| {});
         assert!(!lvl.gates.as_ref().unwrap().gates.is_empty(), "{:?}", lvl.notes);
     }
 

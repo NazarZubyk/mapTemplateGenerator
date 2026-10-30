@@ -607,7 +607,7 @@ mod tests {
         let mut config = LevelConfig::test_64();
         config.kind = crate::model::MapKind::Forest;
         config.shape = crate::model::ShapeSettings::for_kind(config.kind);
-        let lvl = level(&config, 2);
+        let lvl = crate::generator::town_chain(&config, 2, &|_, _| {});
         assert!(lvl.houses.is_none());
         assert!(lvl.objects.iter().all(|o| o.category != Category::Structure));
     }

@@ -831,7 +831,7 @@ mod tests {
         let mut config = LevelConfig::test_64();
         config.kind = MapKind::Forest;
         config.shape = ShapeSettings::for_kind(config.kind);
-        assert!(!level(&config, 2).mobs.as_ref().unwrap().spawns.is_empty());
+        assert!(!crate::generator::town_chain(&config, 2, &|_, _| {}).mobs.as_ref().unwrap().spawns.is_empty());
     }
 
     #[test]

@@ -339,7 +339,7 @@ impl MapGenApp {
                 }
             }
             self.bench_shape = Some(upload("bench_shape", pixels, islands.width, islands.height));
-        } else if let Some((w, h, _, colors)) = crate::render::cave_colors(&level) {
+        } else if let Some((w, h, _, colors)) = crate::render::ground_colors(&level) {
             // Cave: rock tinted by zone, chamber floors by style.
             let pixels = colors.iter().map(|c| egui::Color32::from_rgb(c[0], c[1], c[2])).collect();
             self.bench_shape = Some(upload("bench_shape", pixels, w, h));

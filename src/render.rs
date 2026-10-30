@@ -222,6 +222,53 @@ pub fn cave_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
     out
 }
 
+/// How much darker the cells along a border between two forest areas are.
+const AREA_EDGE_SHADE: f32 = 0.45;
+
+/// Per-cell colors of a forest map (width, height, cell size, colors):
+/// each area in its character's color, the borders between areas darker.
+/// None off forests.
+pub fn forest_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[u8; 3]>)> {
+    let l = level.forest.as_ref()?.areas.as_ref()?;
+    let (w, h) = (l.width, l.height);
+    let colors = (0..l.ids.len())
+        .map(|c| {
+            let color = l.area_at(c).character.color();
+            let (x, y) = (c % w, c / w);
+            let edge = (x + 1 < w && l.ids[c + 1] != l.ids[c]) || (y + 1 < h && l.ids[c + w] != l.ids[c]);
+            if edge {
+                color.map(|v| (v as f32 * (1.0 - AREA_EDGE_SHADE)).round() as u8)
+            } else {
+                color
+            }
+        })
+        .collect();
+    Some((w, h, l.cell_size_m, colors))
+}
+
+/// Forest legend entries (color, name): one per area character on the map.
+pub fn forest_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
+    let Some(l) = level.forest.as_ref().and_then(|f| f.areas.as_ref()) else { return Vec::new() };
+    crate::level::ForestCharacter::ALL
+        .into_iter()
+        .filter(|&ch| l.areas.iter().any(|a| a.character == ch))
+        .map(|ch| (ch.color(), ch.label().to_owned()))
+        .collect()
+}
+
+/// Per-cell ground colors of the kinds that paint their own ground (cave,
+/// forest).
+pub fn ground_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[u8; 3]>)> {
+    cave_colors(level).or_else(|| forest_colors(level))
+}
+
+/// Legend entries of [`ground_colors`].
+pub fn ground_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
+    let mut out = cave_legend(level);
+    out.extend(forest_legend(level));
+    out
+}
+
 pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
     let px_per_m = px_per_m.max(0.1);
     let w = ((level.config.map.width_m * px_per_m).round() as u32).max(1);
@@ -256,7 +303,7 @@ pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
     } else if let Some(shape) = &level.shape {
         paint_mask(&mut map, &shape.mask, px_per_m, w, h, REGION);
     }
-    if let Some((cw, ch, cell, colors)) = cave_colors(level) {
+    if let Some((cw, ch, cell, colors)) = ground_colors(level) {
         let cs = cell * px_per_m;
         for cy in 0..ch {
             let (y0, y1) = ((cy as f32 * cs).round() as u32, ((cy + 1) as f32 * cs).round() as u32);
@@ -473,6 +520,7 @@ mod tests {
             gates: None,
             swamp: None,
             cave: None,
+            forest: None,
             regions: None,
             noise_preview: None,
             notes: Vec::new(),

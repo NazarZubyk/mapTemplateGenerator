@@ -298,10 +298,17 @@ mod tests {
     }
 
     #[test]
+    fn default_forest_is_clean() {
+        let forest = LevelConfig::starting();
+        assert_eq!(forest.kind, MapKind::Forest);
+        assert!(validate(&forest).is_empty(), "{:?}", validate(&forest));
+    }
+
+    #[test]
     fn cave_warnings_fire_and_default_cave_is_clean() {
-        let clean = LevelConfig::starting();
-        assert!(validate(&clean).is_empty(), "{:?}", validate(&clean));
-        let mut c = LevelConfig::starting();
+        let cave = LevelConfig { kind: MapKind::Cave, shape: crate::model::ShapeSettings::for_kind(MapKind::Cave), ..LevelConfig::default() };
+        assert!(validate(&cave).is_empty(), "{:?}", validate(&cave));
+        let mut c = cave;
         c.cave.chambers.hall_min_m = 50.0;
         c.cave.chambers.hall_max_m = 30.0;
         c.cave.tunnels.squeeze_width_m = 9.0;

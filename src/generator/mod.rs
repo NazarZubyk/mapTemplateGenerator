@@ -23,6 +23,7 @@ pub mod roads;
 pub mod shape;
 pub mod swamp;
 pub mod cave;
+pub mod forest;
 pub mod walls;
 
 /// Progress callback: (stage label, overall fraction 0..1). Called from the
@@ -65,6 +66,17 @@ pub fn generate_with_progress(
     if config.kind == crate::model::MapKind::Cave {
         return cave::generate_with_progress(config, seed, progress);
     }
+    // Forests too (docs/forest-plan.md).
+    if config.kind == crate::model::MapKind::Forest {
+        return forest::generate_with_progress(config, seed, progress);
+    }
+    town_chain(config, seed, progress)
+}
+
+/// The town node chain (docs/workflow.md). Only towns use it from
+/// [`generate_with_progress`]; the tests also run it on other kinds to
+/// check it copes with island shapes and no houses.
+pub(crate) fn town_chain(config: &LevelConfig, seed: u64, progress: Progress) -> GeneratedLevel {
     let stage = |from, to| Stage { progress, from, to };
     let built = shape::build_with_progress(config, seed, &stage(0.0, 0.55));
     let mut notes = Vec::new();
@@ -277,6 +289,7 @@ pub fn generate_with_progress(
         gates,
         swamp: None,
         cave: None,
+        forest: None,
         noise_preview: Some(built.noise_preview),
         notes,
     };

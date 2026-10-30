@@ -843,6 +843,140 @@ impl HazardLayout {
     }
 }
 
+/// Forest area style (docs/forest-plan.md).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ForestStyle {
+    /// Old wild forest: winding game trails, ragged clearings.
+    Wild,
+    /// Worked forest: forest roads, cut glades, stumps, rows.
+    Managed,
+}
+
+impl ForestStyle {
+    pub fn label(self) -> &'static str {
+        match self {
+            ForestStyle::Wild => "wild",
+            ForestStyle::Managed => "managed",
+        }
+    }
+}
+
+/// What an area looks like inside; sets its woods mix and cover later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ForestCharacter {
+    Meadow,
+    OpenWoods,
+    DenseWoods,
+    OldGrowth,
+    Logged,
+    Plantation,
+    CampGrounds,
+}
+
+impl ForestCharacter {
+    pub const ALL: [ForestCharacter; 7] = [
+        ForestCharacter::Meadow,
+        ForestCharacter::OpenWoods,
+        ForestCharacter::DenseWoods,
+        ForestCharacter::OldGrowth,
+        ForestCharacter::Logged,
+        ForestCharacter::Plantation,
+        ForestCharacter::CampGrounds,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ForestCharacter::Meadow => "meadow",
+            ForestCharacter::OpenWoods => "open woods",
+            ForestCharacter::DenseWoods => "dense woods",
+            ForestCharacter::OldGrowth => "old growth",
+            ForestCharacter::Logged => "logged",
+            ForestCharacter::Plantation => "plantation",
+            ForestCharacter::CampGrounds => "camp grounds",
+        }
+    }
+
+    /// Whether an area of this style may roll this character.
+    pub fn fits(self, style: ForestStyle) -> bool {
+        match self {
+            ForestCharacter::Meadow => true,
+            ForestCharacter::OpenWoods | ForestCharacter::DenseWoods | ForestCharacter::OldGrowth => style == ForestStyle::Wild,
+            ForestCharacter::Logged | ForestCharacter::Plantation | ForestCharacter::CampGrounds => style == ForestStyle::Managed,
+        }
+    }
+
+    /// Ground color on the map image, the preview and the legend.
+    pub fn color(self) -> [u8; 3] {
+        match self {
+            ForestCharacter::Meadow => [170, 198, 106],
+            ForestCharacter::OpenWoods => [108, 160, 86],
+            ForestCharacter::DenseWoods => [60, 114, 64],
+            ForestCharacter::OldGrowth => [42, 84, 58],
+            ForestCharacter::Logged => [178, 152, 100],
+            ForestCharacter::Plantation => [124, 150, 78],
+            ForestCharacter::CampGrounds => [198, 174, 122],
+        }
+    }
+}
+
+/// One forest area: a large walkable place with one style and character.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ForestArea {
+    /// 1-based, the value in [`AreaLayout::ids`].
+    pub id: u16,
+    pub style: ForestStyle,
+    pub character: ForestCharacter,
+    pub area_m2: f32,
+    /// Center of mass, meters (may fall outside a curved area).
+    pub center_m: [f32; 2],
+}
+
+/// Two areas that touch, and how long their shared border is.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AreaBorder {
+    /// Area ids, `a < b`.
+    pub a: u16,
+    pub b: u16,
+    pub length_m: f32,
+}
+
+/// The forest areas node's output: every cell belongs to exactly one area.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AreaLayout {
+    pub width: usize,
+    pub height: usize,
+    pub cell_size_m: f32,
+    /// Area id per cell (1-based, never 0).
+    pub ids: Vec<u16>,
+    pub areas: Vec<ForestArea>,
+    pub borders: Vec<AreaBorder>,
+    /// The wild share that came out, % of the map.
+    pub wild_pct: f32,
+    /// The areas asked for (fewer come out when some found no room).
+    pub requested: u32,
+}
+
+impl AreaLayout {
+    pub fn area_at(&self, c: usize) -> &ForestArea {
+        &self.areas[self.ids[c] as usize - 1]
+    }
+
+    /// Ids of the areas bordering `id`.
+    pub fn neighbors(&self, id: u16) -> impl Iterator<Item = u16> + '_ {
+        self.borders.iter().filter_map(move |b| if b.a == id { Some(b.b) } else if b.b == id { Some(b.a) } else { None })
+    }
+}
+
+/// The forest node chain's output, filled node by node
+/// (docs/forest-plan.md).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct ForestLayout {
+    #[serde(default)]
+    pub areas: Option<AreaLayout>,
+}
+
 /// The cave node chain's output, filled node by node (docs/cave-plan.md).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct CaveLayout {
@@ -1011,6 +1145,9 @@ pub struct GeneratedLevel {
     /// The cave chain's output (cave maps only).
     #[serde(default)]
     pub cave: Option<CaveLayout>,
+    /// The forest chain's output (forest maps only).
+    #[serde(default)]
+    pub forest: Option<ForestLayout>,
     /// Raw noise field behind the region shape, for the bench "noise texture"
     /// view.
     pub noise_preview: Option<NoiseTexture>,

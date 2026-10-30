@@ -112,6 +112,12 @@ pub struct ExportSpec {
     /// passages (id, style, area, center).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cave_zones: Option<Vec<crate::level::CaveZone>>,
+    /// Forest areas: id, style (wild / managed), character, area, center.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forest_areas: Option<Vec<crate::level::ForestArea>>,
+    /// Forest area pairs that touch, with the shared border length.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub area_borders: Option<Vec<crate::level::AreaBorder>>,
     /// Cave chambers: id, kind (hall / grotto), style, zone, center, size,
     /// long-axis angle, area.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -317,7 +323,7 @@ impl ExportSpec {
                 category: "ground",
             });
         }
-        for (color, name) in render::cave_legend(level) {
+        for (color, name) in render::ground_legend(level) {
             legend.push(LegendEntry { color: color_hex(color), name, category: "ground" });
         }
         if let Some(depth) = level.swamp.as_ref().and_then(|s| s.depth.as_ref()) {
@@ -439,6 +445,8 @@ impl ExportSpec {
             paths: level.swamp.as_ref().and_then(|s| s.paths.as_ref()).map(|l| l.paths.clone()),
             gate_bridges: level.swamp.as_ref().and_then(|s| s.paths.as_ref()).map(|l| l.bridges.clone()),
             cave_zones: level.cave.as_ref().and_then(|c| c.style.as_ref()).map(|l| l.zones.clone()),
+            forest_areas: level.forest.as_ref().and_then(|f| f.areas.as_ref()).map(|l| l.areas.clone()),
+            area_borders: level.forest.as_ref().and_then(|f| f.areas.as_ref()).map(|l| l.borders.clone()),
             chambers: level.cave.as_ref().and_then(|c| c.chambers.as_ref()).map(|l| l.chambers.clone()),
             tunnels: level.cave.as_ref().and_then(|c| c.tunnels.as_ref()).map(|l| l.tunnels.clone()),
             junctions: level.cave.as_ref().and_then(|c| c.tunnels.as_ref()).map(|l| l.junctions.clone()),
@@ -521,6 +529,7 @@ mod tests {
             gates: None,
             swamp: None,
             cave: None,
+            forest: None,
             regions: None,
             noise_preview: None,
             notes: Vec::new(),

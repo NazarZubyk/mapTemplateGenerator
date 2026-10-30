@@ -170,7 +170,8 @@ Cave now use Forest.
 - UI: node "2 · Style" — Natural, Mixing, Zone links (no effect until
   C3), Min zone, Colors, 🎲.
 - The app and the MCP server (no config file / `reset_config`) start on
-  Cave: `LevelConfig::START_KIND` + `LevelConfig::starting()`.
+  Cave: `LevelConfig::START_KIND` + `LevelConfig::starting()` (now
+  Forest, see forest-plan.md).
   `LevelConfig::default()` stays Town (the test baseline).
 
 ### Step C2 — Chambers (node 3, cave only) — done

@@ -110,7 +110,14 @@ share of mobs on hubs). Any map: **🎲 Re-roll mobs** / **⟳ Apply mobs
 only** redo just the mobs (`generator::place_mobs`, own RNG stream). Nodes 7–10 are the town nodes' cores
 on swamp ground.
 
-**Cave** has its own chain (being built, see [cave-plan.md](cave-plan.md)):
+**Forest** has its own chain (being built, see [forest-plan.md](forest-plan.md)):
+1 Template → 2 **Areas** (the map split into a few large areas by a
+noise-warped weighted Voronoi, each wild or managed — managed starting at
+the first gate at low mixing — and with a character: meadow, open woods,
+dense woods, old growth, logged, plantation, camp grounds). Next: F2
+borders + crossings. The town chain is `generator::town_chain`.
+
+**Cave** has its own chain (complete, see [cave-plan.md](cave-plan.md)):
 1 Template → 2 **Style** (natural % + mixing → natural / hand-made zones;
 0% mixing = two zones, 100% = patchwork) → 3 **Chambers** (halls +
 grottos; natural blobs or hand-made rectangular rooms by zone; gap, rock
@@ -125,7 +132,7 @@ edge) → 8 **Hidden rooms** (pockets in the rock, a cracked wall each) →
 9 **Interactive objects** / 10 **Mobs** (spawn terrains chamber /
 tunnel / shallow pool / hidden room + natural / hand-made style filter;
 halls are the hubs, dead-end chamber guards). The app and the MCP server
-(with no config file / `reset_config`) start on Cave for now
+(with no config file / `reset_config`) start on Forest for now
 (`LevelConfig::START_KIND`, `LevelConfig::starting()`); `default()` stays
 Town for the tests.
 

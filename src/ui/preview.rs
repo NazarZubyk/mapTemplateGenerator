@@ -233,7 +233,7 @@ fn draw_legend(painter: &egui::Painter, canvas: Rect, level: &GeneratedLevel) {
     {
         entries.push((crate::render::REGION, level.config.kind.slug().to_owned()));
     }
-    for (color, name) in crate::render::cave_legend(level) {
+    for (color, name) in crate::render::ground_legend(level) {
         entries.push((color, name));
     }
     if let Some(depth) = level.swamp.as_ref().and_then(|s| s.depth.as_ref()) {

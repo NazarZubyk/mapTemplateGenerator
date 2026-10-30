@@ -387,7 +387,7 @@ mod tests {
         let mut config = LevelConfig::test_64();
         config.kind = MapKind::Forest;
         config.shape = ShapeSettings::for_kind(config.kind);
-        let lvl = level(&config, 2);
+        let lvl = crate::generator::town_chain(&config, 2, &|_, _| {});
         let layout = lvl.props.as_ref().unwrap();
         assert_eq!(layout.near_houses, 0);
         assert!(!props(&lvl).is_empty());

@@ -60,10 +60,19 @@ plan is done (S1–S6, S8; S7 zones dropped); open: tuning (e.g. spawn
 amounts for the 200 m map), field markers for warnings (town step 13). The default map is 200 × 200 m;
 town-chain tests use `LevelConfig::test_64()`.
 
-**Cave is next**: its own chain (`src/generator/cave/`), planned in
+**Cave is done**: its own chain (`src/generator/cave/`), planned in
 `docs/cave-plan.md` (C1 style: natural % + mixing → C2 chambers → C3 tunnels +
 gates → C4 carve & smooth → C5 hazards → C7 spawns → C8 export). C1 style, C2
-chambers, C3 tunnels, C4 carve & smooth, C5 hazards, C7 spawns and C8 export are done (C6 pillars dropped — just props) — the cave plan is complete; open: tuning (e.g. spawn amounts for 200 m); the user drives it one step at a time. The app / MCP start on Cave
+chambers, C3 tunnels, C4 carve & smooth, C5 hazards, C7 spawns and C8 export are done (C6 pillars dropped — just props) — the cave plan is complete; open: tuning (e.g. spawn amounts for 200 m); the user drives it one step at a time.
+
+**Forest is next**: its own chain (`src/generator/forest/`), planned in
+`docs/forest-plan.md` (F1 areas: big zones with a style (wild / managed)
+and a character → F2 borders of mixed kinds (thicket, ridge, stream capped,
+deadfall, ravine, hedge, fence as fallback, soft) with crossings = the labyrinth → F3 woods +
+cover → F4 clearings & ponds → F5 trails → F6 prop clusters → F7 spawns → F8
+export). The goal: roomier than swamp / cave but not flat.
+F1 areas is done (`generator/forest/areas.rs`, `forest_node_chain`); F2
+borders is next. The app / MCP start on Forest
 (`LevelConfig::starting()`); `default()` stays Town for the tests.
 
 **MCP server** `mapgen-mcp` (`src/mcp.rs`, `src/bin/mapgen-mcp.rs`,

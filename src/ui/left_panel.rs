@@ -1,7 +1,7 @@
 use eframe::egui;
 use rand::Rng;
 
-use crate::level::{CaveStyle, IslandKind};
+use crate::level::{CaveStyle, ForestCharacter, ForestStyle, IslandKind};
 use crate::model::{GateSpec, GateStyle, SpawnOn, HiddenRoomPlace, InteractiveSpot, InteractiveType, LevelConfig, MapKind, MobType, NodeAmount, ShapeSettings};
 use crate::ui::app::{ConfigStatus, MapGenApp};
 use crate::ui::widgets::param_row;
@@ -33,6 +33,10 @@ fn generation_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     }
     if app.config.kind == MapKind::Cave {
         cave_node_chain(ui, app);
+        return;
+    }
+    if app.config.kind == MapKind::Forest {
+        forest_node_chain(ui, app);
         return;
     }
     node_shape(ui, app);
@@ -109,6 +113,101 @@ fn cave_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     ui.weak("The cave chain is complete (docs/cave-plan.md).");
     ui.add_space(4.0);
     ui.separator();
+}
+
+/// The forest chain (docs/forest-plan.md): Template → Areas → … (built
+/// step by step).
+fn forest_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    node_forest_areas(ui, app);
+    flow_arrow(ui, "areas (style + character), not separated yet");
+    ui.weak("Next: borders between the areas and crossings (step F2 in docs/forest-plan.md).");
+    ui.add_space(4.0);
+    ui.separator();
+}
+
+/// Forest node 2: the map split into large areas, each wild or managed
+/// and with a character (step F1 in docs/forest-plan.md).
+fn node_forest_areas(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_COUNT: &str = "How many large areas the map is split into. Each is its own \
+place; the borders node (F2) separates them and opens a few crossings. Fewer areas = \
+bigger, roomier places.";
+    const TIP_SIZE: &str = "How much the area sizes differ. 0%: all about the same size. \
+100%: some areas much bigger than others.";
+    const TIP_IRR: &str = "How far the borders between areas stray from straight lines. \
+0%: straight (Voronoi) cuts. 100%: strongly bent, lobed borders.";
+    const TIP_WILD: &str = "Share of the map, %, in wild areas (game trails, ragged \
+clearings, thicket). The rest is managed (forest roads, cut glades, stumps). Whole areas \
+only, so the share is hit as close as the area sizes allow.";
+    const TIP_MIXING: &str = "How the styles are arranged. 0%: the managed areas gather on \
+one side and the map turns from managed to wild across a few areas. 100%: styles \
+alternate area by area. NO EFFECT at Wild 0% or 100%.";
+    const TIP_GATE: &str = "Low mixing: the managed side starts at the first gate (the \
+player walks in from the managed edge, deeper means wilder). Off: a random side. NO \
+EFFECT with no gates.";
+    const TIP_CHAR: &str = "Weight of each area character (rolled per area; neighbors get \
+different characters when they can). Wild areas roll meadow, open woods, dense woods or old \
+growth; managed areas meadow, logged, plantation or camp grounds. 0 = never.";
+    node(ui, "2 · Areas", |ui| {
+        ui.weak("input: template field · output: areas — wild / managed, with a character (forest)");
+        let s = &mut app.config.forest.areas;
+        egui::Grid::new("forest_areas_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Areas", TIP_COUNT, |ui| ui.add(egui::DragValue::new(&mut s.count).range(1..=32).speed(0.1)));
+            param_row(ui, "Size variation", TIP_SIZE, |ui| ui.add(egui::Slider::new(&mut s.size_variation_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Irregularity", TIP_IRR, |ui| ui.add(egui::Slider::new(&mut s.irregularity_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Wild", TIP_WILD, |ui| ui.add(egui::Slider::new(&mut s.wild_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Mixing", TIP_MIXING, |ui| ui.add(egui::Slider::new(&mut s.mixing_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Managed at gate", TIP_GATE, |ui| ui.checkbox(&mut s.managed_near_gate, ""));
+        });
+        ui.label("Characters").on_hover_text(TIP_CHAR);
+        let c = &mut s.characters;
+        egui::Grid::new("forest_char_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            for (name, value) in [
+                ("meadow (both)", &mut c.meadow),
+                ("open woods (wild)", &mut c.open_woods),
+                ("dense woods (wild)", &mut c.dense_woods),
+                ("old growth (wild)", &mut c.old_growth),
+                ("logged (managed)", &mut c.logged),
+                ("plantation (managed)", &mut c.plantation),
+                ("camp grounds (managed)", &mut c.camp_grounds),
+            ] {
+                param_row(ui, name, TIP_CHAR, |ui| ui.add(egui::DragValue::new(value).range(0.0..=100.0).speed(0.5)));
+            }
+        });
+        ui.horizontal(|ui| {
+            if ui
+                .button("🎲 Random params")
+                .on_hover_text("Rolls every area setting independently inside its reasonable range. Set values only; press Generate.")
+                .clicked()
+            {
+                let mut rng = rand::rng();
+                s.count = rng.random_range(3..=10);
+                s.size_variation_pct = rng.random_range(0.0..=80.0);
+                s.irregularity_pct = rng.random_range(20.0..=90.0);
+                s.wild_pct = rng.random_range(20.0..=90.0);
+                s.mixing_pct = rng.random_range(0.0..=100.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(l) = app.generated.as_ref().and_then(|l| l.forest.as_ref()).and_then(|f| f.areas.as_ref()) {
+            let managed = l.areas.iter().filter(|a| a.style == ForestStyle::Managed).count();
+            ui.weak(format!(
+                "generated: {} of {} areas ({} wild, {managed} managed) · wild {:.0}% · {} borders",
+                l.areas.len(),
+                l.requested,
+                l.areas.len() - managed,
+                l.wild_pct,
+                l.borders.len()
+            ));
+            let chars: Vec<String> = ForestCharacter::ALL
+                .into_iter()
+                .filter_map(|ch| {
+                    let n = l.areas.iter().filter(|a| a.character == ch).count();
+                    (n > 0).then(|| format!("{} ×{n}", ch.label()))
+                })
+                .collect();
+            ui.weak(chars.join(" · "));
+        }
+    });
 }
 
 /// Cave node 2: natural vs hand-made style zones (step C1 in

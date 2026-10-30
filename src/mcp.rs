@@ -729,6 +729,11 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
         "gates": gates,
         "gate_anchors": gate_anchors,
         "cave_style": cave_style,
+        "forest_areas": level.forest.as_ref().and_then(|f| f.areas.as_ref()).map(|l| json!({
+            "placed": l.areas.len(), "requested": l.requested, "wild_pct": l.wild_pct,
+            "areas": l.areas.iter().map(|a| json!({"id": a.id, "style": a.style, "character": a.character, "area_m2": a.area_m2})).collect::<Vec<_>>(),
+            "borders": l.borders.len(),
+        })),
         "chambers": level.cave.as_ref().and_then(|c| c.chambers.as_ref()).map(|l| json!({
             "placed": l.chambers.len(), "requested": l.requested, "floor_pct": l.floor_pct,
             "halls": l.chambers.iter().filter(|c| c.kind == crate::level::ChamberKind::Hall).count(),
