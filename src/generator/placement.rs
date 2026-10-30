@@ -116,16 +116,21 @@ pub(crate) struct TerrainSets {
     pub mud: Vec<bool>,
     /// Hidden islet floors.
     pub room: Vec<bool>,
+    /// Cave maps: natural style zone per cell (`SpawnOn::natural` /
+    /// `hand_made`). None: no style rule.
+    pub natural: Option<Vec<bool>>,
 }
 
 impl TerrainSets {
     /// Is cell `i` one of the terrains ticked in `f`?
     pub fn allows(&self, f: crate::model::SpawnOn, i: usize) -> bool {
-        (f.land && self.land[i])
+        let style_ok = self.natural.as_ref().is_none_or(|n| if n[i] { f.natural } else { f.hand_made });
+        style_ok
+            && ((f.land && self.land[i])
             || (f.path && self.path[i])
             || (f.shallow && self.shallow[i])
             || (f.mud && self.mud[i])
-            || (f.hidden_room && self.room[i])
+            || (f.hidden_room && self.room[i]))
     }
 }
 

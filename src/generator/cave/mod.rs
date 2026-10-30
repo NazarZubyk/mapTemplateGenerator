@@ -13,6 +13,9 @@
 //!    smoothed (cellular automaton), hand-made ones as dug; the wall band.
 //! 6. **Hazards** — chasms in halls (some with rope bridges), pools with a
 //!    shallow edge and a deep core; the walkable floor stays one piece.
+//! 7. **Spawns** (nodes 7–10) — props, hidden rooms (pockets in the rock
+//!    behind a cracked wall), interactive objects and mobs on cave ground
+//!    (the shared cores, cave rules).
 
 use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 
@@ -23,6 +26,7 @@ use crate::model::LevelConfig;
 pub mod carve;
 pub mod chambers;
 pub mod hazards;
+pub mod spawns;
 pub mod tunnels;
 pub mod style;
 
@@ -51,13 +55,44 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
     let hazards = hazards::build(config, &mut rng, &chambers.layout, &tunnels.layout, &carve.layout);
     notes.extend(hazards.notes);
 
-    // Gate markers last, so they draw on top (later nodes add objects
-    // before them and shift `gates[..].object`).
-    let objects = tunnels.objects;
-    let tunnel_layout = tunnels.layout;
+    let stage = |from, to| crate::generator::Stage { progress, from, to };
+    let ground = spawns::CaveGround::new(&style.layout, &chambers.layout, &tunnels.layout, &carve.layout, &hazards.layout);
 
-    progress("Done", 1.0);
-    GeneratedLevel {
+    progress("Placing props", 0.88);
+    let props = spawns::props(config, &mut rng, &ground);
+    notes.extend(props.notes);
+    let mut objects = props.objects;
+
+    // Hidden rooms before the interactive objects, so objects can go
+    // inside them.
+    let mut rooms = spawns::hidden_rooms(config, &mut rng, &ground, &[&props.layout.mask], &stage(0.9, 0.93));
+    notes.extend(rooms.notes);
+    let offset = objects.len();
+    for r in &mut rooms.layout.rooms {
+        for m in &mut r.objects {
+            *m += offset;
+        }
+    }
+    objects.extend(rooms.objects);
+
+    let mut inter = spawns::interactive(config, &mut rng, &ground, &props.layout.mask, &rooms.layout, &stage(0.93, 0.96));
+    notes.extend(inter.notes);
+    let offset = objects.len();
+    for g in &mut inter.layout.groups {
+        for m in &mut g.members {
+            *m += offset;
+        }
+    }
+    objects.extend(inter.objects);
+
+    // Gate markers last, so they draw on top.
+    let mut tunnel_layout = tunnels.layout;
+    for g in &mut tunnel_layout.gates {
+        g.object += objects.len();
+    }
+    objects.extend(tunnels.objects);
+
+    let mut level = GeneratedLevel {
         config: config.clone(),
         seed,
         objects,
@@ -67,14 +102,24 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
         roads: None,
         region_walls: None,
         houses: None,
-        props: None,
-        interactive: None,
-        hidden_rooms: None,
+        props: Some(props.layout),
+        interactive: Some(inter.layout),
+        hidden_rooms: Some(rooms.layout),
         mobs: None,
         gates: None,
         swamp: None,
-        cave: Some(CaveLayout { style: Some(style.layout), chambers: Some(chambers.layout), tunnels: Some(tunnel_layout), carve: Some(carve.layout), hazards: Some(hazards.layout) }),
+        cave: Some(CaveLayout {
+            style: Some(style.layout),
+            chambers: Some(chambers.layout),
+            tunnels: Some(tunnel_layout),
+            carve: Some(carve.layout),
+            hazards: Some(hazards.layout),
+        }),
         noise_preview: None,
         notes,
-    }
+    };
+    // Node 10: mobs, last (own random stream; "Re-roll mobs" reruns it).
+    crate::generator::place_mobs(&mut level, progress);
+    progress("Done", 1.0);
+    level
 }

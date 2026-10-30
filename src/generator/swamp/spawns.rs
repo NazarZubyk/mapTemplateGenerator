@@ -275,6 +275,9 @@ pub fn props(config: &LevelConfig, rng: &mut ChaCha8Rng, g: &SwampGround) -> Pro
             shore: counts[Mode::Shore as usize],
             in_water: counts[Mode::InWater as usize],
             path_edge: counts[Mode::PathEdge as usize],
+            near_walls: 0,
+            in_tunnels: 0,
+            pool_edge: 0,
         },
         objects,
         notes,
@@ -310,6 +313,7 @@ pub(crate) fn interactive(
         shallow: (0..w * h).map(|c| g.water[c] && g.depth.shallow.cells[c]).collect(),
         mud: (0..w * h).map(|c| g.water[c] && g.depth.mud.cells[c]).collect(),
         room: room_of.iter().map(|&r| r != 0).collect(),
+        natural: None,
     };
     let terrain = SwampTerrain { sets, to_land_m: g.to_land_m(), room_of };
     let area = Area { w, h, cell, free, along_walls, crowded, terrain: Some(terrain) };
@@ -379,6 +383,7 @@ pub(crate) fn mobs(
         shallow: (0..w * h).map(|c| spawnable[c] && g.water[c] && g.depth.shallow.cells[c]).collect(),
         mud: (0..w * h).map(|c| spawnable[c] && g.water[c] && g.depth.mud.cells[c]).collect(),
         room: (0..w * h).map(|c| spawnable[c] && room_of[c] != 0).collect(),
+        natural: None,
     };
 
     // Guarded dead ends: the island at the far end of each dead-end link.
@@ -587,11 +592,11 @@ mod tests {
     }
 
     fn spawn_on(land: bool, path: bool, shallow: bool, mud: bool) -> SpawnOn {
-        SpawnOn { land, path, shallow, mud, hidden_room: false }
+        SpawnOn { land, path, shallow, mud, ..SpawnOn::NONE }
     }
 
     fn spawn_on_room() -> SpawnOn {
-        SpawnOn { land: false, path: false, shallow: false, mud: false, hidden_room: true }
+        SpawnOn { hidden_room: true, ..SpawnOn::NONE }
     }
 
     /// Terrain under every mob marker center: (land, path, shallow, mud).

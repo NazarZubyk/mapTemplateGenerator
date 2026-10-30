@@ -60,7 +60,7 @@ own chain (`generator/swamp/`, `swamp_node_chain` in left_panel.rs) — the
 list below is the town / forest / cave chain; the swamp one is in
 [swamp-plan.md](swamp-plan.md). **Cave** has its own chain too
 (`generator/cave/`, `cave_node_chain`), built step by step from
-[cave-plan.md](cave-plan.md): C1 style, C2 chambers, C3 tunnels, C4 carve & smooth, C5 hazards done (C6 pillars dropped); the app starts on Cave for now.
+[cave-plan.md](cave-plan.md): C1 style, C2 chambers, C3 tunnels, C4 carve & smooth, C5 hazards, C7 spawns done (C6 pillars dropped); the app starts on Cave for now.
 
 Right now:
 

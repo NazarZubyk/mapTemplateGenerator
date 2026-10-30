@@ -57,7 +57,8 @@ src/
 │       ├── chambers.rs  #   cave node 3: halls and grottos (blobs / rooms)
 │       ├── tunnels.rs   #   cave node 4: tunnels (chain → maze), junctions, gate tunnels
 │       ├── carve.rs     #   cave node 5: final floor, rough natural walls (CA), wall band
-│       └── hazards.rs   #   cave node 6: chasms (+ rope bridges), pools
+│       ├── hazards.rs   #   cave node 6: chasms (+ rope bridges), pools
+│       └── spawns.rs    #   cave nodes 7–10: props, hidden pockets, interactive, mobs
 ├── render.rs            # map.png / layer.png rasterizers
 ├── export.rs            # export bundle writer + spec.json
 ├── validate.rs          # config validation (early subset; step 13 extends it)
@@ -119,7 +120,11 @@ squeezes, hand-made straight ones; dead-end stubs; gate tunnels from the
 edge) → 5 **Carve & smooth** (natural walls roughened + cellular
 automaton, hand-made as dug, cut-off pieces rejoined, wall band) → 6
 **Hazards** (chasms in halls with rope bridges, pools with a shallow
-edge; never split the floor). The app and the MCP server
+edge; never split the floor) → 7 **Props** (near walls, in tunnels, pool
+edge) → 8 **Hidden rooms** (pockets in the rock, a cracked wall each) →
+9 **Interactive objects** / 10 **Mobs** (spawn terrains chamber /
+tunnel / shallow pool / hidden room + natural / hand-made style filter;
+halls are the hubs, dead-end chamber guards). The app and the MCP server
 (with no config file / `reset_config`) start on Cave for now
 (`LevelConfig::START_KIND`, `LevelConfig::starting()`); `default()` stays
 Town for the tests.

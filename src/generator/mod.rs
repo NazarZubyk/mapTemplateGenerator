@@ -312,7 +312,20 @@ pub fn place_mobs(level: &mut GeneratedLevel, progress: Progress) {
         level.seed ^ 0x6D6F_6273_0000_0000 ^ level.config.mobs.reroll.wrapping_mul(0x9E37_79B9_7F4A_7C15),
     );
     let config = &level.config;
-    let built = if config.kind == crate::model::MapKind::Swamp {
+    let built = if config.kind == crate::model::MapKind::Cave {
+        level.cave.as_ref().and_then(|cv| {
+            let ground = cave::spawns::CaveGround::new(
+                cv.style.as_ref()?,
+                cv.chambers.as_ref()?,
+                cv.tunnels.as_ref()?,
+                cv.carve.as_ref()?,
+                cv.hazards.as_ref()?,
+            );
+            let placed: Vec<&CellMask> =
+                [level.props.as_ref().map(|l| &l.mask), level.interactive.as_ref().map(|l| &l.mask)].into_iter().flatten().collect();
+            Some(cave::spawns::mobs(config, &mut rng, &ground, &placed, level.hidden_rooms.as_ref(), &stage))
+        })
+    } else if config.kind == crate::model::MapKind::Swamp {
         level.swamp.as_ref().and_then(|s| {
             let ground = swamp::spawns::SwampGround::new(
                 config,

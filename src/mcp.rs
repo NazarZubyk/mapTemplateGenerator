@@ -206,7 +206,7 @@ fn tool_list() -> Value {
             "size_m": { "type": "number", "description": "body diameter, meters (default 0.8)" },
             "balance_pct": { "type": "number", "description": "desired share among mobs; all shares are normalized to 100 (default: equal)" },
             "color": color,
-            "spawn_on": { "type": "array", "items": { "type": "string", "enum": ["land", "path", "shallow", "mud", "hidden_room"] }, "description": "swamp maps: terrains this type may spawn on (default all)" },
+            "spawn_on": { "type": "array", "items": { "type": "string", "enum": ["land", "path", "shallow", "mud", "hidden_room", "natural", "hand_made"] }, "description": "swamp / cave maps: terrains this type may spawn on (default all; cave: land = chamber, path = tunnel, shallow = shallow pool; natural / hand_made limit it to those style zones, none named = both)" },
         }
     });
     json!([
@@ -262,7 +262,7 @@ fn tool_list() -> Value {
                 "name": { "type": "string" }, "rename_to": { "type": "string" },
                 "price": { "type": "number" }, "size_m": { "type": "number" },
                 "balance_pct": { "type": "number" }, "color": color,
-                "spawn_on": { "type": "array", "items": { "type": "string", "enum": ["land", "path", "shallow", "mud", "hidden_room"] } },
+                "spawn_on": { "type": "array", "items": { "type": "string", "enum": ["land", "path", "shallow", "mud", "hidden_room", "natural", "hand_made"] } },
             } }
         },
         {
@@ -464,7 +464,7 @@ fn apply_mob_fields(t: &mut MobType, args: &Value) -> Result<(), String> {
     }
     if let Some(v) = args.get("spawn_on") {
         let names = v.as_array().ok_or("spawn_on must be a list of terrains")?;
-        let mut f = crate::model::SpawnOn { land: false, path: false, shallow: false, mud: false, hidden_room: false };
+        let mut f = crate::model::SpawnOn::NONE;
         for n in names {
             match n.as_str() {
                 Some("land") => f.land = true,
@@ -472,8 +472,16 @@ fn apply_mob_fields(t: &mut MobType, args: &Value) -> Result<(), String> {
                 Some("shallow") => f.shallow = true,
                 Some("mud") => f.mud = true,
                 Some("hidden_room") => f.hidden_room = true,
-                _ => return Err("spawn_on terrains are \"land\", \"path\", \"shallow\", \"mud\", \"hidden_room\"".to_owned()),
+                Some("natural") => f.natural = true,
+                Some("hand_made") => f.hand_made = true,
+                _ => {
+                    return Err("spawn_on entries are \"land\", \"path\", \"shallow\", \"mud\", \"hidden_room\" (+ cave styles \"natural\", \"hand_made\")".to_owned())
+                }
             }
+        }
+        // No style named: both.
+        if !f.natural && !f.hand_made {
+            (f.natural, f.hand_made) = (true, true);
         }
         t.spawn_on = f;
     }
@@ -715,7 +723,7 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
         "regions": level.regions.as_ref().map(|r| r.stats.len()),
         "roads": level.roads.as_ref().map(|r| r.links.len()),
         "houses": level.houses.as_ref().map(|h| h.street_houses + h.yard_houses),
-        "props": level.props.as_ref().map(|p| p.near_houses + p.roadside + p.scattered + p.near_trees + p.shore + p.in_water + p.path_edge),
+        "props": level.props.as_ref().map(|p| p.near_houses + p.roadside + p.scattered + p.near_trees + p.shore + p.in_water + p.path_edge + p.near_walls + p.in_tunnels + p.pool_edge),
         "interactive": level.interactive.as_ref().map(|l| l.types.iter().map(|t| json!({"name": t.name, "placed": t.placed, "requested": t.requested})).collect::<Vec<_>>()),
         "hidden_rooms": level.hidden_rooms.as_ref().map(|h| json!({"placed": h.rooms.len(), "requested": h.requested})),
         "gates": gates,

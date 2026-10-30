@@ -213,7 +213,7 @@ mod tests {
         c.swamp.islands.hub_max_m = 30.0;
         c.swamp.gate_anchors.island_max_m = 120.0;
         c.gates.gates = vec![crate::model::GateSpec::at(90.0), crate::model::GateSpec::at(100.0)];
-        c.mobs.types[0].spawn_on = crate::model::SpawnOn { land: false, path: false, shallow: false, mud: false, hidden_room: false };
+        c.mobs.types[0].spawn_on = crate::model::SpawnOn::NONE;
         c.swamp.depth.wade_limit_m = 4.0;
         let fields: Vec<String> = validate(&c).into_iter().filter_map(|w| w.field).collect();
         for want in ["swamp.islands.hub_max_m", "swamp.gate_anchors.island_max_m", "gates.gates", "mobs.types.spawn_on", "swamp.depth.wade_limit_m"] {

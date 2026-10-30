@@ -343,6 +343,14 @@ pub struct PropLayout {
     pub in_water: u32,
     #[serde(default)]
     pub path_edge: u32,
+    /// Cave maps: along the walls / in tunnels / at pool edges (scattered
+    /// ones count in `scattered`).
+    #[serde(default)]
+    pub near_walls: u32,
+    #[serde(default)]
+    pub in_tunnels: u32,
+    #[serde(default)]
+    pub pool_edge: u32,
     /// The quantity asked for, and the cap the density allowed.
     pub requested: u32,
     pub density_cap: u32,

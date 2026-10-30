@@ -204,6 +204,11 @@ pub struct PropSettings {
     pub shore_pct: f32,
     pub in_water_pct: f32,
     pub path_edge_pct: f32,
+    /// Cave maps: shares of props, %, along the cave walls / in tunnels /
+    /// at pool edges; the rest are scattered over the chamber floors.
+    pub near_walls_pct: f32,
+    pub tunnel_pct: f32,
+    pub pool_edge_pct: f32,
 }
 
 impl Default for PropSettings {
@@ -220,6 +225,9 @@ impl Default for PropSettings {
             shore_pct: 25.0,
             in_water_pct: 20.0,
             path_edge_pct: 15.0,
+            near_walls_pct: 40.0,
+            tunnel_pct: 15.0,
+            pool_edge_pct: 10.0,
         }
     }
 }
@@ -847,11 +855,15 @@ pub struct SpawnOn {
     pub mud: bool,
     /// Hidden islet floors (mobs: only islets with a mob-passable ford).
     pub hidden_room: bool,
+    /// Cave maps: in natural zones / in hand-made zones (by the style zone
+    /// under the spot). Swamps ignore them.
+    pub natural: bool,
+    pub hand_made: bool,
 }
 
 impl Default for SpawnOn {
     fn default() -> Self {
-        Self { land: true, path: true, shallow: true, mud: true, hidden_room: true }
+        Self { land: true, path: true, shallow: true, mud: true, hidden_room: true, natural: true, hand_made: true }
     }
 }
 
@@ -860,9 +872,21 @@ impl SpawnOn {
         self.land || self.path || self.shallow || self.mud || self.hidden_room
     }
 
+    /// No terrain at all: every flag off.
+    pub const NONE: SpawnOn =
+        SpawnOn { land: false, path: false, shallow: false, mud: false, hidden_room: false, natural: false, hand_made: false };
+
     /// Short list for stats and MCP, e.g. "land, path".
     pub fn names(self) -> Vec<&'static str> {
-        [(self.land, "land"), (self.path, "path"), (self.shallow, "shallow"), (self.mud, "mud"), (self.hidden_room, "hidden room")]
+        [
+            (self.land, "land"),
+            (self.path, "path"),
+            (self.shallow, "shallow"),
+            (self.mud, "mud"),
+            (self.hidden_room, "hidden room"),
+            (self.natural && !self.hand_made, "natural only"),
+            (self.hand_made && !self.natural, "hand-made only"),
+        ]
             .into_iter()
             .filter_map(|(on, n)| on.then_some(n))
             .collect()

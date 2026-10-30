@@ -403,7 +403,7 @@ columns are just uninteractive props, and the map is a reference — the
 level maker decides on such details. Cave props come with the props node
 (C7). The swamp trees stay (they are the swamp's structure).
 
-### Step C7 — Spawns (existing nodes)
+### Step C7 — Spawns (existing nodes) — done
 
 The same four nodes with a cave ground; the swamp's `TerrainSets` filled
 with cave terrains:
@@ -424,6 +424,45 @@ miners' crates appear only in hand-made parts.
 - **Hidden rooms**: a small pocket in the rock off a chamber, reached by
   a short narrow tunnel closed by a **cracked wall** marker.
 - **Mobs**: hub share = in halls, dead-end guards, re-roll, as now.
+
+**C7 notes (as built).** `generator/cave/spawns.rs` (`CaveGround` +
+`props`, `hidden_rooms`, `interactive`, `mobs`), the swamp S6 pattern
+on the shared cores. Order: props → hidden rooms → interactive → gate
+markers last; mobs via `generator::place_mobs` (cave branch, own stream,
+Re-roll works).
+
+- Ground: walkable = hazards' `walkable`; chamber = dry chamber floor (no
+  bridge), tunnel = walkable floor off the chambers, shallow = pool
+  edges. Spawn terrains: land = chamber, path = tunnel (+ rope bridges for
+  mobs), shallow = shallow pool, mud unused (hidden in the UI).
+- **Style filter**: `SpawnOn` got `natural` / `hand_made` (default both,
+  `SpawnOn::NONE` const), `TerrainSets.natural: Option<Vec<bool>>`
+  (cave: the zone style per cell; swamp None) checked in `allows` — so
+  interactive types and mobs (mixed packs too) keep to their style. MCP
+  `spawn_on` takes "natural" / "hand_made" (none named = both).
+- **Props**: `near_walls_pct` (40, floor within 2.5 m of rock),
+  `tunnel_pct` (15), `pool_edge_pct` (10, dry chamber floor within 2 m
+  of shallow water), rest scattered on chamber floor; never in water, on
+  bridges or touching them; ring rule; 6 m from gates. `PropLayout`
+  `near_walls` / `in_tunnels` / `pool_edge`.
+- **Hidden rooms**: `place_rooms` with `wall_cells` 0 (the rock is the
+  wall), spots = rock ≥ 1 cell from any floor, ≥ 2 cells from the map
+  edge, 6 m from gates (outside = inside, `place` has no effect); the
+  tunnel never digs through objects, chasms, deep water or the edge. A
+  **cracked wall** marker (`Category::HiddenRoomPath`, "cracked wall",
+  orange, ~1.4 × path width) on the dug cell next to the open floor,
+  listed in the room's objects.
+- **Interactive**: like the swamp; blockers = not walkable + props +
+  bridges (hidden floors are open); "Near island" = "Near dry floor"
+  (distance from dry floor for shallow-pool spots).
+- **Mobs**: halls = hubs (`hub_pct`, "In halls" in the UI); dead-end
+  chambers (one non-stub tunnel, gate tunnels count) roll
+  `dead_end_guard_pct` for a guard pack; road = tunnels + bridges.
+- Look (200 m, defaults): 40 props, 2 hidden rooms, 30 interactive, 28
+  mobs (budget 400 — sparse for 200 m, same as the swamp). ~0.45 s total.
+- UI: the shared nodes 7 Props / 8 Hidden rooms / 9 Interactive / 10 Mobs
+  appear in the cave chain with cave labels and tips (chamber / tunnel /
+  shallow pool / hidden room + natural / hand-made).
 
 ### Step C8 — Export, validation, MCP
 

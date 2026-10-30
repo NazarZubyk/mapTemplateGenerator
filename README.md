@@ -11,8 +11,9 @@ an AI agent (or a level designer) to build a playable prototype fast.
 > on) is not tuned yet. Swamp has been rebuilt with its own layout
 > (islands, paths, water, border, trees, props, objects, hidden islets and
 > mobs) and is being tuned. **Cave is being rebuilt** with its own layout
-> (natural caverns + hand-made passages); the app opens on Cave for now
-> and only its first steps (style zones, chambers, tunnels, carved walls, chasms and pools) exist yet.
+> (natural caverns + hand-made passages, chambers, tunnels, chasms and
+> pools, props, objects, hidden rooms and mobs); the app opens on Cave for
+> now. Export polish is next.
 
 ## What you get
 
