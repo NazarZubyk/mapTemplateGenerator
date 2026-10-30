@@ -303,6 +303,64 @@ impl Default for GateSettings {
 pub struct CaveSettings {
     /// Node 2: the natural / hand-made style field and its zones.
     pub style: CaveStyleSettings,
+    /// Node 3: halls and grottos.
+    pub chambers: ChamberSettings,
+}
+
+/// Settings of the cave chambers node (step C2): the halls and grottos the
+/// tunnels will link. A chamber takes the style of the zone at its center.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ChamberSettings {
+    /// Number of big chambers (arenas, camps).
+    pub hall_count: u32,
+    /// Hall size range, meters (diameter of a circle of the same area).
+    pub hall_min_m: f32,
+    pub hall_max_m: f32,
+    /// Grottos as a total count or a density per 1000 m².
+    pub grotto_amount: NodeAmount,
+    pub grotto_count: u32,
+    pub grotto_per_1000m2: f32,
+    /// Grotto size range, meters.
+    pub grotto_min_m: f32,
+    pub grotto_max_m: f32,
+    /// Natural chambers: how far the outline strays from an ellipse, %.
+    pub irregularity_pct: f32,
+    /// Natural chambers: stretch, % (100 = up to 2.5× longer than wide).
+    pub elongation_pct: f32,
+    /// Hand-made rooms: most length / width.
+    pub room_aspect_max: f32,
+    /// Hand-made rooms: most rotation off the map axes, degrees (0 =
+    /// always axis-aligned).
+    pub room_rotation_deg: f32,
+    /// Least rock between two chambers, meters.
+    pub gap_m: f32,
+    /// Chambers keep this far from the map edge, meters (solid rock).
+    pub rock_margin_m: f32,
+    /// Rock color (tinted a little by the style zone under it).
+    pub rock_color: [u8; 3],
+}
+
+impl Default for ChamberSettings {
+    fn default() -> Self {
+        Self {
+            hall_count: 5,
+            hall_min_m: 22.0,
+            hall_max_m: 36.0,
+            grotto_amount: NodeAmount::Density,
+            grotto_count: 14,
+            grotto_per_1000m2: 0.4,
+            grotto_min_m: 6.0,
+            grotto_max_m: 12.0,
+            irregularity_pct: 50.0,
+            elongation_pct: 40.0,
+            room_aspect_max: 1.8,
+            room_rotation_deg: 0.0,
+            gap_m: 6.0,
+            rock_margin_m: 6.0,
+            rock_color: [52, 47, 44],
+        }
+    }
 }
 
 /// Settings of the cave style node (step C1): how much of the cave is

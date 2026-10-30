@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::level::{CaveStyle, GeneratedLevel};
+use crate::level::GeneratedLevel;
 use crate::render;
 
 #[derive(Debug, Clone)]
@@ -111,6 +111,10 @@ pub struct ExportSpec {
     /// passages (id, style, area, center).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cave_zones: Option<Vec<crate::level::CaveZone>>,
+    /// Cave chambers: id, kind (hall / grotto), style, zone, center, size,
+    /// long-axis angle, area.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chambers: Option<Vec<crate::level::Chamber>>,
     /// Every placed object with position and size in meters.
     pub objects: Vec<crate::level::PlacedObject>,
 }
@@ -279,13 +283,8 @@ impl ExportSpec {
                 category: "ground",
             });
         }
-        if let Some(style) = level.cave.as_ref().and_then(|c| c.style.as_ref()) {
-            let st = &level.config.cave.style;
-            for (kind, color) in [(CaveStyle::Natural, st.natural_color), (CaveStyle::HandMade, st.handmade_color)] {
-                if style.zones.iter().any(|z| z.style == kind) {
-                    legend.push(LegendEntry { color: color_hex(color), name: kind.label().to_owned(), category: "ground" });
-                }
-            }
+        for (color, name) in render::cave_legend(level) {
+            legend.push(LegendEntry { color: color_hex(color), name, category: "ground" });
         }
         if let Some(depth) = level.swamp.as_ref().and_then(|s| s.depth.as_ref()) {
             let d = &level.config.swamp.depth;
@@ -406,6 +405,7 @@ impl ExportSpec {
             paths: level.swamp.as_ref().and_then(|s| s.paths.as_ref()).map(|l| l.paths.clone()),
             gate_bridges: level.swamp.as_ref().and_then(|s| s.paths.as_ref()).map(|l| l.bridges.clone()),
             cave_zones: level.cave.as_ref().and_then(|c| c.style.as_ref()).map(|l| l.zones.clone()),
+            chambers: level.cave.as_ref().and_then(|c| c.chambers.as_ref()).map(|l| l.chambers.clone()),
             water: level.swamp.as_ref().and_then(|s| s.depth.as_ref()).map(|d| {
                 let s = &level.config.swamp.depth;
                 ExportWater {

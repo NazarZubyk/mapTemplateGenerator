@@ -175,7 +175,7 @@ Cave now use Forest.
   Cave: `LevelConfig::START_KIND` + `LevelConfig::starting()`.
   `LevelConfig::default()` stays Town (the test baseline).
 
-### Step C2 — Chambers (node 3, cave only)
+### Step C2 — Chambers (node 3, cave only) — done
 
 1. **Halls**: `hall_count` (default 5), size range (default 22–36 m),
    spread with a minimum gap (like swamp hubs).
@@ -190,6 +190,33 @@ Cave now use Forest.
 
 Settings: hall count + size, grotto density + size, irregularity,
 elongation, room aspect, rotation, min gap, rock margin.
+
+**C2 notes (as built).** `generator/cave/chambers.rs`, the swamp islands'
+method (best of 32 spots farthest from the placed chambers, shrink ×0.8
+up to 3 times, score-cut shapes, gap pass, `swamp::islands::tidy` — now
+`pub(crate)`).
+
+- Defaults: 5 halls 22–36 m, grottos by density 0.4 / 1000 m² at 6–12 m
+  (16 on the 200 m map), irregularity 50%, elongation 40% (stretch up to
+  1 + 1.5·elongation), room aspect up to 1.8×, room rotation 0° (axis
+  aligned; question 4 answered by a setting), gap 6 m, rock margin 6 m.
+- Natural shape = the island formula (warped, roughened ellipse, best
+  cells up to the area). Hand-made = exactly the cells inside a rectangle
+  of the same area (half sides (a, b)·√π/2), long side east or south,
+  tilted by up to `room_rotation_deg`.
+- Style and zone come from the style layout at the center.
+- Output `ChamberLayout { ids (0 = rock), chambers: Chamber { id, kind
+  (hall / grotto), style, zone, center_m, size_m, angle_deg, cells,
+  area_m2 }, requested, floor_pct }`. Floor ≈ 10% of the 200 m map (the
+  tunnels add more).
+- Map: rock (`rock_color`) tinted 22% by the zone's style color, chamber
+  floor in its style color (`render::cave_colors`, shared by map.png and
+  the preview); legend "natural floor" / "hand-made floor" / "rock"
+  (`render::cave_legend`); spec.json `chambers`; MCP `generate` reports
+  `chambers`.
+- UI: node "3 · Chambers" — Halls, Hall size, Grottos by count / density,
+  Grotto size, Irregularity, Elongation, Room aspect, Room rotation, Gap,
+  Rock margin, Rock color, 🎲.
 
 ### Step C3 — Tunnels (node 4, cave only)
 

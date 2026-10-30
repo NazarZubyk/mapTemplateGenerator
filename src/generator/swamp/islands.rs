@@ -258,7 +258,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, anchors: &[GateAnchor])
 
 /// The island's largest 4-connected piece with its enclosed holes filled
 /// (only cells no other island owns), worked inside its bounding box.
-fn tidy(mine: &[usize], owner: &[usize], me: usize, w: usize, h: usize, cell: f32) -> Option<Vec<usize>> {
+pub(crate) fn tidy(mine: &[usize], owner: &[usize], me: usize, w: usize, h: usize, cell: f32) -> Option<Vec<usize>> {
     let x0 = mine.iter().map(|&c| c % w).min()?.saturating_sub(1);
     let y0 = mine.iter().map(|&c| c / w).min()?.saturating_sub(1);
     let x1 = (mine.iter().map(|&c| c % w).max()? + 2).min(w);

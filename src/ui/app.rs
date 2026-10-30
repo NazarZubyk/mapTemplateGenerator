@@ -339,15 +339,10 @@ impl MapGenApp {
                 }
             }
             self.bench_shape = Some(upload("bench_shape", pixels, islands.width, islands.height));
-        } else if let Some(style) = level.cave.as_ref().and_then(|c| c.style.as_ref()) {
-            // Cave: the style zones.
-            let st = &level.config.cave.style;
-            let rgb = |c: [u8; 3]| egui::Color32::from_rgb(c[0], c[1], c[2]);
-            let (natural, handmade) = (rgb(st.natural_color), rgb(st.handmade_color));
-            let pixels = (0..style.ids.len())
-                .map(|c| if style.style_at(c) == crate::level::CaveStyle::Natural { natural } else { handmade })
-                .collect();
-            self.bench_shape = Some(upload("bench_shape", pixels, style.width, style.height));
+        } else if let Some((w, h, _, colors)) = crate::render::cave_colors(&level) {
+            // Cave: rock tinted by zone, chamber floors by style.
+            let pixels = colors.iter().map(|c| egui::Color32::from_rgb(c[0], c[1], c[2])).collect();
+            self.bench_shape = Some(upload("bench_shape", pixels, w, h));
         }
 
         self.generated = Some(level);

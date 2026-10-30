@@ -90,7 +90,9 @@ fn swamp_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
 /// The cave chain (docs/cave-plan.md), shown instead of the town nodes.
 fn cave_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_cave_style(ui, app);
-    ui.weak("Next cave step: C2 chambers (docs/cave-plan.md).");
+    flow_arrow(ui, "natural / hand-made zones");
+    node_chambers(ui, app);
+    ui.weak("Next cave step: C3 tunnels (docs/cave-plan.md).");
     ui.add_space(4.0);
     ui.separator();
 }
@@ -155,6 +157,109 @@ the legend.";
                 l.zones.len(),
                 count(CaveStyle::Natural),
                 count(CaveStyle::HandMade)
+            ));
+        }
+    });
+}
+
+/// Cave node 3: halls and grottos (step C2 in docs/cave-plan.md).
+fn node_chambers(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_HALLS: &str = "Number of big chambers — arenas, camps, where the content \
+goes. Placed first, each in the open spot farthest from the chambers already there. Those \
+that find no room shrink, then are skipped (a note says how many).";
+    const TIP_HALL_SIZE: &str = "Hall size range, meters (rolled per hall): the diameter of \
+a circle of the same area. NO EFFECT with 0 halls.";
+    const TIP_GROTTO_BY: &str = "Grottos as a total count, or as a density (grottos per \
+1000 m² of map, so a bigger map gets more).";
+    const TIP_GROTTOS: &str = "Number of small chambers / side rooms, placed after the \
+halls in the open spots left over.";
+    const TIP_GROTTO_DENSITY: &str = "Grottos per 1000 m² of map (capped at 400).";
+    const TIP_GROTTO_SIZE: &str = "Grotto size range, meters. NO EFFECT with no grottos.";
+    const TIP_IRR: &str = "Natural chambers: how far the outline strays from an ellipse. \
+0%: smooth ovals. 50%: natural, rough walls. 100%: warped, ragged caverns. NO EFFECT on \
+hand-made rooms.";
+    const TIP_ELONG: &str = "Natural chambers: how stretched they can be. 0%: round. \
+100%: up to 2.5× longer than wide (rolled per chamber). NO EFFECT on hand-made rooms.";
+    const TIP_ASPECT: &str = "Hand-made rooms: most length / width (rolled per room \
+between 1 and this). 1 = square rooms. NO EFFECT on natural chambers.";
+    const TIP_ROT: &str = "Hand-made rooms: most rotation off the map axes, degrees. 0° = \
+always axis-aligned (reads as dug / built). NO EFFECT on natural chambers.";
+    const TIP_GAP: &str = "Least rock between two chambers, meters — chambers never merge; \
+the tunnels node links them through this rock.";
+    const TIP_MARGIN: &str = "Chambers keep this far from the map edge, meters — solid \
+rock all around the map (the gate tunnels cross it later).";
+    const TIP_ROCK: &str = "Rock color on the map image and the preview (tinted a little \
+by the style zone under it, so the zones stay readable).";
+    node(ui, "3 · Chambers", |ui| {
+        ui.weak("input: style zones · output: halls + grottos, blob or room by zone — not linked yet (cave)");
+        let s = &mut app.config.cave.chambers;
+        egui::Grid::new("chambers_node_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Halls", TIP_HALLS, |ui| ui.add(egui::DragValue::new(&mut s.hall_count).range(0..=64).speed(0.1)));
+            param_row(ui, "Hall size", TIP_HALL_SIZE, |ui| range_m(ui, &mut s.hall_min_m, &mut s.hall_max_m, 2.0..=200.0));
+            param_row(ui, "Grottos by", TIP_GROTTO_BY, |ui| {
+                ui.horizontal(|ui| {
+                    ui.radio_value(&mut s.grotto_amount, NodeAmount::Count, "count");
+                    ui.radio_value(&mut s.grotto_amount, NodeAmount::Density, "density")
+                })
+                .response
+            });
+            match s.grotto_amount {
+                NodeAmount::Count => param_row(ui, "Grottos", TIP_GROTTOS, |ui| {
+                    ui.add(egui::DragValue::new(&mut s.grotto_count).range(0..=400).speed(0.1))
+                }),
+                NodeAmount::Density => param_row(ui, "Grottos / 1000 m²", TIP_GROTTO_DENSITY, |ui| {
+                    ui.add(egui::DragValue::new(&mut s.grotto_per_1000m2).range(0.0..=50.0).speed(0.01))
+                }),
+            };
+            param_row(ui, "Grotto size", TIP_GROTTO_SIZE, |ui| range_m(ui, &mut s.grotto_min_m, &mut s.grotto_max_m, 1.0..=100.0));
+            param_row(ui, "Irregularity", TIP_IRR, |ui| ui.add(egui::Slider::new(&mut s.irregularity_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Elongation", TIP_ELONG, |ui| ui.add(egui::Slider::new(&mut s.elongation_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Room aspect", TIP_ASPECT, |ui| {
+                ui.add(egui::DragValue::new(&mut s.room_aspect_max).range(1.0..=4.0).speed(0.01).suffix("×"))
+            });
+            param_row(ui, "Room rotation", TIP_ROT, |ui| ui.add(egui::Slider::new(&mut s.room_rotation_deg, 0.0..=45.0).suffix("°")));
+            param_row(ui, "Gap", TIP_GAP, |ui| ui.add(meters(&mut s.gap_m, 40.0)));
+            param_row(ui, "Rock margin", TIP_MARGIN, |ui| ui.add(meters(&mut s.rock_margin_m, 60.0)));
+            param_row(ui, "Rock color", TIP_ROCK, |ui| ui.color_edit_button_srgb(&mut s.rock_color));
+        });
+        ui.horizontal(|ui| {
+            if ui
+                .button("🎲 Random params")
+                .on_hover_text(
+                    "Rolls every chamber setting independently inside its reasonable range — \
+                     they may contradict each other (too many chambers for the map, say). \
+                     Set values only; press Generate.",
+                )
+                .clicked()
+            {
+                let mut rng = rand::rng();
+                s.hall_count = rng.random_range(0..=8);
+                s.hall_min_m = rng.random_range(12.0..=36.0);
+                s.hall_max_m = rng.random_range(12.0..=44.0);
+                s.grotto_amount = if rng.random_bool(0.5) { NodeAmount::Count } else { NodeAmount::Density };
+                s.grotto_count = rng.random_range(0..=30);
+                s.grotto_per_1000m2 = rng.random_range(0.0..=1.5);
+                s.grotto_min_m = rng.random_range(4.0..=12.0);
+                s.grotto_max_m = rng.random_range(4.0..=16.0);
+                s.irregularity_pct = rng.random_range(0.0..=100.0);
+                s.elongation_pct = rng.random_range(0.0..=100.0);
+                s.room_aspect_max = rng.random_range(1.0..=3.0);
+                s.room_rotation_deg = if rng.random_bool(0.5) { 0.0 } else { rng.random_range(0.0..=30.0) };
+                s.gap_m = rng.random_range(2.0..=12.0);
+                s.rock_margin_m = rng.random_range(2.0..=14.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(l) = app.generated.as_ref().and_then(|l| l.cave.as_ref()).and_then(|c| c.chambers.as_ref()) {
+            let halls = l.chambers.iter().filter(|c| c.kind == crate::level::ChamberKind::Hall).count();
+            let made = l.chambers.iter().filter(|c| c.style == CaveStyle::HandMade).count();
+            ui.weak(format!(
+                "generated: {} chambers of {} asked ({halls} halls, {} grottos; {} natural, {made} hand-made) · floor {:.0}%",
+                l.chambers.len(),
+                l.requested,
+                l.chambers.len() - halls,
+                l.chambers.len() - made,
+                l.floor_pct
             ));
         }
     });

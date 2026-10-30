@@ -80,6 +80,67 @@ fn paint_mask(map: &mut image::ImageBuffer<image::Rgb<u8>, Vec<u8>>, m: &crate::
     }
 }
 
+/// Share of the style color mixed into the rock over a zone, so the zones
+/// stay readable after the chambers are carved.
+const ROCK_TINT: f32 = 0.22;
+
+/// Per-cell colors of a cave map (width, height, cell size, colors): rock
+/// tinted by the style zone under it, chamber floor in the chamber's style
+/// color. Before the chambers node, the zones alone. None off caves.
+pub fn cave_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[u8; 3]>)> {
+    let cave = level.cave.as_ref()?;
+    let style = cave.style.as_ref()?;
+    let st = &level.config.cave.style;
+    let of = |s: CaveStyle| if s == CaveStyle::Natural { st.natural_color } else { st.handmade_color };
+    let colors = match &cave.chambers {
+        None => (0..style.ids.len()).map(|c| of(style.style_at(c))).collect(),
+        Some(ch) => {
+            let rock = level.config.cave.chambers.rock_color;
+            let mix = |t: [u8; 3]| {
+                let m = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * ROCK_TINT).round() as u8;
+                [m(rock[0], t[0]), m(rock[1], t[1]), m(rock[2], t[2])]
+            };
+            let (rock_n, rock_h) = (mix(st.natural_color), mix(st.handmade_color));
+            (0..style.ids.len())
+                .map(|c| match ch.ids[c] {
+                    0 if style.style_at(c) == CaveStyle::Natural => rock_n,
+                    0 => rock_h,
+                    id => of(ch.chambers[id as usize - 1].style),
+                })
+                .collect()
+        }
+    };
+    Some((style.width, style.height, style.cell_size_m, colors))
+}
+
+/// Cave legend entries (color, name): the style zones before the chambers
+/// node; then the chamber floors of each style that has one, and rock.
+pub fn cave_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
+    let Some(cave) = &level.cave else { return Vec::new() };
+    let st = &level.config.cave.style;
+    let kinds = [(CaveStyle::Natural, st.natural_color), (CaveStyle::HandMade, st.handmade_color)];
+    let mut out = Vec::new();
+    match (&cave.chambers, &cave.style) {
+        (Some(ch), _) => {
+            for (kind, color) in kinds {
+                if ch.chambers.iter().any(|c| c.style == kind) {
+                    out.push((color, format!("{} floor", kind.label())));
+                }
+            }
+            out.push((level.config.cave.chambers.rock_color, "rock".to_owned()));
+        }
+        (None, Some(style)) => {
+            for (kind, color) in kinds {
+                if style.zones.iter().any(|z| z.style == kind) {
+                    out.push((color, kind.label().to_owned()));
+                }
+            }
+        }
+        (None, None) => {}
+    }
+    out
+}
+
 pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
     let px_per_m = px_per_m.max(0.1);
     let w = ((level.config.map.width_m * px_per_m).round() as u32).max(1);
@@ -114,10 +175,18 @@ pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
     } else if let Some(shape) = &level.shape {
         paint_mask(&mut map, &shape.mask, px_per_m, w, h, REGION);
     }
-    if let Some(style) = level.cave.as_ref().and_then(|c| c.style.as_ref()) {
-        let st = &level.config.cave.style;
-        for (kind, color) in [(CaveStyle::Natural, st.natural_color), (CaveStyle::HandMade, st.handmade_color)] {
-            paint_mask(&mut map, &style.mask(kind), px_per_m, w, h, color);
+    if let Some((cw, ch, cell, colors)) = cave_colors(level) {
+        let cs = cell * px_per_m;
+        for cy in 0..ch {
+            let (y0, y1) = ((cy as f32 * cs).round() as u32, ((cy + 1) as f32 * cs).round() as u32);
+            for cx in 0..cw {
+                let (x0, x1) = ((cx as f32 * cs).round() as u32, ((cx + 1) as f32 * cs).round() as u32);
+                for py in y0..y1.min(h) {
+                    for px in x0..x1.min(w) {
+                        map.put_pixel(px, py, Rgb(colors[cy * cw + cx]));
+                    }
+                }
+            }
         }
     }
     if let Some(depth) = level.swamp.as_ref().and_then(|s| s.depth.as_ref()) {

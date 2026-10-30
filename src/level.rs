@@ -654,11 +654,64 @@ impl StyleLayout {
     }
 }
 
+/// What a cave chamber is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ChamberKind {
+    /// A big chamber: arena, camp, the content.
+    Hall,
+    /// A small chamber / side room.
+    Grotto,
+}
+
+/// One cave chamber.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Chamber {
+    /// 1-based, the value in [`ChamberLayout::ids`].
+    pub id: u16,
+    pub kind: ChamberKind,
+    /// The style of the zone at its center: blob (natural) or room
+    /// (hand-made).
+    pub style: CaveStyle,
+    pub zone: u16,
+    /// Center of mass, meters.
+    pub center_m: [f32; 2],
+    /// Rolled size, meters (diameter of a circle of the asked area).
+    pub size_m: f32,
+    /// Long axis direction, degrees (0° east, 90° north).
+    pub angle_deg: f32,
+    pub cells: u32,
+    pub area_m2: f32,
+}
+
+/// The cave chambers node's output.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChamberLayout {
+    pub width: usize,
+    pub height: usize,
+    pub cell_size_m: f32,
+    /// Chamber id per cell (0 = rock).
+    pub ids: Vec<u16>,
+    pub chambers: Vec<Chamber>,
+    /// Halls + grottos asked for.
+    pub requested: u32,
+    /// Share of the map that is chamber floor, %.
+    pub floor_pct: f32,
+}
+
+impl ChamberLayout {
+    pub fn mask(&self) -> CellMask {
+        CellMask { width: self.width, height: self.height, cell_size_m: self.cell_size_m, cells: self.ids.iter().map(|&i| i > 0).collect() }
+    }
+}
+
 /// The cave node chain's output, filled node by node (docs/cave-plan.md).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct CaveLayout {
     #[serde(default)]
     pub style: Option<StyleLayout>,
+    #[serde(default)]
+    pub chambers: Option<ChamberLayout>,
 }
 
 /// The mobs node's output.
