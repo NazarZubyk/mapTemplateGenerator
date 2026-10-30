@@ -106,13 +106,30 @@ pub fn cave_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[u8
                 // The final floor: chamber floor in its chamber's style, the
                 // rest in its zone's; the wall band over the rock.
                 let wall = level.config.cave.carve.wall_color;
+                let hz = &level.config.cave.hazards;
+                let hazard = |c: usize| {
+                    let l = cave.hazards.as_ref()?;
+                    if l.bridge.cells[c] {
+                        Some(hz.bridge_color)
+                    } else if l.chasm.cells[c] {
+                        Some(hz.chasm_color)
+                    } else if l.deep.cells[c] {
+                        Some(hz.deep_color)
+                    } else if l.shallow.cells[c] {
+                        Some(hz.shallow_color)
+                    } else {
+                        None
+                    }
+                };
                 return Some((
                     style.width,
                     style.height,
                     style.cell_size_m,
                     (0..style.ids.len())
                         .map(|c| {
-                            if carve.floor.cells[c] {
+                            if let Some(color) = hazard(c) {
+                                color
+                            } else if carve.floor.cells[c] {
                                 match ch.ids[c] {
                                     0 => of(style.style_at(c)),
                                     id => of(ch.chambers[id as usize - 1].style),
@@ -158,6 +175,19 @@ pub fn cave_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
                 });
                 if ch.chambers.iter().any(|c| c.style == kind) || in_tunnels {
                     out.push((color, format!("{} floor", kind.label())));
+                }
+            }
+            if let Some(l) = &cave.hazards {
+                let hz = &level.config.cave.hazards;
+                for (mask, color, name) in [
+                    (&l.chasm, hz.chasm_color, "chasm"),
+                    (&l.bridge, hz.bridge_color, "rope bridge"),
+                    (&l.shallow, hz.shallow_color, "shallow pool"),
+                    (&l.deep, hz.deep_color, "deep pool"),
+                ] {
+                    if mask.count_true() > 0 {
+                        out.push((color, name.to_owned()));
+                    }
                 }
             }
             if cave.carve.as_ref().is_some_and(|c| c.wall.count_true() > 0) {

@@ -11,6 +11,8 @@
 //!    the edge.
 //! 5. **Carve & smooth** — the final floor: natural walls roughened and
 //!    smoothed (cellular automaton), hand-made ones as dug; the wall band.
+//! 6. **Hazards** — chasms in halls (some with rope bridges), pools with a
+//!    shallow edge and a deep core; the walkable floor stays one piece.
 
 use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 
@@ -20,6 +22,7 @@ use crate::model::LevelConfig;
 
 pub mod carve;
 pub mod chambers;
+pub mod hazards;
 pub mod tunnels;
 pub mod style;
 
@@ -44,6 +47,10 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
     let carve = carve::build(config, &mut rng, &style.layout, &chambers.layout, &tunnels.layout);
     notes.extend(carve.notes);
 
+    progress("Opening chasms and pools", 0.85);
+    let hazards = hazards::build(config, &mut rng, &chambers.layout, &tunnels.layout, &carve.layout);
+    notes.extend(hazards.notes);
+
     progress("Done", 1.0);
     GeneratedLevel {
         config: config.clone(),
@@ -61,7 +68,7 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
         mobs: None,
         gates: None,
         swamp: None,
-        cave: Some(CaveLayout { style: Some(style.layout), chambers: Some(chambers.layout), tunnels: Some(tunnels.layout), carve: Some(carve.layout) }),
+        cave: Some(CaveLayout { style: Some(style.layout), chambers: Some(chambers.layout), tunnels: Some(tunnels.layout), carve: Some(carve.layout), hazards: Some(hazards.layout) }),
         noise_preview: None,
         notes,
     }

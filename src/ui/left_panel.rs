@@ -96,7 +96,9 @@ fn cave_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_tunnels(ui, app);
     flow_arrow(ui, "chambers + tunnels (one floor, raw edges)");
     node_carve(ui, app);
-    ui.weak("Next cave step: C5 hazards (docs/cave-plan.md).");
+    flow_arrow(ui, "final floor + wall band");
+    node_hazards(ui, app);
+    ui.weak("Next cave step: C6 pillars (docs/cave-plan.md).");
     ui.add_space(4.0);
     ui.separator();
 }
@@ -461,6 +463,75 @@ the game puts its colliders — meters; drawn darker. 0: no band.";
             ui.weak(format!(
                 "generated: floor {:.0}% of the map ({:.0}% natural) · {} cut-off pieces rejoined · {} cells of pockets dropped",
                 l.floor_pct, l.natural_floor_pct, l.rejoined, l.dropped_cells
+            ));
+        }
+    });
+}
+
+/// Cave node 6: chasms and pools (step C5 in docs/cave-plan.md).
+fn node_hazards(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_CHASM: &str = "Share of the halls, %, with a chasm — a pit in the floor you \
+walk around (impassable). Only halls get chasms. Natural halls get a ragged pit, hand-made \
+rooms a rough rectangular one.";
+    const TIP_CHASM_SIZE: &str = "Chasm size, % of its hall's floor. A chasm always keeps \
+2 m of floor to the walls and never splits the floor — too big ones shrink, then are dropped \
+(note). NO EFFECT with Chasms 0%.";
+    const TIP_BRIDGE: &str = "Share of the chasms, %, with a rope bridge straight across \
+their narrow side (a walkable shortcut). NO EFFECT with no chasms.";
+    const TIP_BRIDGE_W: &str = "Rope bridge width, meters. NO EFFECT with no bridges.";
+    const TIP_POOL: &str = "Share of the chambers without a chasm, %, with a pool of \
+water, placed off-center (a low spot).";
+    const TIP_POOL_SIZE: &str = "Pool size, % of its chamber's floor. Same rules as \
+chasms: 2 m off the walls, never splits the floor. NO EFFECT with Pools 0%.";
+    const TIP_SHALLOW: &str = "Shallow, walkable band along the pool's edge, meters; the \
+rest is deep water (impassable). A pool narrower than twice this is all shallow.";
+    const TIP_COLORS: &str = "Colors of chasms, rope bridges, shallow and deep water on \
+the map image, the preview and the legend.";
+    node(ui, "6 · Hazards", |ui| {
+        ui.weak("input: final floor · output: chasms (+ rope bridges), pools (shallow edge, deep core) — floor stays one piece (cave)");
+        let s = &mut app.config.cave.hazards;
+        egui::Grid::new("hazards_node_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Chasms", TIP_CHASM, |ui| ui.add(egui::Slider::new(&mut s.chasm_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Chasm size", TIP_CHASM_SIZE, |ui| ui.add(egui::Slider::new(&mut s.chasm_size_pct, 1.0..=80.0).suffix("%")));
+            param_row(ui, "Rope bridges", TIP_BRIDGE, |ui| ui.add(egui::Slider::new(&mut s.bridge_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Bridge width", TIP_BRIDGE_W, |ui| ui.add(meters(&mut s.bridge_width_m, 6.0)));
+            param_row(ui, "Pools", TIP_POOL, |ui| ui.add(egui::Slider::new(&mut s.pool_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Pool size", TIP_POOL_SIZE, |ui| ui.add(egui::Slider::new(&mut s.pool_size_pct, 1.0..=80.0).suffix("%")));
+            param_row(ui, "Shallow edge", TIP_SHALLOW, |ui| ui.add(meters(&mut s.shallow_m, 10.0)));
+            param_row(ui, "Colors", TIP_COLORS, |ui| {
+                ui.horizontal(|ui| {
+                    ui.color_edit_button_srgb(&mut s.chasm_color);
+                    ui.color_edit_button_srgb(&mut s.bridge_color);
+                    ui.color_edit_button_srgb(&mut s.shallow_color);
+                    ui.color_edit_button_srgb(&mut s.deep_color)
+                })
+                .response
+            });
+        });
+        ui.horizontal(|ui| {
+            if ui
+                .button("🎲 Random params")
+                .on_hover_text("Rolls every hazard setting independently inside its reasonable range. Set values only; press Generate.")
+                .clicked()
+            {
+                let mut rng = rand::rng();
+                s.chasm_pct = rng.random_range(0.0..=100.0);
+                s.chasm_size_pct = rng.random_range(5.0..=60.0);
+                s.bridge_pct = rng.random_range(0.0..=100.0);
+                s.bridge_width_m = rng.random_range(1.0..=3.0);
+                s.pool_pct = rng.random_range(0.0..=80.0);
+                s.pool_size_pct = rng.random_range(5.0..=60.0);
+                s.shallow_m = rng.random_range(0.5..=4.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(l) = app.generated.as_ref().and_then(|l| l.cave.as_ref()).and_then(|c| c.hazards.as_ref()) {
+            use crate::level::HazardKind;
+            ui.weak(format!(
+                "generated: {} chasms ({} with a rope bridge) · {} pools",
+                l.hazards.iter().filter(|h| h.kind == HazardKind::Chasm).count(),
+                l.hazards.iter().filter(|h| h.bridge.is_some()).count(),
+                l.hazards.iter().filter(|h| h.kind == HazardKind::Pool).count()
             ));
         }
     });

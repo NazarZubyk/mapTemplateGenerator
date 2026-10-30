@@ -309,6 +309,52 @@ pub struct CaveSettings {
     pub tunnels: TunnelSettings,
     /// Node 5: carving the floor out, natural walls, the wall band.
     pub carve: CarveSettings,
+    /// Node 6: chasms and pools.
+    pub hazards: HazardSettings,
+}
+
+/// Settings of the cave hazards node (step C5): chasms in halls (with
+/// optional rope bridges) and pools in chambers. Neither may split the
+/// floor.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct HazardSettings {
+    /// Share of the halls, %, with a chasm.
+    pub chasm_pct: f32,
+    /// Chasm size, % of its hall's floor.
+    pub chasm_size_pct: f32,
+    /// Share of the chasms, %, with a rope bridge across.
+    pub bridge_pct: f32,
+    pub bridge_width_m: f32,
+    /// Share of the chambers without a chasm, %, with a pool.
+    pub pool_pct: f32,
+    /// Pool size, % of its chamber's floor.
+    pub pool_size_pct: f32,
+    /// Walkable shallow band along the pool's edge, meters; the rest is
+    /// deep (impassable).
+    pub shallow_m: f32,
+    pub chasm_color: [u8; 3],
+    pub bridge_color: [u8; 3],
+    pub shallow_color: [u8; 3],
+    pub deep_color: [u8; 3],
+}
+
+impl Default for HazardSettings {
+    fn default() -> Self {
+        Self {
+            chasm_pct: 40.0,
+            chasm_size_pct: 25.0,
+            bridge_pct: 50.0,
+            bridge_width_m: 1.5,
+            pool_pct: 30.0,
+            pool_size_pct: 30.0,
+            shallow_m: 1.5,
+            chasm_color: [10, 8, 12],
+            bridge_color: [150, 110, 60],
+            shallow_color: [74, 116, 138],
+            deep_color: [30, 62, 98],
+        }
+    }
 }
 
 /// Settings of the cave carve & smooth node (step C4): natural walls get

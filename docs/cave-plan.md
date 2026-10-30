@@ -357,7 +357,7 @@ distance_field` now `pub(crate)`).
 - UI: node "5 · Carve & smooth" — Roughness, Smooth passes, Min rock
   speck, Wall band, Wall color, 🎲.
 
-### Step C5 — Hazards (node 6, cave only)
+### Step C5 — Hazards (node 6, cave only) — done
 
 1. **Chasms**: `chasm_pct` of the halls get a pit (noise blob natural,
    rectangle-ish hand-made), optional rope bridge across.
@@ -367,6 +367,36 @@ distance_field` now `pub(crate)`).
    Never in tunnels or at gates.
 
 Settings: chasm share + size, bridge share, pool share + size, colors.
+
+**C5 notes (as built).** `generator/cave/hazards.rs`. Hazards: chasms
+and pools only (no lava / rubble / ledges — the open question stayed
+unanswered, so the plan's two).
+
+- Per chamber in id order (three rolls each, always): a hall rolls
+  `chasm_pct` (40%); otherwise `pool_pct` (30%). One hazard per chamber.
+- Shape: the best `size_pct` (chasm 25%, pool 30%) of the chamber's floor
+  cells that are ≥ 2 m from rock and ≥ 6 m from a gate, at most 60% of
+  those usable cells; score = ellipse along the chamber's long axis
+  around the middle (moved up to 0.2 × radius for chasms, 0.35 for
+  pools) + 0.6 × noise (3 m). Natural in hand-made rooms too (first cut
+  had rough rectangles there — "nobody digs a chasm"). Largest piece
+  kept.
+- Pools: cells within `shallow_m` (1.5 m) of the pool edge are shallow
+  (walkable), the rest deep.
+- Guard: walkable (floor − chasm − deep) must stay one piece, else shrink
+  ×0.7 up to 3 times, then drop (note).
+- Rope bridges: `bridge_pct` (50%) of the chasms; minor axis of the
+  chasm's covariance through its middle, out both ways until floor;
+  `bridge_width_m` (1.5 m); dropped if an end is not walkable.
+- Output `HazardLayout { chasm, bridge, shallow, deep, hazards: Hazard {
+  id, kind, chamber, center_m, blocked_m2, shallow_m2, bridge (ends) } }`
+  with `walkable(floor, c)` = floor − chasm (+ bridge) − deep. Later
+  nodes must use it.
+- Look (200 m): defaults → ~8–9 hazards; 100% / 60% → 15–19.
+- Map: chasm near-black, bridge wood, shallow / deep blue over the floor;
+  legend entries; spec.json `hazards`; MCP `generate` reports `hazards`.
+- UI: node "6 · Hazards" — Chasms, Chasm size, Rope bridges, Bridge
+  width, Pools, Pool size, Shallow edge, Colors, 🎲.
 
 ### Step C6 — Pillars (node 7, cave only; Town's houses)
 

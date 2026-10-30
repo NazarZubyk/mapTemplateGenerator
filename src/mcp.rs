@@ -741,6 +741,11 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
             "floor_pct": l.floor_pct, "natural_floor_pct": l.natural_floor_pct,
             "dropped_cells": l.dropped_cells, "rejoined": l.rejoined,
         })),
+        "hazards": level.cave.as_ref().and_then(|c| c.hazards.as_ref()).map(|l| json!({
+            "chasms": l.hazards.iter().filter(|h| h.kind == crate::level::HazardKind::Chasm).count(),
+            "bridges": l.hazards.iter().filter(|h| h.bridge.is_some()).count(),
+            "pools": l.hazards.iter().filter(|h| h.kind == crate::level::HazardKind::Pool).count(),
+        })),
         "trees": level.swamp.as_ref().and_then(|s| s.trees.as_ref()).map(|t| json!({
             "grove_trees": t.grove_trees, "water_trees": t.water_trees, "grove_cover_pct": t.grove_cover_pct,
         })),

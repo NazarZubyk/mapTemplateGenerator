@@ -790,6 +790,51 @@ pub struct CarveLayout {
     pub rejoined: u32,
 }
 
+/// What a cave hazard is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HazardKind {
+    /// A pit: impassable (a rope bridge may cross it).
+    Chasm,
+    /// Water: a walkable shallow edge around an impassable deep core.
+    Pool,
+}
+
+/// One cave hazard.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Hazard {
+    pub id: u16,
+    pub kind: HazardKind,
+    /// The chamber it lies in.
+    pub chamber: u16,
+    pub center_m: [f32; 2],
+    /// Impassable area (chasm, or the pool's deep core), m².
+    pub blocked_m2: f32,
+    /// Walkable water (the pool's shallow edge), m².
+    pub shallow_m2: f32,
+    /// A rope bridge across (chasms).
+    pub bridge: Option<[[f32; 2]; 2]>,
+}
+
+/// The cave hazards node's output. Walkable = carved floor − chasm − deep
+/// + bridge (shallow water is walkable).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HazardLayout {
+    pub chasm: CellMask,
+    /// Rope bridges (over chasm cells).
+    pub bridge: CellMask,
+    pub shallow: CellMask,
+    pub deep: CellMask,
+    pub hazards: Vec<Hazard>,
+}
+
+impl HazardLayout {
+    /// Is cell `c` of the carved `floor` walkable after the hazards?
+    pub fn walkable(&self, floor: &CellMask, c: usize) -> bool {
+        floor.cells[c] && (!self.chasm.cells[c] || self.bridge.cells[c]) && !self.deep.cells[c]
+    }
+}
+
 /// The cave node chain's output, filled node by node (docs/cave-plan.md).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct CaveLayout {
@@ -801,6 +846,8 @@ pub struct CaveLayout {
     pub tunnels: Option<TunnelLayout>,
     #[serde(default)]
     pub carve: Option<CarveLayout>,
+    #[serde(default)]
+    pub hazards: Option<HazardLayout>,
 }
 
 /// The mobs node's output.
