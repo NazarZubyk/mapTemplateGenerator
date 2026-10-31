@@ -133,8 +133,13 @@ fn forest_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_forest_trees(ui, app);
     flow_arrow(ui, "the forest with its tree trunks");
     node_forest_props(ui, app);
-    flow_arrow(ui, "the forest with its props (all blocked)");
-    ui.weak("Next: interactive objects, hidden glades, mobs (docs/forest-plan.md).");
+    flow_arrow(ui, "thicket left over, free ground after trunks and props");
+    node_hidden_rooms(ui, app);
+    flow_arrow(ui, "free ground, hidden glade floors");
+    node_interactive(ui, app);
+    flow_arrow(ui, "walkable ground (trails, open glades)");
+    node_mobs(ui, app);
+    ui.weak("The forest chain is complete (docs/forest-plan.md); open: export polish.");
     ui.add_space(4.0);
     ui.separator();
 }
@@ -1967,9 +1972,17 @@ shorter map side. NO EFFECT when no gate has the Bridge style.";
 }
 
 /// The swamp "Spawns on" checkboxes (mob and interactive types).
-fn spawn_on_row(ui: &mut egui::Ui, f: &mut SpawnOn, cave: bool) -> egui::Response {
+fn spawn_on_row(ui: &mut egui::Ui, f: &mut SpawnOn, kind: MapKind) -> egui::Response {
     ui.horizontal_wrapped(|ui| {
-        if cave {
+        if kind == MapKind::Forest {
+            ui.checkbox(&mut f.land, "ground");
+            ui.checkbox(&mut f.path, "trail");
+            ui.checkbox(&mut f.shallow, "shallow water");
+            ui.checkbox(&mut f.hidden_room, "hidden glade");
+            ui.separator();
+            ui.checkbox(&mut f.natural, "wild");
+            ui.checkbox(&mut f.hand_made, "managed")
+        } else if kind == MapKind::Cave {
             ui.checkbox(&mut f.land, "chamber");
             ui.checkbox(&mut f.path, "tunnel");
             ui.checkbox(&mut f.shallow, "shallow pool");
@@ -2738,10 +2751,21 @@ zones of that style (e.g. ore veins in natural caverns, crates in the mines); bo
 anywhere. A group stays in one place. Nothing ticked: the type is never placed.";
     const TIP_SHORE_CAVE: &str = "Cave: objects in a shallow pool stay at most this far from \
 dry floor, meters. 0 = no limit. NO EFFECT without Shallow pool ticked.";
+    const TIP_TERRAIN_FOREST: &str = "Forest: where this type's groups may stand — tick one \
+or several. Ground: open ground and forest floor (glades included). Trail: trails and bridges \
+(only where wide enough to walk around the object). Shallow water: brooks, banks, fords. Hidden \
+glade: the floor of a hidden glade (chests, rare herbs) — never on its path. Wild / Managed: \
+only in areas of that style (herbs in the wild, crates at the logging camp); both = anywhere. \
+A group stays in one place. Nothing ticked: the type is never placed.";
+    const TIP_SHORE_FOREST: &str = "Forest: objects in shallow water stay at most this far from \
+dry ground, meters. NO EFFECT without Shallow water ticked.";
     let swamp = app.config.kind == MapKind::Swamp;
     let cave = app.config.kind == MapKind::Cave;
-    node(ui, if swamp || cave { "9 · Interactive objects" } else { "10 · Interactive objects" }, |ui| {
-        ui.weak(if swamp {
+    let forest = app.config.kind == MapKind::Forest;
+    node(ui, if forest { "11 · Interactive objects" } else if swamp || cave { "9 · Interactive objects" } else { "10 · Interactive objects" }, |ui| {
+        ui.weak(if forest {
+            "input: free ground after trunks and props + hidden glade floors · output: interactive objects in groups, by terrain and wild / managed (forest)"
+        } else if swamp {
             "input: free ground after props + hidden islet floors · output: interactive objects in groups, by terrain (swamp)"
         } else if cave {
             "input: free floor after props + hidden room floors · output: interactive objects in groups, by terrain and style (cave)"
@@ -2805,11 +2829,14 @@ dry floor, meters. 0 = no limit. NO EFFECT without Shallow pool ticked.";
                                     })
                                     .response
                             });
-                            if swamp {
-                                param_row(ui, "Spawns on", TIP_TERRAIN, |ui| spawn_on_row(ui, &mut it.spawn_on, false));
+                            if forest {
+                                param_row(ui, "Spawns on", TIP_TERRAIN_FOREST, |ui| spawn_on_row(ui, &mut it.spawn_on, MapKind::Forest));
+                                param_row(ui, "Near ground", TIP_SHORE_FOREST, |ui| ui.add(meters(&mut it.shore_dist_m, 30.0)));
+                            } else if swamp {
+                                param_row(ui, "Spawns on", TIP_TERRAIN, |ui| spawn_on_row(ui, &mut it.spawn_on, MapKind::Swamp));
                                 param_row(ui, "Near island", TIP_SHORE_D, |ui| ui.add(meters(&mut it.shore_dist_m, 30.0)));
                             } else if cave {
-                                param_row(ui, "Spawns on", TIP_TERRAIN_CAVE, |ui| spawn_on_row(ui, &mut it.spawn_on, true));
+                                param_row(ui, "Spawns on", TIP_TERRAIN_CAVE, |ui| spawn_on_row(ui, &mut it.spawn_on, MapKind::Cave));
                                 param_row(ui, "Near dry floor", TIP_SHORE_CAVE, |ui| ui.add(meters(&mut it.shore_dist_m, 30.0)));
                             }
                             param_row(ui, "Color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut it.color));
@@ -2895,17 +2922,27 @@ is their wall) — organic caves in natural zones, rough hand-dug vaults in hand
 about Size min–max across (the shape fills less than its full box), reached by ONE narrow tunnel no longer than Path max length; a cracked-wall \
 marker shows where the tunnel breaks into the cave (breakable in the game). Outside / inside \
 make NO DIFFERENCE in a cave.";
+    const TIP_PLACE_FOREST: &str = "Forest: hidden glades are organic pockets inside a thicket \
+(the thicket is their wall), about Size min–max across, reached by ONE narrow overgrown path no \
+longer than Path max length; a hidden-passage marker shows where the path leaves the walkable \
+ground. Never through a sealed border, rock or water. Outside / inside make NO DIFFERENCE in a \
+forest.";
     let swamp = app.config.kind == MapKind::Swamp;
     let cave = app.config.kind == MapKind::Cave;
-    let tip_place = if swamp {
+    let forest = app.config.kind == MapKind::Forest;
+    let tip_place = if forest {
+        TIP_PLACE_FOREST
+    } else if swamp {
         TIP_PLACE_SWAMP
     } else if cave {
         TIP_PLACE_CAVE
     } else {
         TIP_PLACE
     };
-    node(ui, if swamp || cave { "8 · Hidden rooms" } else { "11 · Hidden rooms" }, |ui| {
-        ui.weak(if swamp {
+    node(ui, if forest { "10 · Hidden glades" } else if swamp || cave { "8 · Hidden rooms" } else { "11 · Hidden rooms" }, |ui| {
+        ui.weak(if forest {
+            "input: thicket after trunks and props · output: hidden glades + one overgrown path and a hidden-passage marker each (forest)"
+        } else if swamp {
             "input: deep water + thicket after props · output: hidden islets + one ford each (swamp)"
         } else if cave {
             "input: solid rock after props · output: hidden pockets + one tunnel and a cracked wall each (cave)"
@@ -2926,7 +2963,7 @@ make NO DIFFERENCE in a cave.";
                 param_row(ui, "Size max", TIP_SIZE_MAX, |ui| {
                     ui.add(egui::DragValue::new(&mut r.size_max_m).range(0.5..=60.0).speed(0.05).suffix(" m"))
                 });
-                if !swamp && !cave {
+                if !swamp && !cave && !forest {
                     param_row(ui, "Wall thickness", TIP_WALL, |ui| {
                         ui.add(
                             egui::DragValue::new(&mut r.wall_thickness_m)
@@ -3062,10 +3099,23 @@ of a pool. Hidden room: a hidden pocket whose tunnel is mob-passable. Natural / 
 only in zones of that style (bats in caverns, miners in the mines); both = anywhere. Nothing \
 ticked: never placed (a note says so). A pack of types with different terrains stands where \
 all of them are within 2 m.";
+    const TIP_GUARD_FOREST: &str = "Forest: chance, %, that each dead-end area (one link to the \
+rest) gets a guard pack before the other mobs are spread.";
+    const TIP_HUBS_FOREST: &str = "Forest: share of the mobs, %, that must stand in the glades \
+(the clearings node). 100%: every mob in a glade. 0%: no rule. When the glades are full, the \
+rest go anywhere and a note says so.";
+    const TIP_SPAWN_ON_FOREST: &str = "Forest: where this type may spawn — tick one or several. \
+Ground: open ground and forest floor. Trail: trails and bridges. Shallow water: brooks, banks, \
+fords. Hidden glade: one whose path is mob-passable. Wild / Managed: only in areas of that style \
+(wolves in the wild, bandits at the logging camp); both = anywhere. Nothing ticked: never \
+placed (a note says so).";
     let swamp = app.config.kind == MapKind::Swamp;
     let cave = app.config.kind == MapKind::Cave;
+    let forest = app.config.kind == MapKind::Forest;
     node(ui, if swamp || cave { "10 · Mobs" } else { "12 · Mobs" }, |ui| {
-        ui.weak(if swamp {
+        ui.weak(if forest {
+            "input: walkable ground (trails, glades, open hidden glades) · output: mob spawn points (forest)"
+        } else if swamp {
             "input: land, water within reach, paths, open islets · output: mob spawn points (swamp)"
         } else if cave {
             "input: walkable floor, open hidden rooms · output: mob spawn points (cave)"
@@ -3107,11 +3157,18 @@ all of them are within 2 m.";
             param_row(ui, "Spawn spacing", TIP_SPACING, |ui| {
                 ui.add(egui::DragValue::new(&mut mobs.spacing_m).range(0.0..=50.0).speed(0.1).suffix(" m"))
             });
-            if swamp || cave {
-                param_row(ui, "Dead-end guards", if cave { TIP_GUARD_CAVE } else { TIP_GUARD }, |ui| {
+            if swamp || cave || forest {
+                let (tip_guard, hub_label, tip_hub) = if forest {
+                    (TIP_GUARD_FOREST, "In glades", TIP_HUBS_FOREST)
+                } else if cave {
+                    (TIP_GUARD_CAVE, "In halls", TIP_HUBS_CAVE)
+                } else {
+                    (TIP_GUARD, "In hubs", TIP_HUBS)
+                };
+                param_row(ui, "Dead-end guards", tip_guard, |ui| {
                     ui.add(egui::Slider::new(&mut mobs.dead_end_guard_pct, 0.0..=100.0).suffix(" %"))
                 });
-                param_row(ui, if cave { "In halls" } else { "In hubs" }, if cave { TIP_HUBS_CAVE } else { TIP_HUBS }, |ui| {
+                param_row(ui, hub_label, tip_hub, |ui| {
                     ui.add(egui::Slider::new(&mut mobs.hub_pct, 0.0..=100.0).suffix(" %"))
                 });
             } else {
@@ -3145,10 +3202,12 @@ all of them are within 2 m.";
                         }
                         r
                     });
-                    if swamp {
-                        param_row(ui, "Spawns on", TIP_SPAWN_ON, |ui| spawn_on_row(ui, &mut t.spawn_on, false));
+                    if forest {
+                        param_row(ui, "Spawns on", TIP_SPAWN_ON_FOREST, |ui| spawn_on_row(ui, &mut t.spawn_on, MapKind::Forest));
+                    } else if swamp {
+                        param_row(ui, "Spawns on", TIP_SPAWN_ON, |ui| spawn_on_row(ui, &mut t.spawn_on, MapKind::Swamp));
                     } else if cave {
-                        param_row(ui, "Spawns on", TIP_SPAWN_ON_CAVE, |ui| spawn_on_row(ui, &mut t.spawn_on, true));
+                        param_row(ui, "Spawns on", TIP_SPAWN_ON_CAVE, |ui| spawn_on_row(ui, &mut t.spawn_on, MapKind::Cave));
                     }
                     param_row(ui, "Color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut t.color));
                 });

@@ -19,7 +19,10 @@ an AI agent (or a level designer) to build a playable prototype fast.
 > lead you through each area, and tree trunks stand where the forest
 > grows (you set how dense, how thick and how grouped). Props (shape and
 > place only — you decide what they are) lie in groups, alone, near the
-> rock and in the managed areas. Interactive objects and mobs come next. The app opens on Forest for now.
+> rock and in the managed areas. Hidden glades sit inside thickets,
+> reached by one overgrown path; interactive objects and mobs spawn on
+> forest ground (wild or managed areas, glades as gathering spots). The
+> forest chain is complete and being tuned. The app opens on Forest for now.
 
 ## What you get
 
@@ -74,7 +77,7 @@ see `QUICKSTART.md`.
 
 ## Known limitations (beta)
 
-- Only **Town** is tuned. Forest is being rebuilt (areas, land, water, thickets, passages, glades, trails, trees and props so far); Swamp is new (complete,
+- Only **Town** is tuned. Forest is being rebuilt (areas, land, water, thickets, passages, glades, trails, trees, props, hidden glades, interactive objects and mobs — complete, being tuned); Swamp is new (complete,
   still being tuned); Cave is new (complete, still being tuned).
 - The **walkable %** setting is not used yet.
 - Few safety checks. For example, two object types with the same color are

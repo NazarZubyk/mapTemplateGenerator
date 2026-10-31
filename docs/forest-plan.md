@@ -44,7 +44,7 @@ passages that decide where the barriers hold and where they open.
 | 7 | **Clearings & trails** (F6) | glades, trails inside the areas; final ground |
 | 8 | **Trees** (F7) | tree trunks (round solid objects) |
 | 9 | **Props** (F8) | uninteractive props — shape and place only, all blocked |
-| 10+ | next: interactive, hidden glades, mobs (spawns) | |
+| 10–12 | **Hidden glades, Interactive, Mobs** (F9) | spawns on forest ground (shared cores) |
 
 ### Step F1 — Areas — done
 
@@ -246,12 +246,38 @@ box (rotated rect, depth 0.6–1 × the size), chosen per placement.
   direction, their props' indexes in `objects`), counts — a group can
   become one thing; MCP `forest_props`.
 
+### Step F9 — Spawns — done
+
+`spawns.rs`; the shared nodes 10 Hidden rooms (titled "Hidden glades" on
+a forest), 11 Interactive objects, 12 Mobs, like the cave chain:
+`ForestSpawnGround` says where things may go, the shared cores
+(`hidden_rooms::place_rooms`, `interactive::place_types`, `mobs::spend`)
+place them.
+- Spawn terrains (`SpawnOn`): land = open ground + forest floor (glades
+  included), path = trail + bridge, shallow = shallow water, hidden room =
+  hidden glade floors; mud unused. The style filter (`natural` /
+  `hand_made`) reads **wild / managed** by the area under the spot (UI
+  labels and MCP aliases "wild" / "managed").
+- Solid = thicket, rock, deep water + trunks and props
+  (`ForestLayout::objects_mask`); interactive objects keep a free ring,
+  bridges kept clear, 6 m off gates.
+- Hidden glades: rooms in thicket cells a cell clear of walkable ground
+  and objects, never on sealed strips or the map edge; the path cuts
+  thicket only (never sealed strips, rock, water, trunks, props); shaped
+  organic by the cave's `shape_pockets`; a "hidden passage" marker
+  (`HiddenRoomPath`) where the path meets the walkable ground. A glade is a
+  dead end, so it never links two areas.
+- Mobs: glades are the hubs (`hub_pct`, "In glades"); dead-end areas (one
+  link) may get a guard pack (`dead_end_guard_pct`); road = trails.
+  "Re-roll mobs" works (`place_mobs` has a forest branch).
+- Object order: trunks, props, hidden glades, interactive objects, gate
+  markers last (mobs are inserted before them; `remap_objects` also
+  shifts the forest gates and prop groups).
+
 ## Next steps
 
 - **Main road** option from the gate through the managed areas; fences /
   hedges along managed fields.
-- **Spawns**: props, interactive objects, hidden glades (in dense forest,
-  an "overgrown passage" marker), mobs on forest ground; glades as hubs.
 - **Export**: forest ground ids in layer.png, warnings, MCP `spawn_on`
   wild / managed.
 

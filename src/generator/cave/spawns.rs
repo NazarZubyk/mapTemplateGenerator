@@ -297,7 +297,7 @@ pub(crate) fn hidden_rooms(config: &LevelConfig, rng: &mut ChaCha8Rng, g: &CaveG
         max_len: (s.path_max_m / cell).round().max(1.0) as u32,
     };
     let mut built = hidden_rooms::place_rooms(config, rng, area, stage);
-    shape_pockets(&mut built, g, rng, s.path_width_m);
+    shape_pockets(&mut built, g.w, g.h, g.cell, &g.natural, rng, s.path_width_m);
 
     // Cracked wall: the dug tunnel cell next to the open floor.
     let side = (s.path_width_m.max(cell) * 1.4).max(1.0);
@@ -337,8 +337,8 @@ pub(crate) fn hidden_rooms(config: &LevelConfig, rng: &mut ChaCha8Rng, g: &CaveG
 /// (rectangle, walls wandering inward). A corridor from where the access
 /// tunnel enters to the middle keeps it reachable. The floor becomes one
 /// map object per horizontal run of cells, so the map shows the shape.
-fn shape_pockets(built: &mut HiddenRoomBuild, g: &CaveGround, rng: &mut ChaCha8Rng, path_width_m: f32) {
-    let (w, h, cell) = (g.w, g.h, g.cell);
+/// `natural` per cell picks organic (true) or hand-dug (false) per room.
+pub(crate) fn shape_pockets(built: &mut HiddenRoomBuild, w: usize, h: usize, cell: f32, natural: &[bool], rng: &mut ChaCha8Rng, path_width_m: f32) {
     let noise = NoiseField::new(rng.random::<u64>());
     for (k, room) in built.layout.rooms.iter_mut().enumerate() {
         let [rx, ry, rw, rh] = room.rect_m;
@@ -346,7 +346,7 @@ fn shape_pockets(built: &mut HiddenRoomBuild, g: &CaveGround, rng: &mut ChaCha8R
         let (x1, y1) = (((rx + rw) / cell).round() as usize, ((ry + rh) / cell).round().min(h as f32) as usize);
         let (cx, cy) = (rx + rw / 2.0, ry + rh / 2.0);
         let mid = ((cy / cell) as usize).min(h - 1) * w + ((cx / cell) as usize).min(w - 1);
-        let natural = g.natural[mid];
+        let natural = natural[mid];
         let salt = k as f32 * 23.7;
         let mut keep = vec![false; w * h];
         let mut rect = Vec::new();

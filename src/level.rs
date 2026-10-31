@@ -1347,6 +1347,9 @@ pub struct ForestLayout {
     pub trees: Option<ForestTreeLayout>,
     #[serde(default)]
     pub props: Option<ForestPropLayout>,
+    /// Cells under the trunks and props (solid), for the spawn nodes.
+    #[serde(default)]
+    pub objects_mask: Option<CellMask>,
 }
 
 impl ForestLayout {

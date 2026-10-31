@@ -19,6 +19,10 @@
 //!    by density, groves and the area character.
 //! 9. **Props** — uninteractive props, shape and place only (groups along a
 //!    direction, singles, near the rock, in managed areas); all blocked.
+//! 10. **Spawns** (nodes 10–12) — hidden glades (pockets in a thicket, one
+//!     overgrown path), interactive objects and mobs on forest ground (the
+//!     shared cores; wild / managed as the style filter, glades as mob
+//!     hubs).
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -33,6 +37,7 @@ pub mod areas;
 pub mod clearings;
 pub mod passages;
 pub mod props;
+pub mod spawns;
 pub mod terrain;
 pub mod water;
 pub mod thickets;
@@ -74,9 +79,9 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
         *n -= f;
     }
     trees.layout.total = trees.objects.len() as u32;
-    let mut objects = passages.objects;
-    // Gate markers keep their indexes; trunks and props come after them.
-    objects.extend(trees.objects);
+    // Trunks, props, hidden glades, interactive objects; the gate markers go
+    // last (they draw on top, and the mobs are inserted before them).
+    let mut objects = trees.objects;
     let base = objects.len();
     for g in &mut props.layout.groups {
         for i in &mut g.objects {
@@ -85,8 +90,58 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
     }
     objects.extend(props.objects);
 
-    progress("Done", 1.0);
-    GeneratedLevel {
+    let passages_layout = passages.layout;
+    let gate_objects = passages.objects;
+    let (w, h, cell) = (passages_layout.width, passages_layout.height, passages_layout.cell_size_m);
+    let objects_mask = spawns::objects_mask(&objects, w, h, cell);
+    let mut forest = ForestLayout {
+        areas: Some(areas.layout),
+        terrain: Some(terrain),
+        water: Some(water.layout),
+        thickets: Some(thickets),
+        passages: Some(passages_layout),
+        clearings: Some(clearings),
+        trees: Some(trees.layout),
+        props: Some(props.layout),
+        objects_mask: Some(objects_mask),
+    };
+
+    // Spawns: hidden glades first (objects may go inside), then the
+    // interactive objects; mobs last on their own stream.
+    let stage = |from, to| crate::generator::Stage { progress, from, to };
+    let (hidden, inter) = {
+        let ground = spawns::ForestSpawnGround::new(&forest).expect("forest layout complete");
+        progress("Hiding glades", 0.96);
+        let mut rooms = spawns::hidden_rooms(config, &mut rng, &ground, &stage(0.96, 0.97));
+        notes.extend(std::mem::take(&mut rooms.notes));
+        let mut inter = spawns::interactive(config, &mut rng, &ground, &rooms.layout, &stage(0.97, 0.98));
+        notes.extend(std::mem::take(&mut inter.notes));
+        (rooms, inter)
+    };
+    let offset = objects.len();
+    let (mut rooms, mut inter) = (hidden, inter);
+    for r in &mut rooms.layout.rooms {
+        for m in &mut r.objects {
+            *m += offset;
+        }
+    }
+    objects.extend(rooms.objects);
+    let offset = objects.len();
+    for g in &mut inter.layout.groups {
+        for m in &mut g.members {
+            *m += offset;
+        }
+    }
+    objects.extend(inter.objects);
+    let offset = objects.len();
+    if let Some(p) = forest.passages.as_mut() {
+        for g in &mut p.gates {
+            g.object += offset;
+        }
+    }
+    objects.extend(gate_objects);
+
+    let mut level = GeneratedLevel {
         config: config.clone(),
         seed,
         objects,
@@ -97,25 +152,19 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
         region_walls: None,
         houses: None,
         props: None,
-        interactive: None,
-        hidden_rooms: None,
+        interactive: Some(inter.layout),
+        hidden_rooms: Some(rooms.layout),
         mobs: None,
         gates: None,
         swamp: None,
         cave: None,
-        forest: Some(ForestLayout {
-            areas: Some(areas.layout),
-            terrain: Some(terrain),
-            water: Some(water.layout),
-            thickets: Some(thickets),
-            passages: Some(passages.layout),
-            clearings: Some(clearings),
-            trees: Some(trees.layout),
-            props: Some(props.layout),
-        }),
+        forest: Some(forest),
         noise_preview: None,
         notes,
-    }
+    };
+    crate::generator::place_mobs(&mut level, progress);
+    progress("Done", 1.0);
+    level
 }
 
 pub(crate) fn neighbors4(c: usize, w: usize, h: usize) -> impl Iterator<Item = usize> {

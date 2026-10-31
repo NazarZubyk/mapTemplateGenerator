@@ -338,6 +338,12 @@ pub fn place_mobs(level: &mut GeneratedLevel, progress: Progress) {
                 [level.props.as_ref().map(|l| &l.mask), level.interactive.as_ref().map(|l| &l.mask)].into_iter().flatten().collect();
             Some(cave::spawns::mobs(config, &mut rng, &ground, &placed, level.hidden_rooms.as_ref(), &stage))
         })
+    } else if config.kind == crate::model::MapKind::Forest && level.forest.is_some() {
+        level.forest.as_ref().and_then(|f| {
+            let ground = forest::spawns::ForestSpawnGround::new(f)?;
+            let placed: Vec<&CellMask> = level.interactive.as_ref().map(|l| &l.mask).into_iter().collect();
+            Some(forest::spawns::mobs(config, &mut rng, &ground, &placed, level.hidden_rooms.as_ref(), &stage))
+        })
     } else if config.kind == crate::model::MapKind::Swamp {
         level.swamp.as_ref().and_then(|s| {
             let ground = swamp::spawns::SwampGround::new(
@@ -418,6 +424,20 @@ fn remap_objects(level: &mut GeneratedLevel, f: impl Fn(usize) -> usize) {
     if let Some(t) = level.cave.as_mut().and_then(|c| c.tunnels.as_mut()) {
         for g in &mut t.gates {
             g.object = f(g.object);
+        }
+    }
+    if let Some(forest) = level.forest.as_mut() {
+        if let Some(p) = forest.passages.as_mut() {
+            for g in &mut p.gates {
+                g.object = f(g.object);
+            }
+        }
+        if let Some(p) = forest.props.as_mut() {
+            for g in &mut p.groups {
+                for i in &mut g.objects {
+                    *i = f(*i);
+                }
+            }
         }
     }
 }

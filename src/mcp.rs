@@ -206,7 +206,7 @@ fn tool_list() -> Value {
             "size_m": { "type": "number", "description": "body diameter, meters (default 0.8)" },
             "balance_pct": { "type": "number", "description": "desired share among mobs; all shares are normalized to 100 (default: equal)" },
             "color": color,
-            "spawn_on": { "type": "array", "items": { "type": "string", "enum": ["land", "path", "shallow", "mud", "hidden_room", "natural", "hand_made"] }, "description": "swamp / cave maps: terrains this type may spawn on (default all; cave: land = chamber, path = tunnel, shallow = shallow pool; natural / hand_made limit it to those style zones, none named = both)" },
+            "spawn_on": { "type": "array", "items": { "type": "string", "enum": ["land", "path", "shallow", "mud", "hidden_room", "natural", "hand_made", "wild", "managed"] }, "description": "swamp / cave / forest maps: terrains this type may spawn on (default all; cave: land = chamber, path = tunnel, shallow = shallow pool; forest: land = open ground and forest floor, path = trail, shallow = shallow water, hidden_room = hidden glade; natural / hand_made (forest: wild / managed) limit it to those style zones / areas, none named = both)" },
         }
     });
     json!([
@@ -262,7 +262,7 @@ fn tool_list() -> Value {
                 "name": { "type": "string" }, "rename_to": { "type": "string" },
                 "price": { "type": "number" }, "size_m": { "type": "number" },
                 "balance_pct": { "type": "number" }, "color": color,
-                "spawn_on": { "type": "array", "items": { "type": "string", "enum": ["land", "path", "shallow", "mud", "hidden_room", "natural", "hand_made"] } },
+                "spawn_on": { "type": "array", "items": { "type": "string", "enum": ["land", "path", "shallow", "mud", "hidden_room", "natural", "hand_made", "wild", "managed"] } },
             } }
         },
         {
@@ -472,10 +472,10 @@ fn apply_mob_fields(t: &mut MobType, args: &Value) -> Result<(), String> {
                 Some("shallow") => f.shallow = true,
                 Some("mud") => f.mud = true,
                 Some("hidden_room") => f.hidden_room = true,
-                Some("natural") => f.natural = true,
-                Some("hand_made") => f.hand_made = true,
+                Some("natural") | Some("wild") => f.natural = true,
+                Some("hand_made") | Some("managed") => f.hand_made = true,
                 _ => {
-                    return Err("spawn_on entries are \"land\", \"path\", \"shallow\", \"mud\", \"hidden_room\" (+ cave styles \"natural\", \"hand_made\")".to_owned())
+                    return Err("spawn_on entries are \"land\", \"path\", \"shallow\", \"mud\", \"hidden_room\" (+ cave styles \"natural\", \"hand_made\"; forest areas \"wild\", \"managed\")".to_owned())
                 }
             }
         }

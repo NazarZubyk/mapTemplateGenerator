@@ -709,7 +709,7 @@ mod tests {
                 // map.png: the flat color of the kind.
                 assert_eq!(r.map.get_pixel(x, y).0, g.color());
             } else {
-                assert!(matches!(name, "gate" | "structure" | "prop"), "only gates, trunks and cover sit on forest ground: {name}");
+                assert!(Category::ALL.iter().any(|c| category_name(*c) == name), "a pixel off forest ground must be an object: {name}");
             }
         }
         for want in ["forest_open", "forest_floor", "forest_thicket"] {

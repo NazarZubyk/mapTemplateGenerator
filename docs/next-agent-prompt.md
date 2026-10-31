@@ -74,9 +74,11 @@ masses; node "Thickets", it places no trees) → F5 passages (labyrinth: seal un
 at the weakest spot; gates) → F6 clearings & trails (glades, footpaths / cart
 tracks) → F7 trees (trunks as round objects, plain random) → F8 props (shape and
 place only, all blocked — the generator never decides what a prop is or if
-it can be stepped over; that is the designer's call) — all done. map.png is flat and unambiguous (walkable light, blocked
-dark; layer.png B = walkable). Next: interactive objects, hidden
-glades, mobs on forest ground, then export polish. The app / MCP start on
+it can be stepped over; that is the designer's call) → F9 spawns (hidden
+glades in thickets, interactive, mobs; wild / managed filter, glades as hubs)
+— the forest chain is complete. map.png is flat and unambiguous (walkable light, blocked
+dark; layer.png B = walkable). Open: export polish (warnings for the
+forest nodes) and tuning. The app / MCP start on
 Forest (`LevelConfig::starting()`); `default()` stays Town for the tests.
 
 **MCP server** `mapgen-mcp` (`src/mcp.rs`, `src/bin/mapgen-mcp.rs`,

@@ -126,8 +126,12 @@ tracks) → 8 **Trees** (tree trunks as round solid objects: density,
 spacing, trunk size, groves, irregularity / clumps, lone trees, plantation
 rows) → 9 **Props** (uninteractive props, shape and place only — long /
 round / box — in groups along a direction, singles, near the rock, in
-managed areas; all blocked; the designer decides what they are). Next:
-interactive objects, hidden glades, mobs. The town chain is `generator::town_chain`.
+managed areas; all blocked; the designer decides what they are) → 10
+**Hidden glades** (pockets in a thicket, one overgrown path, a
+hidden-passage marker) → 11 **Interactive objects** → 12 **Mobs** (shared
+cores on forest ground: ground / trail / shallow water / hidden glade, wild
+/ managed filter, glades as hubs, guards in dead-end areas). Open: export
+polish. The town chain is `generator::town_chain`.
 
 **Cave** has its own chain (complete, see [cave-plan.md](cave-plan.md)):
 1 Template → 2 **Style** (natural % + mixing → natural / hand-made zones;
