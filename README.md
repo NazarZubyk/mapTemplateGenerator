@@ -13,8 +13,10 @@ an AI agent (or a level designer) to build a playable prototype fast.
 > pools, props, objects, hidden rooms and mobs) and is being tuned.
 > **Forest is being rebuilt** with its own layout: so far the map splits
 > into large wild and managed areas, each with its own character
-> (meadow, dense woods, logged...); borders, clearings and trails come
-> next. The app opens on Forest for now.
+> (meadow, dense woods, logged...). Streams flow downhill off the map,
+> rock ridges and dense forest separate the areas, and you cross between
+> them on trails, passes, fords and bridges. Clearings and trails inside
+> the areas come next. The app opens on Forest for now.
 
 ## What you get
 
@@ -69,7 +71,7 @@ see `QUICKSTART.md`.
 
 ## Known limitations (beta)
 
-- Only **Town** is tuned. Forest is being rebuilt (areas only so far); Swamp is new (complete,
+- Only **Town** is tuned. Forest is being rebuilt (areas, land, water, woods and passages so far); Swamp is new (complete,
   still being tuned); Cave is new (complete, still being tuned).
 - The **walkable %** setting is not used yet.
 - Few safety checks. For example, two object types with the same color are

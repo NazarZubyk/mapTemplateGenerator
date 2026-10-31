@@ -60,7 +60,7 @@ own chain (`generator/swamp/`, `swamp_node_chain` in left_panel.rs) — the
 list below is the town / forest chain; the swamp one is in
 [swamp-plan.md](swamp-plan.md). **Cave** has its own chain too
 (`generator/cave/`, `cave_node_chain`), built step by step from
-[cave-plan.md](cave-plan.md): C1 style, C2 chambers, C3 tunnels, C4 carve & smooth, C5 hazards, C7 spawns, C8 export done (C6 pillars dropped) — the cave plan is complete. **Forest** is next: its own chain planned in [forest-plan.md](forest-plan.md) (F1 areas → F2 borders + crossings → F3 woods → F4 clearings & ponds → F5 trails → F6 prop clusters → F7 spawns → F8 export), F1 areas done; the app starts on Forest for now.
+[cave-plan.md](cave-plan.md): C1 style, C2 chambers, C3 tunnels, C4 carve & smooth, C5 hazards, C7 spawns, C8 export done (C6 pillars dropped) — the cave plan is complete. **Forest** is next: its own chain planned in [forest-plan.md](forest-plan.md) (land first: F1 areas → F2 terrain → F3 water → F4 woods → F5 passages, then clearings & trails, cover, spawns, export), F1–F5 done, clearings & trails next; the app starts on Forest for now.
 
 Right now:
 
@@ -159,7 +159,9 @@ src/
 │   ├── interactive.rs # step 9 / node 10: interactive object types in groups
 │   ├── hidden_rooms.rs # step 10 / node 11: walled rooms + one access path each
 │   ├── mobs.rs        # step 11 / node 12: budgeted mob packs
-│   └── placement.rs   # shared: rotated footprints, dilation, road tangents
+│   ├── placement.rs   # shared: rotated footprints, dilation, road tangents
+│   ├── swamp/, cave/  # the swamp and cave chains (their plans)
+│   └── forest/        # forest chain: areas, terrain, water, woods, passages
 ├── render.rs          # map.png / layer.png rasterizer
 ├── export.rs          # export bundle: map.png + layer.png + spec.json (format v1)
 ├── validate.rs        # config validation (still the early subset — step 13)

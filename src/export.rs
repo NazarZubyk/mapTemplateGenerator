@@ -61,7 +61,7 @@ pub struct ExportSpec {
     pub legend: Vec<LegendEntry>,
     /// Layer names indexed by the layer.png R-channel value (index 0 =
     /// empty ground; 1–7 object categories; 8–14 swamp ground; 15–23 cave
-    /// ground).
+    /// ground; 24–31 forest ground).
     pub layer_categories: Vec<&'static str>,
     /// How to read layer.png, channel by channel.
     pub layer_encoding: LayerEncoding,
@@ -115,9 +115,19 @@ pub struct ExportSpec {
     /// Forest areas: id, style (wild / managed), character, area, center.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forest_areas: Option<Vec<crate::level::ForestArea>>,
-    /// Forest area pairs that touch, with the shared border length.
+    /// Forest ground kinds: layer id, name, map color and whether the
+    /// player can walk on it — the key to both map.png and layer.png.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub area_borders: Option<Vec<crate::level::AreaBorder>>,
+    pub forest_ground: Option<Vec<ExportGroundKind>>,
+    /// Forest streams (spring → mouth centerlines, widths, where they end)
+    /// and ponds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forest_water: Option<ExportForestWater>,
+    /// Forest passages: per touching area pair whether it is linked and
+    /// how (open, trail, pass, ford, bridge) and where; the gates; the area
+    /// graph stats; the ground shares.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forest_passages: Option<ExportForestPassages>,
     /// Cave chambers: id, kind (hall / grotto), style, zone, center, size,
     /// long-axis angle, area.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -164,10 +174,48 @@ Cave maps, pixels under no object: R = ground id (15-23, see layer_categories: n
 chamber floor, tunnel, rock, cave_wall = rock along the floor, chasm, rope_bridge, shallow_pool, \
 deep_pool; walkable = floors, tunnel, rope_bridge, shallow_pool); G = style zone id (low byte, \
 matches `cave_zones[].id`); B = chamber id (low byte, matches `chambers[].id`) on chamber cells, \
-else 0; A = 255",
+else 0; A = 255. Forest maps, pixels under no object: R = ground id (24-31, see layer_categories \
+and `forest_ground`); G = area id (low byte, matches `forest_areas[].id`); B = 1 walkable, 0 \
+blocked; A = 255",
             empty: "R = G = B = A = 0: no object and no ground data (town maps outside the region)",
         }
     }
+}
+
+/// One ground kind of a map kind that paints its own ground.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExportGroundKind {
+    /// The layer.png R value.
+    pub layer_id: u8,
+    pub name: &'static str,
+    pub label: &'static str,
+    /// The map.png color.
+    pub color: String,
+    pub walkable: bool,
+}
+
+/// Forest water.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExportForestWater {
+    pub streams: Vec<crate::level::ForestStream>,
+    pub ponds: Vec<crate::level::ForestPond>,
+}
+
+/// Forest passages (the area graph) and gates.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExportForestPassages {
+    pub links: Vec<crate::level::AreaLink>,
+    pub gates: Vec<crate::level::ForestGate>,
+    /// Areas on the longest walk from a gate over the links.
+    pub main_route_areas: u32,
+    /// Links beyond the spanning tree.
+    pub loops: u32,
+    /// Areas with one link only.
+    pub dead_end_areas: u32,
+    /// Walkable share of the map, %.
+    pub walkable_pct: f32,
+    /// Height between the lowest and the highest ground, meters.
+    pub relief_m: f32,
 }
 
 /// The cave floor after carving.
@@ -446,7 +494,22 @@ impl ExportSpec {
             gate_bridges: level.swamp.as_ref().and_then(|s| s.paths.as_ref()).map(|l| l.bridges.clone()),
             cave_zones: level.cave.as_ref().and_then(|c| c.style.as_ref()).map(|l| l.zones.clone()),
             forest_areas: level.forest.as_ref().and_then(|f| f.areas.as_ref()).map(|l| l.areas.clone()),
-            area_borders: level.forest.as_ref().and_then(|f| f.areas.as_ref()).map(|l| l.borders.clone()),
+            forest_ground: level.forest.as_ref().map(|_| {
+                crate::level::ForestGround::ALL
+                    .iter()
+                    .map(|g| ExportGroundKind { layer_id: g.layer_id(), name: g.layer_name(), label: g.label(), color: color_hex(g.color()), walkable: g.walkable() })
+                    .collect()
+            }),
+            forest_water: level.forest.as_ref().and_then(|f| f.water.as_ref()).map(|l| ExportForestWater { streams: l.streams.clone(), ponds: l.ponds.clone() }),
+            forest_passages: level.forest.as_ref().and_then(|f| f.passages.as_ref()).map(|l| ExportForestPassages {
+                links: l.links.clone(),
+                gates: l.gates.clone(),
+                main_route_areas: l.main_route_areas,
+                loops: l.loops,
+                dead_end_areas: l.dead_end_areas,
+                walkable_pct: l.walkable_pct,
+                relief_m: level.forest.as_ref().and_then(|f| f.terrain.as_ref()).map_or(0.0, |t| t.relief_m),
+            }),
             chambers: level.cave.as_ref().and_then(|c| c.chambers.as_ref()).map(|l| l.chambers.clone()),
             tunnels: level.cave.as_ref().and_then(|c| c.tunnels.as_ref()).map(|l| l.tunnels.clone()),
             junctions: level.cave.as_ref().and_then(|c| c.tunnels.as_ref()).map(|l| l.junctions.clone()),
@@ -550,7 +613,7 @@ mod tests {
         let legend = spec["legend"].as_array().unwrap();
         assert_eq!(legend.len(), 1, "same type+color merges into one legend entry");
         assert_eq!(spec["seed"].as_u64(), Some(42));
-        assert_eq!(spec["layer_categories"].as_array().unwrap().len(), 24);
+        assert_eq!(spec["layer_categories"].as_array().unwrap().len(), 32);
         assert_eq!(spec["format_version"].as_u64(), Some(2));
 
         std::fs::remove_dir_all(&dir).ok();

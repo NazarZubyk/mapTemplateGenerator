@@ -969,12 +969,282 @@ impl AreaLayout {
     }
 }
 
+/// Forest terrain node output (step F2): a hidden height field (the land
+/// the water flows over) and the rock ridges on it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TerrainLayout {
+    pub width: usize,
+    pub height: usize,
+    pub cell_size_m: f32,
+    /// Ground height per cell, 0..1 of `relief_m`.
+    pub height_m: Vec<f32>,
+    /// Height difference between the lowest and the highest cell, meters.
+    pub relief_m: f32,
+    /// Rock ridges and outcrops (impassable).
+    pub rock: CellMask,
+    /// Rock share of the map, %.
+    pub rock_pct: f32,
+}
+
+/// Where a stream ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StreamMouth {
+    /// Flows off the map.
+    Edge,
+    /// Flows into another (bigger) stream.
+    Stream(u32),
+    /// Ends in a pond.
+    Pond(u32),
+}
+
+/// One stream: a centerline from its spring down to its mouth.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ForestStream {
+    pub id: u32,
+    /// Spring → mouth, meters.
+    pub path_m: Vec<[f32; 2]>,
+    /// Width at the spring and at the mouth, meters.
+    pub width_m: [f32; 2],
+    pub length_m: f32,
+    pub mouth: StreamMouth,
+    /// Deep somewhere along it (only fords and bridges cross there).
+    pub deep: bool,
+}
+
+/// A pond where water gathers in a hollow.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ForestPond {
+    pub id: u32,
+    pub center_m: [f32; 2],
+    pub area_m2: f32,
+}
+
+/// Forest water node output (step F3).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WaterLayout {
+    /// Wadeable water (brooks, banks, pond rims).
+    pub shallow: CellMask,
+    /// Deep water (impassable).
+    pub deep: CellMask,
+    pub streams: Vec<ForestStream>,
+    pub ponds: Vec<ForestPond>,
+}
+
+/// Forest ground per cell, the final result of the chain so far.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ForestGround {
+    /// Grass, few trees: walkable, seen from far.
+    Open,
+    /// Trees with room between them: walkable.
+    Woods,
+    /// Thicket and dense forest: impassable.
+    Dense,
+    /// Rock ridge / outcrop: impassable.
+    Rock,
+    /// Wadeable water: walkable.
+    Shallow,
+    /// Deep water: impassable.
+    Deep,
+    /// A trail cut through a barrier: walkable.
+    Trail,
+    /// A bridge over deep water: walkable.
+    Bridge,
+}
+
+impl ForestGround {
+    pub const ALL: [ForestGround; 8] = [
+        ForestGround::Open,
+        ForestGround::Woods,
+        ForestGround::Dense,
+        ForestGround::Rock,
+        ForestGround::Shallow,
+        ForestGround::Deep,
+        ForestGround::Trail,
+        ForestGround::Bridge,
+    ];
+
+    pub fn code(self) -> u8 {
+        ForestGround::ALL.iter().position(|&g| g == self).unwrap_or(0) as u8 + 1
+    }
+
+    pub fn from_code(code: u8) -> ForestGround {
+        code.checked_sub(1).and_then(|i| ForestGround::ALL.get(i as usize).copied()).unwrap_or(ForestGround::Woods)
+    }
+
+    pub fn walkable(self) -> bool {
+        !matches!(self, ForestGround::Dense | ForestGround::Rock | ForestGround::Deep)
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ForestGround::Open => "open ground",
+            ForestGround::Woods => "woods",
+            ForestGround::Dense => "dense forest",
+            ForestGround::Rock => "rock",
+            ForestGround::Shallow => "shallow water",
+            ForestGround::Deep => "deep water",
+            ForestGround::Trail => "trail",
+            ForestGround::Bridge => "bridge",
+        }
+    }
+
+    /// Map color: one flat color per kind, the same on every map.
+    /// Walkable kinds are light, blocked kinds dark, so the two never mix
+    /// up (a human or an AI agent reading map.png can tell them apart).
+    pub fn color(self) -> [u8; 3] {
+        match self {
+            ForestGround::Open => [226, 218, 160],
+            ForestGround::Woods => [158, 198, 112],
+            ForestGround::Trail => [204, 160, 100],
+            ForestGround::Shallow => [150, 200, 236],
+            ForestGround::Bridge => [176, 128, 74],
+            ForestGround::Dense => [22, 60, 32],
+            ForestGround::Rock => [78, 74, 72],
+            ForestGround::Deep => [26, 66, 148],
+        }
+    }
+
+    /// Ground id on layer.png (R channel), after the cave ids.
+    pub fn layer_id(self) -> u8 {
+        23 + self.code()
+    }
+
+    /// Name in spec.json `layer_categories`.
+    pub fn layer_name(self) -> &'static str {
+        match self {
+            ForestGround::Open => "forest_open",
+            ForestGround::Woods => "forest_woods",
+            ForestGround::Dense => "forest_dense",
+            ForestGround::Rock => "forest_rock",
+            ForestGround::Shallow => "forest_shallow_water",
+            ForestGround::Deep => "forest_deep_water",
+            ForestGround::Trail => "forest_trail",
+            ForestGround::Bridge => "forest_bridge",
+        }
+    }
+}
+
+/// Forest woods node output (step F4): open / woods / dense per cell
+/// (water and rock keep their own ground).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WoodsLayout {
+    /// [`ForestGround::code`] per cell.
+    pub ground: Vec<u8>,
+    /// Shares of the map, %.
+    pub open_pct: f32,
+    pub woods_pct: f32,
+    pub dense_pct: f32,
+}
+
+/// How a passage gets from one area into the next.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CrossingKind {
+    /// The woods were already open there.
+    Open,
+    /// A trail cut through dense forest.
+    Trail,
+    /// A pass through rock.
+    Pass,
+    /// Shallow water across deep water.
+    Ford,
+    /// A bridge over deep water.
+    Bridge,
+}
+
+impl CrossingKind {
+    pub const ALL: [CrossingKind; 5] = [CrossingKind::Open, CrossingKind::Trail, CrossingKind::Pass, CrossingKind::Ford, CrossingKind::Bridge];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            CrossingKind::Open => "open",
+            CrossingKind::Trail => "trail",
+            CrossingKind::Pass => "pass",
+            CrossingKind::Ford => "ford",
+            CrossingKind::Bridge => "bridge",
+        }
+    }
+}
+
+/// Two touching areas and whether the player can walk from one into the
+/// other.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AreaLink {
+    /// Area ids, `a < b`.
+    pub a: u16,
+    pub b: u16,
+    pub linked: bool,
+    /// The link closes a loop (not part of the spanning tree).
+    pub extra: bool,
+    /// Linked: how the way across goes, and where it crosses the border.
+    pub crossing: Option<CrossingKind>,
+    pub point_m: Option<[f32; 2]>,
+}
+
+/// A forest gate: a way in from the map edge.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ForestGate {
+    pub id: u32,
+    pub direction_deg: f32,
+    pub point_m: [f32; 2],
+    /// The area it leads into.
+    pub area: u16,
+    /// Index of the gate marker in [`GeneratedLevel::objects`].
+    pub object: usize,
+}
+
+/// Forest passages node output (step F5): the final walkable ground, which
+/// areas link and how.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PassageLayout {
+    pub width: usize,
+    pub height: usize,
+    pub cell_size_m: f32,
+    /// [`ForestGround::code`] per cell, final.
+    pub ground: Vec<u8>,
+    pub links: Vec<AreaLink>,
+    pub gates: Vec<ForestGate>,
+    /// Areas on the longest walk from a gate (gate area = 1).
+    pub main_route_areas: u32,
+    /// Links beyond the spanning tree.
+    pub loops: u32,
+    /// Areas with one link only.
+    pub dead_end_areas: u32,
+    /// Walkable share of the map, %.
+    pub walkable_pct: f32,
+}
+
+impl PassageLayout {
+    pub fn ground_at(&self, c: usize) -> ForestGround {
+        ForestGround::from_code(self.ground[c])
+    }
+
+    pub fn walkable_mask(&self) -> CellMask {
+        CellMask {
+            width: self.width,
+            height: self.height,
+            cell_size_m: self.cell_size_m,
+            cells: self.ground.iter().map(|&g| ForestGround::from_code(g).walkable()).collect(),
+        }
+    }
+}
+
 /// The forest node chain's output, filled node by node
 /// (docs/forest-plan.md).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct ForestLayout {
     #[serde(default)]
     pub areas: Option<AreaLayout>,
+    #[serde(default)]
+    pub terrain: Option<TerrainLayout>,
+    #[serde(default)]
+    pub water: Option<WaterLayout>,
+    #[serde(default)]
+    pub woods: Option<WoodsLayout>,
+    #[serde(default)]
+    pub passages: Option<PassageLayout>,
 }
 
 /// The cave node chain's output, filled node by node (docs/cave-plan.md).

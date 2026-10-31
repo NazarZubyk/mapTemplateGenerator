@@ -734,6 +734,27 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
             "areas": l.areas.iter().map(|a| json!({"id": a.id, "style": a.style, "character": a.character, "area_m2": a.area_m2})).collect::<Vec<_>>(),
             "borders": l.borders.len(),
         })),
+        "forest_land": level.forest.as_ref().map(|f| json!({
+            "rock_pct": f.terrain.as_ref().map(|t| t.rock_pct),
+            "streams": f.water.as_ref().map(|w| w.streams.len()),
+            "deep_streams": f.water.as_ref().map(|w| w.streams.iter().filter(|s| s.deep).count()),
+            "ponds": f.water.as_ref().map(|w| w.ponds.len()),
+            "open_pct": f.woods.as_ref().map(|w| w.open_pct),
+            "woods_pct": f.woods.as_ref().map(|w| w.woods_pct),
+            "dense_pct": f.woods.as_ref().map(|w| w.dense_pct),
+        })),
+        "forest_passages": level.forest.as_ref().and_then(|f| f.passages.as_ref()).map(|l| json!({
+            "links": l.links.iter().filter(|x| x.linked).count(),
+            "crossings": crate::level::CrossingKind::ALL.iter().filter_map(|&k| {
+                let n = l.links.iter().filter(|x| x.crossing == Some(k)).count();
+                (n > 0).then(|| (k.label().to_owned(), json!(n)))
+            }).collect::<serde_json::Map<String, serde_json::Value>>(),
+            "main_route_areas": l.main_route_areas,
+            "loops": l.loops,
+            "dead_end_areas": l.dead_end_areas,
+            "walkable_pct": l.walkable_pct,
+            "gates": l.gates.len(),
+        })),
         "chambers": level.cave.as_ref().and_then(|c| c.chambers.as_ref()).map(|l| json!({
             "placed": l.chambers.len(), "requested": l.requested, "floor_pct": l.floor_pct,
             "halls": l.chambers.iter().filter(|c| c.kind == crate::level::ChamberKind::Hall).count(),

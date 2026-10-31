@@ -65,15 +65,15 @@ town-chain tests use `LevelConfig::test_64()`.
 gates → C4 carve & smooth → C5 hazards → C7 spawns → C8 export). C1 style, C2
 chambers, C3 tunnels, C4 carve & smooth, C5 hazards, C7 spawns and C8 export are done (C6 pillars dropped — just props) — the cave plan is complete; open: tuning (e.g. spawn amounts for 200 m); the user drives it one step at a time.
 
-**Forest is next**: its own chain (`src/generator/forest/`), planned in
-`docs/forest-plan.md` (F1 areas: big zones with a style (wild / managed)
-and a character → F2 borders of mixed kinds (thicket, ridge, stream capped,
-deadfall, ravine, hedge, fence as fallback, soft) with crossings = the labyrinth → F3 woods +
-cover → F4 clearings & ponds → F5 trails → F6 prop clusters → F7 spawns → F8
-export). The goal: roomier than swamp / cave but not flat.
-F1 areas is done (`generator/forest/areas.rs`, `forest_node_chain`); F2
-borders is next. The app / MCP start on Forest
-(`LevelConfig::starting()`); `default()` stays Town for the tests.
+**Forest is being built**: its own chain (`src/generator/forest/`), planned in
+`docs/forest-plan.md`. The land comes first and everything follows from it
+(a first "painted borders" attempt was dropped as fake-looking): F1 areas
+(gameplay skeleton) → F2 terrain (height + rock ridges) → F3 water (streams
+flow downhill off the map, brooks, ponds) → F4 woods (open / woods / dense
+masses) → F5 passages (labyrinth: seal unlinked borders, open linked ones
+at the weakest spot; gates) — all done. Next: clearings & trails inside the
+areas, then cover (deadfall as logs), spawns, export. The app / MCP start on
+Forest (`LevelConfig::starting()`); `default()` stays Town for the tests.
 
 **MCP server** `mapgen-mcp` (`src/mcp.rs`, `src/bin/mapgen-mcp.rs`,
 registered in `.mcp.json`): Claude edits the same config file

@@ -594,6 +594,104 @@ impl Default for CaveStyleSettings {
 pub struct ForestSettings {
     /// Node 2: the big areas, their style (wild / managed) and character.
     pub areas: ForestAreaSettings,
+    /// Node 3: the hidden height field and the rock ridges.
+    pub terrain: ForestTerrainSettings,
+    /// Node 4: streams and ponds.
+    pub water: ForestWaterSettings,
+    /// Node 5: open ground, woods and dense forest.
+    pub woods: ForestWoodsSettings,
+    /// Node 6: which areas link and the ways between them, the gates.
+    pub passages: ForestPassageSettings,
+}
+
+/// Settings of the forest terrain node: the land everything else follows.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ForestTerrainSettings {
+    /// Hill size, meters (one hill to the next).
+    pub hill_scale_m: f32,
+    /// Height between the lowest and the highest point, meters.
+    pub relief_m: f32,
+    /// How much the land tilts to one side, % (the water's main way).
+    pub tilt_pct: f32,
+    /// Share of the map, %, in rock ridges and outcrops.
+    pub rock_pct: f32,
+    /// Ridge size, meters: smaller = shorter, more twisted ridges.
+    pub ridge_scale_m: f32,
+}
+
+impl Default for ForestTerrainSettings {
+    fn default() -> Self {
+        Self { hill_scale_m: 90.0, relief_m: 20.0, tilt_pct: 40.0, rock_pct: 3.0, ridge_scale_m: 70.0 }
+    }
+}
+
+/// Settings of the forest water node.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ForestWaterSettings {
+    /// Streams that flow off the map (the biggest catchments).
+    pub streams: u32,
+    /// Side brooks flowing into them, %: 0 = none, 100 = many.
+    pub tributaries_pct: f32,
+    /// Width at the spring and at the mouth of the biggest stream, meters.
+    pub width_min_m: f32,
+    pub width_max_m: f32,
+    /// Streams at least this wide get deep water in the middle (only
+    /// fords and bridges cross them); narrower brooks are wadeable.
+    pub deep_from_m: f32,
+    /// How much streams wind beyond what the land gives, %.
+    pub meander_pct: f32,
+    /// Hollows at least this big, m², hold a pond (0 = no ponds).
+    pub pond_min_m2: f32,
+}
+
+impl Default for ForestWaterSettings {
+    fn default() -> Self {
+        Self { streams: 1, tributaries_pct: 40.0, width_min_m: 1.5, width_max_m: 7.0, deep_from_m: 4.0, meander_pct: 50.0, pond_min_m2: 120.0 }
+    }
+}
+
+/// Settings of the forest woods node.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ForestWoodsSettings {
+    /// How strongly dense forest grows along the borders between areas, %.
+    pub border_pct: f32,
+    /// How far dense forest reaches in from an area border, meters.
+    pub border_width_m: f32,
+    /// Dense forest along the map edge, meters.
+    pub edge_width_m: f32,
+    /// Thickets and glades inside the areas, %: 0 = even woods.
+    pub patchiness_pct: f32,
+    /// Shifts everything denser (+) or more open (−), %.
+    pub density_pct: f32,
+}
+
+impl Default for ForestWoodsSettings {
+    fn default() -> Self {
+        Self { border_pct: 70.0, border_width_m: 9.0, edge_width_m: 10.0, patchiness_pct: 50.0, density_pct: 0.0 }
+    }
+}
+
+/// Settings of the forest passages node.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ForestPassageSettings {
+    /// How the areas link: 0 = a chain, 100 = a mesh with many loops.
+    pub labyrinth_pct: f32,
+    /// Width of a trail cut through a barrier, meters.
+    pub trail_width_m: f32,
+    /// Chance, %, that deep water is crossed by a bridge (else a ford).
+    pub bridge_pct: f32,
+    /// Width of the dense forest that closes unlinked borders, meters.
+    pub seal_width_m: f32,
+}
+
+impl Default for ForestPassageSettings {
+    fn default() -> Self {
+        Self { labyrinth_pct: 35.0, trail_width_m: 4.0, bridge_pct: 50.0, seal_width_m: 4.0 }
+    }
 }
 
 /// Settings of the forest areas node (step F1): the map split into a few
@@ -624,7 +722,7 @@ impl Default for ForestAreaSettings {
         Self {
             count: 6,
             size_variation_pct: 40.0,
-            irregularity_pct: 50.0,
+            irregularity_pct: 80.0,
             wild_pct: 60.0,
             mixing_pct: 20.0,
             managed_near_gate: true,

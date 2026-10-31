@@ -12,7 +12,9 @@ pub struct Rasterized {
     /// safe ground … 254, 255 deep water / thicket), B = island id low byte
     /// (0 off islands), A = 255. Cave ground pixels: R = ground id
     /// (`CAVE_GROUND_IDS`, 15–23), G = style zone id low byte, B = chamber
-    /// id low byte (0 off the chambers), A = 255. Elsewhere all 0.
+    /// id low byte (0 off the chambers), A = 255. Forest ground pixels: R =
+    /// ground id (`ForestGround::layer_id`, 24–31), G = area id low byte,
+    /// B = 1 walkable / 0 blocked, A = 255. Elsewhere all 0.
     pub layer: ImageBuffer<Rgba<u8>, Vec<u8>>,
     pub px_per_m: f32,
 }
@@ -222,37 +224,35 @@ pub fn cave_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
     out
 }
 
-/// How much darker the cells along a border between two forest areas are.
-const AREA_EDGE_SHADE: f32 = 0.45;
-
 /// Per-cell colors of a forest map (width, height, cell size, colors):
-/// each area in its character's color, the borders between areas darker.
-/// None off forests.
+/// one flat color per ground kind ([`ForestGround::color`]) — walkable kinds
+/// light, blocked kinds dark — with no tint, texture or shading, so every
+/// color on the map means exactly one thing. None off forests.
+///
+/// [`ForestGround::color`]: crate::level::ForestGround::color
 pub fn forest_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[u8; 3]>)> {
-    let l = level.forest.as_ref()?.areas.as_ref()?;
-    let (w, h) = (l.width, l.height);
+    use crate::level::ForestGround as G;
+    let forest = level.forest.as_ref()?;
+    let l = forest.areas.as_ref()?;
+    let ground = forest.passages.as_ref().map(|p| &p.ground).or_else(|| forest.woods.as_ref().map(|w| &w.ground)).filter(|g| g.len() == l.ids.len());
     let colors = (0..l.ids.len())
-        .map(|c| {
-            let color = l.area_at(c).character.color();
-            let (x, y) = (c % w, c / w);
-            let edge = (x + 1 < w && l.ids[c + 1] != l.ids[c]) || (y + 1 < h && l.ids[c + w] != l.ids[c]);
-            if edge {
-                color.map(|v| (v as f32 * (1.0 - AREA_EDGE_SHADE)).round() as u8)
-            } else {
-                color
-            }
+        .map(|c| match ground {
+            Some(g) => G::from_code(g[c]).color(),
+            None => l.area_at(c).character.color(),
         })
         .collect();
-    Some((w, h, l.cell_size_m, colors))
+    Some((l.width, l.height, l.cell_size_m, colors))
 }
 
-/// Forest legend entries (color, name): one per area character on the map.
+/// Forest legend entries (color, name): every ground kind on the map,
+/// each marked walkable or blocked.
 pub fn forest_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
-    let Some(l) = level.forest.as_ref().and_then(|f| f.areas.as_ref()) else { return Vec::new() };
-    crate::level::ForestCharacter::ALL
+    let Some(f) = level.forest.as_ref() else { return Vec::new() };
+    let Some(g) = f.passages.as_ref().map(|p| &p.ground).or_else(|| f.woods.as_ref().map(|w| &w.ground)) else { return Vec::new() };
+    crate::level::ForestGround::ALL
         .into_iter()
-        .filter(|&ch| l.areas.iter().any(|a| a.character == ch))
-        .map(|ch| (ch.color(), ch.label().to_owned()))
+        .filter(|k| g.contains(&k.code()))
+        .map(|k| (k.color(), format!("{} ({})", k.label(), if k.walkable() { "walkable" } else { "blocked" })))
         .collect()
 }
 
@@ -417,6 +417,28 @@ pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
         }
     }
 
+    // Forest ground on layer.png, under the objects: ground id, area id,
+    // walkable flag.
+    if let Some(forest) = &level.forest
+        && let (Some(areas), Some(p)) = (&forest.areas, &forest.passages)
+    {
+        let cs = p.cell_size_m * px_per_m;
+        for cy in 0..p.height {
+            for cx in 0..p.width {
+                let c = cy * p.width + cx;
+                let g = p.ground_at(c);
+                let px = Rgba([g.layer_id(), (areas.ids[c] & 0xFF) as u8, g.walkable() as u8, 255]);
+                let (x0, x1) = ((cx as f32 * cs).round() as u32, ((cx + 1) as f32 * cs).round() as u32);
+                let (y0, y1) = ((cy as f32 * cs).round() as u32, ((cy + 1) as f32 * cs).round() as u32);
+                for py in y0..y1.min(h) {
+                    for qx in x0..x1.min(w) {
+                        layer.put_pixel(qx, py, px);
+                    }
+                }
+            }
+        }
+    }
+
     // Draw in stored order: later objects paint over earlier ones. Objects
     // may be rotated and compound: every pixel in the bounding box of all
     // corners is tested against the object's rects (pixel centers). A
@@ -484,6 +506,7 @@ pub fn layer_categories() -> Vec<&'static str> {
     }
     names.extend(GROUND_IDS.iter().map(|&(_, n)| n));
     names.extend(CAVE_GROUND_IDS.iter().map(|&(_, n)| n));
+    names.extend(crate::level::ForestGround::ALL.iter().map(|g| g.layer_name()));
     names
 }
 
@@ -663,13 +686,48 @@ mod tests {
     }
 
     #[test]
+    fn forest_layer_carries_ground_area_and_walkable() {
+        let mut c = crate::model::LevelConfig::starting();
+        c.map.width_m = 120.0;
+        c.map.height_m = 100.0;
+        c.cell_size_m = 1.0;
+        let level = crate::generator::generate(&c, 3);
+        let r = rasterize(&level, 1.0);
+        let f = level.forest.as_ref().unwrap();
+        let (areas, p) = (f.areas.as_ref().unwrap(), f.passages.as_ref().unwrap());
+        let names = layer_categories();
+        let mut kinds = std::collections::HashSet::new();
+        for (x, y, px) in r.layer.enumerate_pixels() {
+            let k = y as usize * p.width + x as usize;
+            let name = names[px.0[0] as usize];
+            if name.starts_with("forest_") {
+                let g = p.ground_at(k);
+                assert_eq!(name, g.layer_name());
+                assert_eq!(px.0[1] as u16, areas.ids[k] & 0xFF, "area id in G");
+                assert_eq!(px.0[2] == 1, g.walkable(), "walkable flag in B");
+                kinds.insert(name);
+                // map.png: the flat color of the kind.
+                assert_eq!(r.map.get_pixel(x, y).0, g.color());
+            } else {
+                assert_eq!(name, "gate", "only gate markers sit on forest ground");
+            }
+        }
+        for want in ["forest_open", "forest_woods", "forest_dense"] {
+            assert!(kinds.contains(want), "{kinds:?}");
+        }
+    }
+
+    #[test]
     fn layer_categories_indexed_by_layer_id() {
         let cats = layer_categories();
         assert_eq!(cats[0], "ground");
         assert_eq!(cats[Category::Structure.layer_id() as usize], "structure");
-        assert_eq!(cats.len(), Category::ALL.len() + 1 + GROUND_IDS.len() + CAVE_GROUND_IDS.len());
+        assert_eq!(cats.len(), Category::ALL.len() + 1 + GROUND_IDS.len() + CAVE_GROUND_IDS.len() + crate::level::ForestGround::ALL.len());
         for (id, name) in GROUND_IDS.into_iter().chain(CAVE_GROUND_IDS) {
             assert_eq!(cats[id as usize], name, "ground ids follow the categories");
+        }
+        for g in crate::level::ForestGround::ALL {
+            assert_eq!(cats[g.layer_id() as usize], g.layer_name(), "forest ids follow the cave ones");
         }
     }
 }

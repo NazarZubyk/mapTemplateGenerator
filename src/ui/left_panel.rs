@@ -1,7 +1,7 @@
 use eframe::egui;
 use rand::Rng;
 
-use crate::level::{CaveStyle, ForestCharacter, ForestStyle, IslandKind};
+use crate::level::{CaveStyle, CrossingKind, ForestCharacter, ForestStyle, IslandKind};
 use crate::model::{GateSpec, GateStyle, SpawnOn, HiddenRoomPlace, InteractiveSpot, InteractiveType, LevelConfig, MapKind, MobType, NodeAmount, ShapeSettings};
 use crate::ui::app::{ConfigStatus, MapGenApp};
 use crate::ui::widgets::param_row;
@@ -120,7 +120,15 @@ fn cave_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
 fn forest_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_forest_areas(ui, app);
     flow_arrow(ui, "areas (style + character), not separated yet");
-    ui.weak("Next: borders between the areas and crossings (step F2 in docs/forest-plan.md).");
+    node_forest_terrain(ui, app);
+    flow_arrow(ui, "hidden height field + rock ridges");
+    node_forest_water(ui, app);
+    flow_arrow(ui, "streams (spring → map edge) and ponds");
+    node_forest_woods(ui, app);
+    flow_arrow(ui, "open ground / woods / dense forest");
+    node_forest_passages(ui, app);
+    flow_arrow(ui, "one walkable forest: linked areas, gate trails");
+    ui.weak("Next: clearings & trails inside the areas (docs/forest-plan.md).");
     ui.add_space(4.0);
     ui.separator();
 }
@@ -206,6 +214,206 @@ growth; managed areas meadow, logged, plantation or camp grounds. 0 = never.";
                 })
                 .collect();
             ui.weak(chars.join(" · "));
+        }
+    });
+}
+
+/// Forest node 3: the hidden height field and the rock ridges (step F2 in
+/// docs/forest-plan.md).
+fn node_forest_terrain(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_HILLS: &str = "Hill size, meters — how far one hill is from the next. The land \
+is not drawn as such (only a soft shading), but water flows downhill over it and the woods \
+thin out up high.";
+    const TIP_RELIEF: &str = "Height between the lowest and the highest point, meters. Only \
+exported (spec.json) and used for the shading; the shapes do not change.";
+    const TIP_TILT: &str = "How much the land tilts to one side, % (random side). High: the \
+water runs across the map one way. 0%: hills only, streams go every which way.";
+    const TIP_ROCK: &str = "Share of the map, %, in rock ridges and outcrops (impassable). \
+Ridges are long, winding spines that start and end on their own; water flows around them. \
+0% = no rock.";
+    const TIP_RIDGE: &str = "Ridge size, meters. Small: short, twisted ridges close together. \
+Large: long sweeping ridges. NO EFFECT with Rock 0%.";
+    node(ui, "3 · Terrain", |ui| {
+        ui.weak("input: areas · output: hidden height field, rock ridges (forest)");
+        let s = &mut app.config.forest.terrain;
+        egui::Grid::new("forest_terrain_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Hill size", TIP_HILLS, |ui| ui.add(meters(&mut s.hill_scale_m, 400.0)));
+            param_row(ui, "Relief", TIP_RELIEF, |ui| ui.add(meters(&mut s.relief_m, 200.0)));
+            param_row(ui, "Tilt", TIP_TILT, |ui| ui.add(egui::Slider::new(&mut s.tilt_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Rock", TIP_ROCK, |ui| ui.add(egui::Slider::new(&mut s.rock_pct, 0.0..=15.0).suffix("%")));
+            param_row(ui, "Ridge size", TIP_RIDGE, |ui| ui.add(meters(&mut s.ridge_scale_m, 300.0)));
+        });
+        ui.horizontal(|ui| {
+            if ui.button("🎲 Random params").on_hover_text("Rolls every terrain setting independently inside its reasonable range. Set values only; press Generate.").clicked() {
+                let mut rng = rand::rng();
+                s.hill_scale_m = rng.random_range(40.0..=160.0);
+                s.tilt_pct = rng.random_range(0.0..=80.0);
+                s.rock_pct = rng.random_range(0.0..=8.0);
+                s.ridge_scale_m = rng.random_range(30.0..=140.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(t) = app.generated.as_ref().and_then(|l| l.forest.as_ref()).and_then(|f| f.terrain.as_ref()) {
+            ui.weak(format!("generated: rock {:.1}% of the map · relief {:.0} m", t.rock_pct, t.relief_m));
+        }
+    });
+}
+
+/// Forest node 4: streams and ponds (step F3 in docs/forest-plan.md).
+fn node_forest_water(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_STREAMS: &str = "Streams that flow off the map. Each rises at a spring, follows \
+the land downhill, gathers brooks, gets wider and leaves at the map edge — never starting or \
+ending in the open. The biggest catchments are taken; a note says if fewer fit.";
+    const TIP_TRIB: &str = "Side brooks flowing into the streams, %. 0%: single streams. 100%: \
+many branches. Brooks narrower than Deep from are wadeable.";
+    const TIP_WIDTH: &str = "Width at a spring and at the mouth of the biggest stream, meters; \
+in between by how much water has gathered.";
+    const TIP_DEEP: &str = "Streams at least this wide get deep water in the middle — only a \
+ford or a bridge crosses them, so they separate areas. Narrower ones are shallow brooks.";
+    const TIP_MEANDER: &str = "How much the streams wind beyond what the land gives, %.";
+    const TIP_POND: &str = "Hollows in the land at least this big, m², hold a pond (deep in the \
+middle when twice this big). 0 = no ponds.";
+    node(ui, "4 · Water", |ui| {
+        ui.weak("input: terrain · output: streams (spring → map edge), brooks, ponds (forest)");
+        let s = &mut app.config.forest.water;
+        egui::Grid::new("forest_water_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Streams", TIP_STREAMS, |ui| ui.add(egui::DragValue::new(&mut s.streams).range(0..=6).speed(0.05)));
+            param_row(ui, "Brooks", TIP_TRIB, |ui| ui.add(egui::Slider::new(&mut s.tributaries_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Width", TIP_WIDTH, |ui| range_m(ui, &mut s.width_min_m, &mut s.width_max_m, 0.5..=20.0));
+            param_row(ui, "Deep from", TIP_DEEP, |ui| ui.add(meters(&mut s.deep_from_m, 30.0)));
+            param_row(ui, "Meander", TIP_MEANDER, |ui| ui.add(egui::Slider::new(&mut s.meander_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Pond min", TIP_POND, |ui| ui.add(egui::DragValue::new(&mut s.pond_min_m2).range(0.0..=5000.0).speed(5.0).suffix(" m²")));
+        });
+        ui.horizontal(|ui| {
+            if ui.button("🎲 Random params").on_hover_text("Rolls every water setting independently inside its reasonable range. Set values only; press Generate.").clicked() {
+                let mut rng = rand::rng();
+                s.streams = rng.random_range(0..=3);
+                s.tributaries_pct = rng.random_range(0.0..=100.0);
+                s.width_min_m = rng.random_range(1.0..=3.0);
+                s.width_max_m = rng.random_range(3.0..=10.0);
+                s.deep_from_m = rng.random_range(2.5..=7.0);
+                s.meander_pct = rng.random_range(0.0..=100.0);
+                s.pond_min_m2 = rng.random_range(0.0..=400.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(wl) = app.generated.as_ref().and_then(|l| l.forest.as_ref()).and_then(|f| f.water.as_ref()) {
+            let main = wl.streams.iter().filter(|s| s.mouth == crate::level::StreamMouth::Edge).count();
+            let len: f32 = wl.streams.iter().map(|s| s.length_m).sum();
+            ui.weak(format!(
+                "generated: {main} streams, {} brooks ({len:.0} m, {} deep) · {} ponds",
+                wl.streams.len() - main,
+                wl.streams.iter().filter(|s| s.deep).count(),
+                wl.ponds.len()
+            ));
+        }
+    });
+}
+
+/// Forest node 5: open ground, woods and dense forest (step F4 in
+/// docs/forest-plan.md).
+fn node_forest_woods(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_BORDER: &str = "How strongly dense forest grows along the borders between areas, \
+%. This is what separates the areas: wide, ragged belts of thicket. 0%: areas flow into each \
+other (only the passages node closes unlinked borders, with a thin strip).";
+    const TIP_BORDER_W: &str = "How far the dense belt reaches into each area from a border, \
+meters (pushed in and out by noise, so it has lobes and bays).";
+    const TIP_EDGE: &str = "Dense forest along the map edge, meters. 0 = none.";
+    const TIP_PATCH: &str = "Thickets and glades inside the areas, %. 0%: even woods. 100%: \
+many dense patches (cover) and open glades. Managed areas get half, and their thickets are \
+cut back.";
+    const TIP_DENSITY: &str = "Shifts everything denser (+) or more open (−), %. The area \
+characters set the base: meadow open, dense woods thick.";
+    node(ui, "5 · Woods", |ui| {
+        ui.weak("input: areas, terrain, water · output: open ground / woods / dense forest (forest)");
+        let s = &mut app.config.forest.woods;
+        egui::Grid::new("forest_woods_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Border belts", TIP_BORDER, |ui| ui.add(egui::Slider::new(&mut s.border_pct, 0.0..=150.0).suffix("%")));
+            param_row(ui, "Belt width", TIP_BORDER_W, |ui| ui.add(meters(&mut s.border_width_m, 60.0)));
+            param_row(ui, "Edge", TIP_EDGE, |ui| ui.add(meters(&mut s.edge_width_m, 60.0)));
+            param_row(ui, "Patchiness", TIP_PATCH, |ui| ui.add(egui::Slider::new(&mut s.patchiness_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Density", TIP_DENSITY, |ui| ui.add(egui::Slider::new(&mut s.density_pct, -100.0..=100.0).suffix("%")));
+        });
+        ui.horizontal(|ui| {
+            if ui.button("🎲 Random params").on_hover_text("Rolls every woods setting independently inside its reasonable range. Set values only; press Generate.").clicked() {
+                let mut rng = rand::rng();
+                s.border_pct = rng.random_range(30.0..=110.0);
+                s.border_width_m = rng.random_range(6.0..=20.0);
+                s.edge_width_m = rng.random_range(4.0..=16.0);
+                s.patchiness_pct = rng.random_range(0.0..=100.0);
+                s.density_pct = rng.random_range(-50.0..=50.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(wd) = app.generated.as_ref().and_then(|l| l.forest.as_ref()).and_then(|f| f.woods.as_ref()) {
+            ui.weak(format!("generated: open {:.0}% · woods {:.0}% · dense {:.0}%", wd.open_pct, wd.woods_pct, wd.dense_pct));
+        }
+    });
+}
+
+/// Forest node 6: which areas link and how; the gates (step F5 in
+/// docs/forest-plan.md).
+fn node_forest_passages(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_LAB: &str = "How the areas are linked. 0%: one route, area after area (a chain). \
+35%: a main route with side areas and a loop or two. 100%: a mesh with many loops. Unlinked \
+borders are closed with dense forest; linked ones open where the barrier is weakest.";
+    const TIP_TRAIL: &str = "Width of a way cut through a barrier (forest trail, rock pass, ford, \
+bridge), meters. NO EFFECT where the woods are already open.";
+    const TIP_BRIDGE: &str = "Chance, %, that a way over deep water is a bridge; else a ford.";
+    const TIP_SEAL: &str = "Width of the dense strip that closes an unlinked border where the \
+woods were open, meters.";
+    const TIP_GATES: &str = "Gate directions from the map center (0° east, 90° north). Each gate \
+is a trail from the map edge into the area there (slid along the edge off water and rock). The \
+first gate is where the area graph starts (and, with Managed at gate, the managed side).";
+    node(ui, "6 · Passages", |ui| {
+        ui.weak("input: woods · output: linked areas, crossings (open / trail / pass / ford / bridge), gate trails (forest)");
+        let s = &mut app.config.forest.passages;
+        egui::Grid::new("forest_passages_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Labyrinth", TIP_LAB, |ui| ui.add(egui::Slider::new(&mut s.labyrinth_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Trail width", TIP_TRAIL, |ui| ui.add(meters(&mut s.trail_width_m, 15.0)));
+            param_row(ui, "Bridges", TIP_BRIDGE, |ui| ui.add(egui::Slider::new(&mut s.bridge_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Seal width", TIP_SEAL, |ui| ui.add(meters(&mut s.seal_width_m, 20.0)));
+        });
+        let mut remove = None;
+        egui::Grid::new("forest_gates_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            remove = gate_list_rows(ui, &mut app.config.gates.gates, TIP_GATES, false);
+        });
+        if let Some(i) = remove {
+            app.config.gates.gates.remove(i);
+        }
+        ui.horizontal(|ui| gate_list_buttons(ui, &mut app.config.gates.gates));
+        let s = &mut app.config.forest.passages;
+        ui.horizontal(|ui| {
+            if ui.button("🎲 Random params").on_hover_text("Rolls every passage setting independently inside its reasonable range (gates stay). Set values only; press Generate.").clicked() {
+                let mut rng = rand::rng();
+                s.labyrinth_pct = rng.random_range(0.0..=100.0);
+                s.trail_width_m = rng.random_range(2.5..=6.0);
+                s.bridge_pct = rng.random_range(0.0..=100.0);
+                s.seal_width_m = rng.random_range(2.0..=8.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(l) = app.generated.as_ref().and_then(|l| l.forest.as_ref()).and_then(|f| f.passages.as_ref()) {
+            let linked = l.links.iter().filter(|x| x.linked).count();
+            ui.weak(format!(
+                "generated: {linked} of {} borders linked · main route {} areas · {} loops · {} dead-end areas · walkable {:.0}% · {} gates",
+                l.links.len(),
+                l.main_route_areas,
+                l.loops,
+                l.dead_end_areas,
+                l.walkable_pct,
+                l.gates.len()
+            ));
+            let kinds: Vec<String> = CrossingKind::ALL
+                .into_iter()
+                .filter_map(|k| {
+                    let n = l.links.iter().filter(|x| x.crossing == Some(k)).count();
+                    (n > 0).then(|| format!("{} ×{n}", k.label()))
+                })
+                .collect();
+            if !kinds.is_empty() {
+                ui.weak(format!("crossings: {}", kinds.join(" · ")));
+            }
         }
     });
 }
