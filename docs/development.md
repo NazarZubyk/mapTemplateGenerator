@@ -123,7 +123,8 @@ pass, ford, bridge; gate trails; the gate list lives here) → 7
 **Clearings & trails** (glades: organic in wild, cut in managed areas;
 trails linking gates, crossings and glades: winding footpaths / cart
 tracks) → 8 **Trees** (tree trunks as round solid objects: density,
-spacing, trunk size, groves, lone trees, plantation rows). Next: cover
+spacing, trunk size, groves, irregularity / clumps, lone trees, plantation
+rows). Next: cover
 (deadfall, boulders). The town chain is `generator::town_chain`.
 
 **Cave** has its own chain (complete, see [cave-plan.md](cave-plan.md)):

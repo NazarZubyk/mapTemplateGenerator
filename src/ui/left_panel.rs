@@ -498,10 +498,15 @@ growth ×1.8, dense woods ×0.7. Plantations: one size per area.";
 0%: spread evenly over the forest floor. 100%: tight groves and clear gaps.";
     const TIP_GROVE_SIZE: &str = "Grove size, meters (one grove to the next). NO EFFECT at \
 Groves 0%.";
+    const TIP_IRR: &str = "How much the trees' own room differs, %. Trees are dropped at \
+random spots (first a scatter over the whole floor, then the rest); the only rule is that no \
+other trunk stands inside a tree's own radius. 0%: every tree the same radius. 100%: radii \
+differ a lot (some trees crowd, some stand alone). Plantation rows wobble and miss a few trees.";
     const TIP_LONE: &str = "Lone trees on open ground (meadows, camp grounds) and in glades, % \
 of the natural amount. 0% = keep them clear.";
     const TIP_ROWS: &str = "Plantations plant their trees in rows (a grid turned to a random \
-angle per area). Off: like any other woods. NO EFFECT with no plantation area.";
+angle per area) — a visible grid. Off (default): placed at random like any woods, but all \
+about one size (planted at one time). NO EFFECT with no plantation area.";
     const TIP_CLEAR: &str = "Free room between a trunk and a trail, meters. Gates keep 6 m \
 clear. Every trunk also keeps one free cell around it, so no passage gets plugged.";
     const TIP_COLOR: &str = "Trunk color on the map image, the preview and the legend.";
@@ -514,6 +519,7 @@ clear. Every trunk also keeps one free cell around it, so no passage gets plugge
             param_row(ui, "Trunk size", TIP_TRUNK, |ui| range_m(ui, &mut s.trunk_min_m, &mut s.trunk_max_m, 0.1..=5.0));
             param_row(ui, "Groves", TIP_GROVES, |ui| ui.add(egui::Slider::new(&mut s.groves_pct, 0.0..=100.0).suffix("%")));
             param_row(ui, "Grove size", TIP_GROVE_SIZE, |ui| ui.add(meters(&mut s.grove_size_m, 100.0)));
+            param_row(ui, "Irregularity", TIP_IRR, |ui| ui.add(egui::Slider::new(&mut s.irregularity_pct, 0.0..=100.0).suffix("%")));
             param_row(ui, "Lone trees", TIP_LONE, |ui| ui.add(egui::Slider::new(&mut s.lone_trees_pct, 0.0..=300.0).suffix("%")));
             param_row(ui, "Plantation rows", TIP_ROWS, |ui| ui.checkbox(&mut s.plantation_rows, ""));
             param_row(ui, "Trail clearance", TIP_CLEAR, |ui| ui.add(meters(&mut s.trail_clear_m, 10.0)));
@@ -528,8 +534,9 @@ clear. Every trunk also keeps one free cell around it, so no passage gets plugge
                 s.trunk_max_m = rng.random_range(0.6..=1.6);
                 s.groves_pct = rng.random_range(0.0..=100.0);
                 s.grove_size_m = rng.random_range(8.0..=40.0);
+                s.irregularity_pct = rng.random_range(30.0..=100.0);
                 s.lone_trees_pct = rng.random_range(0.0..=200.0);
-                s.plantation_rows = rng.random_bool(0.8);
+                s.plantation_rows = rng.random_bool(0.2);
                 s.trail_clear_m = rng.random_range(0.5..=2.5);
             }
             ui.weak("Changes apply on ⚙ Generate");

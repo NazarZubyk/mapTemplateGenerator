@@ -626,9 +626,12 @@ pub struct ForestTreeSettings {
     pub groves_pct: f32,
     /// Grove size, meters.
     pub grove_size_m: f32,
+    /// How irregular the placement is, %: 0 = an even spread, 100 = uneven
+    /// gaps and small family clumps (plantation rows wobble, some missing).
+    pub irregularity_pct: f32,
     /// Lone trees on open ground and in glades, % of the natural amount.
     pub lone_trees_pct: f32,
-    /// Plantations plant in rows.
+    /// Plantations plant in rows (off: at random, but one size).
     pub plantation_rows: bool,
     /// Free room around trails and gates, meters.
     pub trail_clear_m: f32,
@@ -644,8 +647,9 @@ impl Default for ForestTreeSettings {
             trunk_max_m: 1.2,
             groves_pct: 40.0,
             grove_size_m: 18.0,
+            irregularity_pct: 70.0,
             lone_trees_pct: 100.0,
-            plantation_rows: true,
+            plantation_rows: false,
             trail_clear_m: 1.0,
             color: [104, 62, 30],
         }

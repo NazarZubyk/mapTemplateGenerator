@@ -181,19 +181,31 @@ holds (tests + a 30-config sweep on the final ground). spec.json
 into, so a tree is its **trunk**: a round `Category::Structure` object
 ("tree trunk", `color`). Trunks stand on open ground and forest floor only
 (never trails, water, rock, thicket).
-- Dart throwing per area (14 darts per possible tree) with a minimum
-  center distance: `spacing_m` / √(`density_pct`/100) × the character's
-  spacing (meadow 1.6, open woods 1.3, dense woods 0.75, old growth 1.7,
-  logged 2.0, camp grounds 1.8) × (1.15 − 0.35 × the thickets density,
-  0..1 between open and thicket).
-- Chance per dart: the character's (meadow 0.25 … dense woods 1.0) × a
-  grove factor — fbm at `grove_size_m`, `groves_pct` blends from even to
-  groves with clear gaps. Open ground and glades: lone trees only
-  (6% × `lone_trees_pct`, 2.5× the spacing).
-- Trunk size `trunk_min_m..trunk_max_m` (most thin: t^1.5), × the
-  character (old growth 1.8, dense woods 0.7). Plantations
-  (`plantation_rows`): one size, on a grid turned to a random angle per
-  area.
+- Forest floor: **plain random placement in two passes** (an even
+  minimum-distance spread looked like a net, fixed gaps packed narrow
+  strips into lines, and growing trees next to other trees still felt
+  patterned). Target = forest floor / (`spacing_m` / √(`density_pct`/100)
+  × the character's spacing)² × the character's chance. Pass 1: 40% of
+  the target at uniformly random spots. Pass 2: the rest at random spots,
+  accepted by the grove factor (fbm at `grove_size_m`, `groves_pct`) ×
+  (0.6 + 0.4 × thickets density). Up to 30 tries per tree. The only rule:
+  every trunk has its own radius (0.3 × spacing × (1 ± 0.8 ×
+  irregularity × random), at least trunk + one cell) and two trunks stand
+  at least their two radii apart. A target count, never "as many as fit",
+  so the ground is not packed.
+- Narrow strips stay sparse: a tree's chance × smoothstep(0.3, 0.75,
+  plantable share within one spacing around it).
+- Character: spacing × (meadow 1.6, open woods 1.3, dense woods 0.75, old
+  growth 1.7, logged 2.0, camp grounds 1.8), chance (meadow 0.25 … dense
+  woods 1.0), trunk size × (old growth 1.8, dense woods 0.7).
+- Open ground and glades: lone trees only, darts (6% × `lone_trees_pct`,
+  2.5× the spacing).
+- Trunk size `trunk_min_m..trunk_max_m` (most thin: t^1.5). Plantations:
+  one size per area ± 10% (planted at one time), placed at random like the
+  rest. Rows are opt-in (`plantation_rows`, default off — a grid read as
+  the "too perfect" pattern): a grid turned to a random angle per area,
+  wobbling up to 0.2 × irregularity × the row step, 0.15 × irregularity of
+  the trees missing.
 - Room: `trail_clear_m` from trails, 6 m from gates, and every trunk keeps
   a one-cell ring of free walkable ground — so the walkable ground minus
   the trunks stays one piece (tests + a 16-config sweep up to 2 000+

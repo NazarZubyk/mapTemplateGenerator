@@ -5,16 +5,29 @@
 //! Trunks grow on the walkable ground (open ground, forest floor), never on
 //! trails, water, rock or in thickets (those are already blocked):
 //!
-//! - **How close** — dart throwing with a minimum distance between trunk
-//!   centers: `spacing_m` / √(`density_pct` / 100), scaled by the area
-//!   character (dense woods closer, old growth and logged farther) and by
-//!   the thickets node's density (denser ground, closer trees).
+//! - **How many** — about one tree per (`spacing_m` / √(`density_pct` /
+//!   100))² of forest floor, scaled by the area character (dense woods
+//!   closer, old growth and logged farther) and by the thickets node's
+//!   density (denser ground, more trees).
 //! - **Where** — a grove noise (`grove_size_m`) gathers the trees into
 //!   groves with open gaps between (`groves_pct`); open ground and glades
 //!   only get lone trees (`lone_trees_pct`).
 //! - **How big** — `trunk_min_m..trunk_max_m`, most of them thin; old
-//!   growth ×1.8, dense woods ×0.7. Plantations: one size, in rows
-//!   (`plantation_rows`), on a grid turned to a random angle per area.
+//!   growth ×1.8, dense woods ×0.7. Plantations: about one size (± 10%,
+//!   planted at one time), placed at random like the rest — or, opt-in,
+//!   in rows (`plantation_rows`) on a grid turned to a random angle.
+//! - **Forest floor: plain random placement, two passes.** First about
+//!   40% of the trees at uniformly random spots; then the rest, again at
+//!   random spots (more likely in groves and on denser ground), until the
+//!   target count. The only rule: no other trunk inside a tree's own
+//!   radius (two trunks stand at least their two radii apart). No tree is
+//!   placed relative to another, and the ground is never packed full (a
+//!   target count, not "as many as fit"), so no lines or grids appear.
+//! - **Irregularity** (`irregularity_pct`) — how much the trees' own radii
+//!   differ (± 80% at 100%); 0% = all the same. Plantation rows wobble and
+//!   miss a few trees.
+//! - **Narrow strips** — a tree's chance falls where little plantable
+//!   ground lies around it, so a thin strip gets a few scattered trees.
 //! - **Room** — no trunk within `trail_clear_m` of a trail, 6 m of a gate;
 //!   every trunk keeps a one-cell ring of free walkable ground, so the
 //!   walkable ground stays one piece and no narrow passage is plugged.
@@ -42,6 +55,21 @@ const DARTS: f32 = 14.0;
 /// Lone trees: chance per dart at 100%, and their spacing × the usual.
 const LONE_CHANCE: f32 = 0.06;
 const LONE_SPACING: f32 = 2.5;
+/// Forest floor: the share of trees in the first (uniform) pass, the
+/// tries per tree, and a tree's own radius (× the spacing) with its random
+/// swing at 100% irregularity (± share).
+const FIRST_SHARE: f32 = 0.4;
+const TRIES_PER_TREE: usize = 30;
+const RADIUS_SHARE: f32 = 0.3;
+const RADIUS_SWING: f32 = 0.8;
+/// Plantable share around a spot (within one spacing) below which no tree
+/// grows, and above which it grows freely: narrow strips stay sparse.
+const STRIP_LO: f32 = 0.3;
+const STRIP_HI: f32 = 0.75;
+/// Plantation rows at 100% irregularity: wobble (× the row step) and the
+/// share of missing trees.
+const ROW_WOBBLE: f32 = 0.2;
+const ROW_MISSING: f32 = 0.15;
 /// Thickets-node density where ordinary woods start and thicket begins.
 const D_OPEN: f32 = 0.36;
 const D_THICKET: f32 = 0.62;
@@ -84,6 +112,7 @@ pub fn build(
     let (tmin, tmax) = (s.trunk_min_m.min(s.trunk_max_m).max(cell * 0.5), s.trunk_max_m.max(s.trunk_min_m).max(cell * 0.5));
     let groves = (s.groves_pct / 100.0).clamp(0.0, 1.0);
     let lone = (s.lone_trees_pct / 100.0).max(0.0);
+    let irr = (s.irregularity_pct / 100.0).clamp(0.0, 1.0);
     let xy_m = |c: usize| [((c % w) as f32 + 0.5) * cell, ((c / w) as f32 + 0.5) * cell];
 
     let (to_trail, _) = distance_field(w, h, cell, |c| matches!(ground[c], ForestGround::Trail | ForestGround::Bridge), s.trail_clear_m.max(0.0) + cell * 2.0);
@@ -92,19 +121,42 @@ pub fn build(
     let glade_r: Vec<(f32, [f32; 2])> = clearings.glades.iter().map(|g| ((g.area_m2 / std::f32::consts::PI).sqrt(), g.center_m)).collect();
     let in_glade = |p: [f32; 2]| glade_r.iter().any(|&(r, c)| (c[0] - p[0]).hypot(c[1] - p[1]) < r);
 
-    // Trunk centers in a coarse grid of buckets, for the spacing check.
-    let bucket = (spacing * 2.5).max(cell);
+    // How much plantable ground lies around each cell (integral image), so
+    // narrow strips get few trees instead of a packed line.
+    let mut sum = vec![0u32; (w + 1) * (h + 1)];
+    for y in 0..h {
+        for x in 0..w {
+            let v = plantable(y * w + x) as u32;
+            sum[(y + 1) * (w + 1) + x + 1] = v + sum[y * (w + 1) + x + 1] + sum[(y + 1) * (w + 1) + x] - sum[y * (w + 1) + x];
+        }
+    }
+    let room_around = |c: usize, r_m: f32| {
+        let r = (r_m / cell).ceil().max(1.0) as usize;
+        let (x, y) = (c % w, c / w);
+        let (x0, y0, x1, y1) = (x.saturating_sub(r), y.saturating_sub(r), (x + r + 1).min(w), (y + r + 1).min(h));
+        let got = sum[y1 * (w + 1) + x1] + sum[y0 * (w + 1) + x0] - sum[y0 * (w + 1) + x1] - sum[y1 * (w + 1) + x0];
+        // Off-map counts as no room.
+        got as f32 / ((2 * r + 1) * (2 * r + 1)) as f32
+    };
+
+    // Trunk centers with their own room (radius), in a coarse grid of
+    // buckets for the distance check.
+    let bucket = (spacing * 2.0).max(cell * 4.0);
     let (bw, bh) = (((w as f32 * cell) / bucket).ceil() as usize + 1, ((h as f32 * cell) / bucket).ceil() as usize + 1);
-    let mut buckets: Vec<Vec<[f32; 2]>> = vec![Vec::new(); bw * bh];
+    let mut buckets: Vec<Vec<[f32; 3]>> = vec![Vec::new(); bw * bh];
+    let mut max_room = 0.0f32;
     let mut solid = vec![false; n];
 
-    // Tries to put a trunk of diameter `d` at `p` with `gap` (center to
-    // center) to the others. Returns whether it stood.
-    let mut place = |p: [f32; 2], d: f32, gap: f32, solid: &mut Vec<bool>, buckets: &mut Vec<Vec<[f32; 2]>>| -> bool {
+    // Tries to put a trunk of diameter `d` at `p` that wants `room` (a
+    // radius) around it: two trunks stand at least their two rooms apart,
+    // so every tree has its own distance to its neighbors. Returns whether
+    // it stood.
+    let mut place = |p: [f32; 2], d: f32, room: f32, solid: &mut Vec<bool>, buckets: &mut Vec<Vec<[f32; 3]>>| -> bool {
         let (bx, by) = ((p[0] / bucket) as usize, (p[1] / bucket) as usize);
-        for y in by.saturating_sub(1)..(by + 2).min(bh) {
-            for x in bx.saturating_sub(1)..(bx + 2).min(bw) {
-                if buckets[y * bw + x].iter().any(|q| (q[0] - p[0]).hypot(q[1] - p[1]) < gap) {
+        let reach = ((room + max_room) / bucket).ceil() as usize;
+        for y in by.saturating_sub(reach)..(by + reach + 1).min(bh) {
+            for x in bx.saturating_sub(reach)..(bx + reach + 1).min(bw) {
+                if buckets[y * bw + x].iter().any(|q| (q[0] - p[0]).hypot(q[1] - p[1]) < room + q[2]) {
                     return false;
                 }
             }
@@ -147,7 +199,8 @@ pub fn build(
         for &c in &disc {
             solid[c] = true;
         }
-        buckets[by.min(bh - 1) * bw + bx.min(bw - 1)].push(p);
+        buckets[by.min(bh - 1) * bw + bx.min(bw - 1)].push([p[0], p[1], room]);
+        max_room = max_room.max(room);
         objects.push(PlacedObject {
             category: Category::Structure,
             type_name: TRUNK_NAME.to_owned(),
@@ -161,6 +214,10 @@ pub fn build(
             round: true,
         });
         true
+    };
+    let grove_at = |p: [f32; 2]| {
+        let g = grove_noise.fbm(p[0] / s.grove_size_m.max(2.0), p[1] / s.grove_size_m.max(2.0), 3);
+        (1.0 - groves) + groves * smooth(0.40, 0.58, g) * 1.6
     };
     let size = |rng: &mut ChaCha8Rng, mult: f32| (tmin + (tmax - tmin) * rng.random::<f32>().powf(1.5)) * mult;
 
@@ -186,14 +243,20 @@ pub fn build(
                 if ((q[0] / cell) as usize, (q[1] / cell) as usize) != (c % w, c / w) || near_gate(q) || in_glade(q) {
                     continue;
                 }
-                if ground[c] == ForestGround::Floor && place(q, d, step * 0.9, &mut solid, &mut buckets) {
+                // Nobody plants perfectly: a wobble, and some trees missing.
+                let wobble = [rng.random_range(-1.0..1.0f32) * irr * ROW_WOBBLE * step, rng.random_range(-1.0..1.0f32) * irr * ROW_WOBBLE * step];
+                if rng.random::<f32>() < irr * ROW_MISSING {
+                    continue;
+                }
+                let q = [q[0] + wobble[0], q[1] + wobble[1]];
+                if ground[c] == ForestGround::Floor && place(q, d, step * (0.9 - irr * ROW_WOBBLE * 2.0) / 2.0, &mut solid, &mut buckets) {
                     per_area[ai] += 1;
                     in_rows += 1;
                 }
             }
             continue;
         }
-        // Everything else: darts.
+        // Lone trees on open ground and in glades: darts with a wide room.
         let area_m2 = cells.len() as f32 * cell * cell;
         let darts = (area_m2 / (spacing * sp_mult).powi(2) * DARTS) as usize;
         for _ in 0..darts {
@@ -203,19 +266,67 @@ pub fn build(
             let p = [p0[0] + jitter[0], p0[1] + jitter[1]];
             let roll: f32 = rng.random();
             let d = size(rng, size_mult);
-            if near_gate(p) {
+            let lone_spot = ground[c] == ForestGround::Open || in_glade(p);
+            if near_gate(p) || !lone_spot {
                 continue;
             }
-            let dens = ((thickets.density[c] - D_OPEN) / (D_THICKET - D_OPEN)).clamp(0.0, 1.0);
-            let (want, gap) = if ground[c] == ForestGround::Open || in_glade(p) {
-                (LONE_CHANCE * lone * chance.max(0.3), spacing * sp_mult * LONE_SPACING)
-            } else {
-                let g = grove_noise.fbm(p[0] / s.grove_size_m.max(2.0), p[1] / s.grove_size_m.max(2.0), 3);
-                let grove = (1.0 - groves) + groves * smooth(0.40, 0.58, g) * 1.6;
-                (chance * grove, spacing * sp_mult * (1.15 - 0.35 * dens))
-            };
-            if roll < want && place(p, d, gap.max(d + cell * 2.0), &mut solid, &mut buckets) {
+            let want = LONE_CHANCE * lone * chance.max(0.3);
+            let gap = spacing * sp_mult * LONE_SPACING;
+            // Its own room: random like every tree's.
+            let room = (gap / 2.0 * (1.0 - 0.55 * irr * rng.random::<f32>())).max(d / 2.0 + cell);
+            let thin = room_around(c, spacing * sp_mult);
+            if roll < want * smooth(STRIP_LO, STRIP_HI, thin) && place(p, d, room, &mut solid, &mut buckets) {
                 per_area[ai] += 1;
+            }
+        }
+        // The forest floor: plain random placement, in two passes.
+        //   1. First trees: random spots all over the floor; the only rule
+        //      is that no other tree stands inside a tree's own radius.
+        //   2. The rest: random spots again (more likely in groves and on
+        //      denser ground), same rule, until the target count.
+        // No tree is placed relative to another one, so there is no pattern.
+        let floor: Vec<usize> = cells.iter().copied().filter(|&c| ground[c] == ForestGround::Floor).collect();
+        if floor.is_empty() {
+            continue;
+        }
+        let floor_m2 = floor.len() as f32 * cell * cell;
+        let target = (floor_m2 / (spacing * sp_mult).powi(2) * chance) as usize;
+        let first = (target as f32 * FIRST_SHARE) as usize;
+        let mut planted = 0usize;
+        let mut tries = 0usize;
+        // A plantation is planted at one time: its trees are about the same
+        // size (one size ± 10%), placed at random like the rest.
+        let even_age = (area.character == ForestCharacter::Plantation).then(|| size(rng, size_mult));
+        while planted < target && tries < target * TRIES_PER_TREE {
+            tries += 1;
+            let c = floor[rng.random_range(0..floor.len())];
+            let p0 = xy_m(c);
+            let p = [p0[0] + rng.random_range(-0.5..0.5f32) * cell, p0[1] + rng.random_range(-0.5..0.5f32) * cell];
+            let d = size(rng, size_mult);
+            let d = even_age.map_or(d, |e| e * (0.9 + 0.2 * (d - tmin * size_mult) / ((tmax - tmin) * size_mult).max(1e-6)));
+            let radius_roll: f32 = rng.random();
+            let keep_roll: f32 = rng.random();
+            let strip_roll: f32 = rng.random();
+            if near_gate(p) || in_glade(p) {
+                continue;
+            }
+            // Pass 2 follows the groves and the denser ground; pass 1 does not.
+            if planted >= first {
+                let dens = ((thickets.density[c] - D_OPEN) / (D_THICKET - D_OPEN)).clamp(0.0, 1.0);
+                if keep_roll > grove_at(p) / 1.6 * (0.6 + 0.4 * dens) {
+                    continue;
+                }
+            }
+            // Narrow strips stay sparse.
+            if strip_roll > smooth(STRIP_LO, STRIP_HI, room_around(c, spacing * sp_mult)) {
+                continue;
+            }
+            // Its own radius: random, wider spread at higher irregularity.
+            let base = spacing * sp_mult * RADIUS_SHARE;
+            let radius = (base * (1.0 + irr * (radius_roll * 2.0 - 1.0) * RADIUS_SWING)).max(d / 2.0 + cell);
+            if place(p, d, radius, &mut solid, &mut buckets) {
+                per_area[ai] += 1;
+                planted += 1;
             }
         }
     }
