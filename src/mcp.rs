@@ -739,15 +739,18 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
             "streams": f.water.as_ref().map(|w| w.streams.len()),
             "deep_streams": f.water.as_ref().map(|w| w.streams.iter().filter(|s| s.deep).count()),
             "ponds": f.water.as_ref().map(|w| w.ponds.len()),
-            "open_pct": f.woods.as_ref().map(|w| w.open_pct),
-            "woods_pct": f.woods.as_ref().map(|w| w.woods_pct),
-            "dense_pct": f.woods.as_ref().map(|w| w.dense_pct),
+            "open_pct": f.thickets.as_ref().map(|w| w.open_pct),
+            "floor_pct": f.thickets.as_ref().map(|w| w.floor_pct),
+            "thicket_pct": f.thickets.as_ref().map(|w| w.thicket_pct),
         })),
         "forest_clearings": level.forest.as_ref().and_then(|f| f.clearings.as_ref()).map(|l| json!({
             "glades": l.glades.len(),
             "trails": l.trails.len(),
             "trail_m": l.trails.iter().map(|t| t.length_m).sum::<f32>(),
             "walkable_pct": l.walkable_pct,
+        })),
+        "forest_trees": level.forest.as_ref().and_then(|f| f.trees.as_ref()).map(|t| json!({
+            "trunks": t.total, "in_rows": t.in_rows, "cover_pct": t.cover_pct,
         })),
         "forest_passages": level.forest.as_ref().and_then(|f| f.passages.as_ref()).map(|l| json!({
             "links": l.links.iter().filter(|x| x.linked).count(),

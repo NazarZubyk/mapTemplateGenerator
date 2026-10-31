@@ -115,14 +115,16 @@ land first: 1 Template → 2 **Areas** (the gameplay skeleton: large areas by a
 noise-warped weighted Voronoi, each wild or managed and with a character)
 → 3 **Terrain** (hidden height field, rock ridges from ridged noise) → 4
 **Water** (priority-flood drainage: streams from springs off the map edge,
-brooks joining, ponds in hollows; wide streams deep) → 5 **Woods** (open /
-woods / dense forest from the character, ragged belts along area borders
+brooks joining, ponds in hollows; wide streams deep) → 5 **Thickets** (open
+ground / forest floor / thicket from the character, ragged belts along area borders
 and the map edge, patches, moisture) → 6 **Passages** (labyrinth slider:
 unlinked borders sealed, linked ones opened at the weakest spot — trail,
 pass, ford, bridge; gate trails; the gate list lives here) → 7
 **Clearings & trails** (glades: organic in wild, cut in managed areas;
 trails linking gates, crossings and glades: winding footpaths / cart
-tracks). Next: cover (deadfall, boulders). The town chain is `generator::town_chain`.
+tracks) → 8 **Trees** (tree trunks as round solid objects: density,
+spacing, trunk size, groves, lone trees, plantation rows). Next: cover
+(deadfall, boulders). The town chain is `generator::town_chain`.
 
 **Cave** has its own chain (complete, see [cave-plan.md](cave-plan.md)):
 1 Template → 2 **Style** (natural % + mixing → natural / hand-made zones;

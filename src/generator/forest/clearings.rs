@@ -7,13 +7,14 @@
 //!    other and from the area border as the area allows (best of
 //!    `TRIES` spots). Wild: an organic blob (radius pushed in and out by
 //!    noise). Managed: a cut glade — a rotated rounded rectangle. A glade
-//!    turns woods and inner thickets into open ground; water and rock stay.
+//!    turns forest floor and inner thickets into open ground; water and
+//!    rock stay.
 //! 2. **Trail ends** per area: its glades, the points where its links cross
 //!    into the neighbors, its gates.
 //! 3. **Trail tree** per area: nearest-first spanning tree over the ends,
 //!    plus loops (`loops_pct`) between near ends.
 //! 4. **Trails** — the cheapest way inside the area (open ground cheap,
-//!    woods a bit dearer, shallow water dear, inner thickets dearest, rock,
+//!    forest floor a bit dearer, shallow water dear, inner thickets dearest, rock,
 //!    deep water and sealed cells never) with a noise wiggle (`wiggle_pct`;
 //!    cart tracks a quarter of it), smoothed, drawn `footpath_m` wide in
 //!    wild areas and `track_m` in managed ones. Shallow water stays (a
@@ -42,7 +43,7 @@ const CAMP_SCALE: f32 = 1.6;
 /// Step costs.
 const COST_OPEN: u32 = 10;
 const COST_TRAIL: u32 = 7;
-const COST_WOODS: u32 = 14;
+const COST_FLOOR: u32 = 14;
 const COST_SHALLOW: u32 = 45;
 const COST_DENSE: u32 = 120;
 /// Wiggle: extra cost at 100%, and its feature size, meters.
@@ -226,9 +227,9 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, pas
                 let base = match ground[c] {
                     ForestGround::Open => COST_OPEN,
                     ForestGround::Trail | ForestGround::Bridge => COST_TRAIL,
-                    ForestGround::Woods => COST_WOODS,
+                    ForestGround::Floor => COST_FLOOR,
                     ForestGround::Shallow => COST_SHALLOW,
-                    ForestGround::Dense => COST_DENSE,
+                    ForestGround::Thicket => COST_DENSE,
                     ForestGround::Rock | ForestGround::Deep => return None,
                 };
                 let p = xy_m(c);
@@ -313,7 +314,7 @@ mod tests {
     use super::*;
     use rand_chacha::rand_core::SeedableRng;
 
-    use crate::generator::forest::{areas, passages, terrain, water, woods};
+    use crate::generator::forest::{areas, passages, terrain, thickets, water};
     use crate::generator::grid;
     use crate::level::CellMask;
     use crate::model::MapKind;
@@ -327,7 +328,7 @@ mod tests {
         let a = areas::build(&c, &mut rng).layout;
         let t = terrain::build(&c, &mut rng, &a);
         let wa = water::build(&c, &mut rng, &t).layout;
-        let wo = woods::build(&c, &mut rng, &a, &t, &wa);
+        let wo = thickets::build(&c, &mut rng, &a, &t, &wa);
         let p = passages::build(&c, &mut rng, &a, &wo).layout;
         let cl = build(&c, &mut rng, &a, &p);
         (a, p, cl)

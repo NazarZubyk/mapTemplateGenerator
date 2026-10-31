@@ -1,20 +1,21 @@
-//! Forest node 5, woods (step F4 in docs/forest-plan.md): every cell is
-//! open ground, woods (walkable) or dense forest (impassable), from one
-//! density value per cell:
+//! Forest node 5, thickets (step F4 in docs/forest-plan.md): every cell is
+//! open ground, forest floor (both walkable; the trees node puts trunks on
+//! them) or thicket (brush and young trees too dense to pass), from one
+//! density value per cell, kept for the trees node:
 //!
 //! - the area's **character** (meadow thin, dense woods thick, ...) plus
 //!   `density_pct`;
-//! - **patches** — noise thickets and glades inside the areas
+//! - **patches** — thickets and glades inside the areas
 //!   (`patchiness_pct`); managed areas get half, and their thickets are
 //!   cut back (only the border belts stay dense);
-//! - **border belts** — dense forest grows in from the borders between
+//! - **border belts** — thicket grows in from the borders between
 //!   areas (`border_pct`, `border_width_m`), its edge pushed in and out by
 //!   noise, so the belts are wide ragged masses with lobes and bays, not
 //!   bands;
-//! - the **map edge** — a dense belt `edge_width_m` deep;
+//! - the **map edge** — a thicket belt `edge_width_m` deep;
 //! - **moisture** — denser along water; **height** — thinner up high.
 //!
-//! Water and rock keep their own ground. Dense specks become woods.
+//! Water and rock keep their own ground. Thicket specks become forest floor.
 
 use rand::Rng;
 use rand_chacha::ChaCha8Rng;
@@ -22,13 +23,13 @@ use rand_chacha::ChaCha8Rng;
 use crate::generator::forest::distance_field;
 use crate::generator::grid;
 use crate::generator::noise::NoiseField;
-use crate::level::{AreaLayout, CellMask, ForestCharacter, ForestGround, ForestStyle, TerrainLayout, WaterLayout, WoodsLayout};
+use crate::level::{AreaLayout, CellMask, ForestCharacter, ForestGround, ForestStyle, TerrainLayout, WaterLayout, ThicketLayout};
 use crate::model::LevelConfig;
 
-/// Density cut: dense forest at and above, open ground below `OPEN_BELOW`.
+/// Density cut: thicket at and above, open ground below `OPEN_BELOW`.
 pub const DENSE_FROM: f32 = 0.62;
 const OPEN_BELOW: f32 = 0.36;
-/// Dense patches smaller than this, m², become woods.
+/// Thicket patches smaller than this, m², become forest floor.
 const MIN_DENSE_M2: f32 = 10.0;
 const PATCH_SCALE_M: f32 = 22.0;
 const FINE_SCALE_M: f32 = 6.0;
@@ -48,8 +49,8 @@ pub fn base_density(c: ForestCharacter) -> f32 {
     }
 }
 
-pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, terrain: &TerrainLayout, water: &WaterLayout) -> WoodsLayout {
-    let s = &config.forest.woods;
+pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, terrain: &TerrainLayout, water: &WaterLayout) -> ThicketLayout {
+    let s = &config.forest.thickets;
     let (w, h, cell) = (areas.width, areas.height, areas.cell_size_m);
     let n = w * h;
     let patch = NoiseField::new(rng.random::<u64>());
@@ -64,7 +65,8 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, ter
     let border = (s.border_pct / 100.0).clamp(0.0, 1.5);
     let shift = s.density_pct / 100.0 * 0.3;
 
-    let mut class = vec![ForestGround::Woods; n];
+    let mut class = vec![ForestGround::Floor; n];
+    let mut density = vec![0.0f32; n];
     for c in 0..n {
         let (x, y) = (((c % w) as f32 + 0.5) * cell, ((c / w) as f32 + 0.5) * cell);
         let area = areas.area_at(c);
@@ -84,16 +86,17 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, ter
             d = d.min(DENSE_FROM - 0.02);
         }
         d += belt + edge;
+        density[c] = d;
         class[c] = if d >= DENSE_FROM {
-            ForestGround::Dense
+            ForestGround::Thicket
         } else if d < OPEN_BELOW {
             ForestGround::Open
         } else {
-            ForestGround::Woods
+            ForestGround::Floor
         };
     }
-    // Dense specks → woods.
-    let mut dense = CellMask { width: w, height: h, cell_size_m: cell, cells: class.iter().map(|&g| g == ForestGround::Dense).collect() };
+    // Thicket specks → forest floor.
+    let mut dense = CellMask { width: w, height: h, cell_size_m: cell, cells: class.iter().map(|&g| g == ForestGround::Thicket).collect() };
     grid::remove_small_components(&mut dense, (MIN_DENSE_M2 / (cell * cell)).ceil() as u32);
     let mut counts = [0usize; 3];
     let ground: Vec<u8> = (0..n)
@@ -104,22 +107,22 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, ter
                 ForestGround::Shallow
             } else if terrain.rock.cells[c] {
                 ForestGround::Rock
-            } else if class[c] == ForestGround::Dense && !dense.cells[c] {
-                ForestGround::Woods
+            } else if class[c] == ForestGround::Thicket && !dense.cells[c] {
+                ForestGround::Floor
             } else {
                 class[c]
             };
             match g {
                 ForestGround::Open => counts[0] += 1,
-                ForestGround::Woods => counts[1] += 1,
-                ForestGround::Dense => counts[2] += 1,
+                ForestGround::Floor => counts[1] += 1,
+                ForestGround::Thicket => counts[2] += 1,
                 _ => {}
             }
             g.code()
         })
         .collect();
     let pct = |k: usize| k as f32 / n.max(1) as f32 * 100.0;
-    WoodsLayout { ground, open_pct: pct(counts[0]), woods_pct: pct(counts[1]), dense_pct: pct(counts[2]) }
+    ThicketLayout { ground, density, open_pct: pct(counts[0]), floor_pct: pct(counts[1]), thicket_pct: pct(counts[2]) }
 }
 
 /// 1 at 0 and below, falling smoothly to 0 at 1.

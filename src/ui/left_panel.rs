@@ -124,12 +124,14 @@ fn forest_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     flow_arrow(ui, "hidden height field + rock ridges");
     node_forest_water(ui, app);
     flow_arrow(ui, "streams (spring → map edge) and ponds");
-    node_forest_woods(ui, app);
-    flow_arrow(ui, "open ground / woods / dense forest");
+    node_forest_thickets(ui, app);
+    flow_arrow(ui, "open ground / forest floor / thicket");
     node_forest_passages(ui, app);
     flow_arrow(ui, "one walkable forest: linked areas, gate trails");
     node_forest_clearings(ui, app);
     flow_arrow(ui, "areas with glades and trails (final ground)");
+    node_forest_trees(ui, app);
+    flow_arrow(ui, "the forest with its tree trunks");
     ui.weak("Next: cover — deadfall, boulders, fallen trunks (docs/forest-plan.md).");
     ui.add_space(4.0);
     ui.separator();
@@ -224,7 +226,7 @@ growth; managed areas meadow, logged, plantation or camp grounds. 0 = never.";
 /// docs/forest-plan.md).
 fn node_forest_terrain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     const TIP_HILLS: &str = "Hill size, meters — how far one hill is from the next. The land \
-is not drawn as such (only a soft shading), but water flows downhill over it and the woods \
+is not drawn as such, but water flows downhill over it and the thickets \
 thin out up high.";
     const TIP_RELIEF: &str = "Height between the lowest and the highest point, meters. Only \
 exported (spec.json) and used for the shading; the shapes do not change.";
@@ -312,24 +314,24 @@ middle when twice this big). 0 = no ponds.";
     });
 }
 
-/// Forest node 5: open ground, woods and dense forest (step F4 in
+/// Forest node 5: open ground, forest floor and thicket (step F4 in
 /// docs/forest-plan.md).
-fn node_forest_woods(ui: &mut egui::Ui, app: &mut MapGenApp) {
-    const TIP_BORDER: &str = "How strongly dense forest grows along the borders between areas, \
+fn node_forest_thickets(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_BORDER: &str = "How strongly thicket grows along the borders between areas, \
 %. This is what separates the areas: wide, ragged belts of thicket. 0%: areas flow into each \
 other (only the passages node closes unlinked borders, with a thin strip).";
     const TIP_BORDER_W: &str = "How far the dense belt reaches into each area from a border, \
 meters (pushed in and out by noise, so it has lobes and bays).";
-    const TIP_EDGE: &str = "Dense forest along the map edge, meters. 0 = none.";
-    const TIP_PATCH: &str = "Thickets and glades inside the areas, %. 0%: even woods. 100%: \
-many dense patches (cover) and open glades. Managed areas get half, and their thickets are \
+    const TIP_EDGE: &str = "Thicket along the map edge, meters. 0 = none.";
+    const TIP_PATCH: &str = "Thickets and glades inside the areas, %. 0%: even forest floor. 100%: \
+many thicket patches (cover) and open glades. Managed areas get half, and their thickets are \
 cut back.";
     const TIP_DENSITY: &str = "Shifts everything denser (+) or more open (−), %. The area \
 characters set the base: meadow open, dense woods thick.";
-    node(ui, "5 · Woods", |ui| {
-        ui.weak("input: areas, terrain, water · output: open ground / woods / dense forest (forest)");
-        let s = &mut app.config.forest.woods;
-        egui::Grid::new("forest_woods_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+    node(ui, "5 · Thickets", |ui| {
+        ui.weak("input: areas, terrain, water · output: open ground / forest floor / thicket — no trees yet, the Trees node adds trunks (forest)");
+        let s = &mut app.config.forest.thickets;
+        egui::Grid::new("forest_thickets_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
             param_row(ui, "Border belts", TIP_BORDER, |ui| ui.add(egui::Slider::new(&mut s.border_pct, 0.0..=150.0).suffix("%")));
             param_row(ui, "Belt width", TIP_BORDER_W, |ui| ui.add(meters(&mut s.border_width_m, 60.0)));
             param_row(ui, "Edge", TIP_EDGE, |ui| ui.add(meters(&mut s.edge_width_m, 60.0)));
@@ -337,7 +339,7 @@ characters set the base: meadow open, dense woods thick.";
             param_row(ui, "Density", TIP_DENSITY, |ui| ui.add(egui::Slider::new(&mut s.density_pct, -100.0..=100.0).suffix("%")));
         });
         ui.horizontal(|ui| {
-            if ui.button("🎲 Random params").on_hover_text("Rolls every woods setting independently inside its reasonable range. Set values only; press Generate.").clicked() {
+            if ui.button("🎲 Random params").on_hover_text("Rolls every thicket setting independently inside its reasonable range. Set values only; press Generate.").clicked() {
                 let mut rng = rand::rng();
                 s.border_pct = rng.random_range(30.0..=110.0);
                 s.border_width_m = rng.random_range(6.0..=20.0);
@@ -347,8 +349,8 @@ characters set the base: meadow open, dense woods thick.";
             }
             ui.weak("Changes apply on ⚙ Generate");
         });
-        if let Some(wd) = app.generated.as_ref().and_then(|l| l.forest.as_ref()).and_then(|f| f.woods.as_ref()) {
-            ui.weak(format!("generated: open {:.0}% · woods {:.0}% · dense {:.0}%", wd.open_pct, wd.woods_pct, wd.dense_pct));
+        if let Some(wd) = app.generated.as_ref().and_then(|l| l.forest.as_ref()).and_then(|f| f.thickets.as_ref()) {
+            ui.weak(format!("generated: open {:.0}% · forest floor {:.0}% · thicket {:.0}%", wd.open_pct, wd.floor_pct, wd.thicket_pct));
         }
     });
 }
@@ -358,17 +360,17 @@ characters set the base: meadow open, dense woods thick.";
 fn node_forest_passages(ui: &mut egui::Ui, app: &mut MapGenApp) {
     const TIP_LAB: &str = "How the areas are linked. 0%: one route, area after area (a chain). \
 35%: a main route with side areas and a loop or two. 100%: a mesh with many loops. Unlinked \
-borders are closed with dense forest; linked ones open where the barrier is weakest.";
+borders are closed with thicket; linked ones open where the barrier is weakest.";
     const TIP_TRAIL: &str = "Width of a way cut through a barrier (forest trail, rock pass, ford, \
-bridge), meters. NO EFFECT where the woods are already open.";
+bridge), meters. NO EFFECT where the ground is already open.";
     const TIP_BRIDGE: &str = "Chance, %, that a way over deep water is a bridge; else a ford.";
     const TIP_SEAL: &str = "Width of the dense strip that closes an unlinked border where the \
-woods were open, meters.";
+ground was open, meters.";
     const TIP_GATES: &str = "Gate directions from the map center (0° east, 90° north). Each gate \
 is a trail from the map edge into the area there (slid along the edge off water and rock). The \
 first gate is where the area graph starts (and, with Managed at gate, the managed side).";
     node(ui, "6 · Passages", |ui| {
-        ui.weak("input: woods · output: linked areas, crossings (open / trail / pass / ford / bridge), gate trails (forest)");
+        ui.weak("input: thickets · output: linked areas, crossings (open / trail / pass / ford / bridge), gate trails (forest)");
         let s = &mut app.config.forest.passages;
         egui::Grid::new("forest_passages_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
             param_row(ui, "Labyrinth", TIP_LAB, |ui| ui.add(egui::Slider::new(&mut s.labyrinth_pct, 0.0..=100.0).suffix("%")));
@@ -477,6 +479,65 @@ than 3 ends.";
                 l.trails.len(),
                 l.trails.iter().filter(|t| t.extra).count(),
                 l.walkable_pct
+            ));
+        }
+    });
+}
+
+/// Forest node 8: tree trunks (step F7 in docs/forest-plan.md).
+fn node_forest_trees(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_DENSITY: &str = "How many trees, % of the natural amount. 200%: twice as many \
+(closer together). 0% = no trees. Only trunks are placed — round solid objects, what the \
+player bumps into; the crowns are up to the art.";
+    const TIP_SPACING: &str = "Usual distance between neighboring trunks in ordinary woods, \
+meters (center to center). Dense woods stand closer, old growth and logged areas farther; \
+denser ground (Thickets node) closer too.";
+    const TIP_TRUNK: &str = "Trunk diameter range, meters; most trees are thin, few thick. Old \
+growth ×1.8, dense woods ×0.7. Plantations: one size per area.";
+    const TIP_GROVES: &str = "How much the trees gather in groves with open gaps between, %. \
+0%: spread evenly over the forest floor. 100%: tight groves and clear gaps.";
+    const TIP_GROVE_SIZE: &str = "Grove size, meters (one grove to the next). NO EFFECT at \
+Groves 0%.";
+    const TIP_LONE: &str = "Lone trees on open ground (meadows, camp grounds) and in glades, % \
+of the natural amount. 0% = keep them clear.";
+    const TIP_ROWS: &str = "Plantations plant their trees in rows (a grid turned to a random \
+angle per area). Off: like any other woods. NO EFFECT with no plantation area.";
+    const TIP_CLEAR: &str = "Free room between a trunk and a trail, meters. Gates keep 6 m \
+clear. Every trunk also keeps one free cell around it, so no passage gets plugged.";
+    const TIP_COLOR: &str = "Trunk color on the map image, the preview and the legend.";
+    node(ui, "8 · Trees", |ui| {
+        ui.weak("input: clearings & trails · output: tree trunks (round solid objects) on the walkable ground (forest)");
+        let s = &mut app.config.forest.trees;
+        egui::Grid::new("forest_trees_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Density", TIP_DENSITY, |ui| ui.add(egui::Slider::new(&mut s.density_pct, 0.0..=300.0).suffix("%")));
+            param_row(ui, "Spacing", TIP_SPACING, |ui| ui.add(meters(&mut s.spacing_m, 30.0)));
+            param_row(ui, "Trunk size", TIP_TRUNK, |ui| range_m(ui, &mut s.trunk_min_m, &mut s.trunk_max_m, 0.1..=5.0));
+            param_row(ui, "Groves", TIP_GROVES, |ui| ui.add(egui::Slider::new(&mut s.groves_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Grove size", TIP_GROVE_SIZE, |ui| ui.add(meters(&mut s.grove_size_m, 100.0)));
+            param_row(ui, "Lone trees", TIP_LONE, |ui| ui.add(egui::Slider::new(&mut s.lone_trees_pct, 0.0..=300.0).suffix("%")));
+            param_row(ui, "Plantation rows", TIP_ROWS, |ui| ui.checkbox(&mut s.plantation_rows, ""));
+            param_row(ui, "Trail clearance", TIP_CLEAR, |ui| ui.add(meters(&mut s.trail_clear_m, 10.0)));
+            param_row(ui, "Color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut s.color));
+        });
+        ui.horizontal(|ui| {
+            if ui.button("🎲 Random params").on_hover_text("Rolls every tree setting independently inside its reasonable range (color stays). Set values only; press Generate.").clicked() {
+                let mut rng = rand::rng();
+                s.density_pct = rng.random_range(30.0..=200.0);
+                s.spacing_m = rng.random_range(3.0..=9.0);
+                s.trunk_min_m = rng.random_range(0.3..=0.6);
+                s.trunk_max_m = rng.random_range(0.6..=1.6);
+                s.groves_pct = rng.random_range(0.0..=100.0);
+                s.grove_size_m = rng.random_range(8.0..=40.0);
+                s.lone_trees_pct = rng.random_range(0.0..=200.0);
+                s.plantation_rows = rng.random_bool(0.8);
+                s.trail_clear_m = rng.random_range(0.5..=2.5);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(t) = app.generated.as_ref().and_then(|l| l.forest.as_ref()).and_then(|f| f.trees.as_ref()) {
+            ui.weak(format!(
+                "generated: {} trunks ({} in rows) · trunks cover {:.1}% of the walkable ground",
+                t.total, t.in_rows, t.cover_pct
             ));
         }
     });

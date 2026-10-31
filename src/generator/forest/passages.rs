@@ -1,6 +1,6 @@
 //! Forest node 6, passages (step F5 in docs/forest-plan.md): which areas
 //! the player can walk between, and the ways in from the gates. The
-//! barriers are the land itself (dense forest, rock, deep water); this node
+//! barriers are the land itself (thicket, rock, deep water); this node
 //! only decides where they hold and where they open.
 //!
 //! 1. **Area graph** — a spanning tree over the touching areas from the
@@ -12,7 +12,7 @@
 //! 3. **One piece per area** — walkable pockets inside an area are joined
 //!    to its main piece along the cheapest way (or filled if tiny).
 //! 4. **Links** — per linked pair the cheapest way from one area into the
-//!    other through both (walkable ground cheap, dense forest dearer, deep
+//!    other through both (walkable ground cheap, thicket dearer, deep
 //!    water dearer still, rock dearest): it takes a natural gap when there
 //!    is one, else the thinnest spot of the barrier, and is cut there — a
 //!    trail through forest, a pass through rock, a ford or bridge over deep
@@ -33,7 +33,7 @@ use crate::generator::gates::{GATE_NAME, MARKER_M};
 use crate::generator::grid;
 use crate::generator::noise::NoiseField;
 use crate::generator::swamp::gate_anchors::edge_hit;
-use crate::level::{AreaLayout, AreaLink, Category, CellMask, CrossingKind, ForestGate, ForestGround, PassageLayout, PlacedObject, WoodsLayout};
+use crate::level::{AreaLayout, AreaLink, Category, CellMask, CrossingKind, ForestGate, ForestGround, PassageLayout, PlacedObject, ThicketLayout};
 use crate::model::{LabyrinthParams, LevelConfig};
 
 pub struct PassageBuild {
@@ -53,7 +53,7 @@ const COST_DENSE: u32 = 70;
 const COST_DEEP: u32 = 120;
 const COST_ROCK: u32 = 350;
 
-pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, woods: &WoodsLayout) -> PassageBuild {
+pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, thickets: &ThicketLayout) -> PassageBuild {
     let s = &config.forest.passages;
     let (w, h, cell) = (areas.width, areas.height, areas.cell_size_m);
     let n = w * h;
@@ -61,7 +61,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, woo
     let ids = &areas.ids;
     let k = areas.areas.len();
     let mut notes = Vec::new();
-    let mut ground: Vec<ForestGround> = woods.ground.iter().map(|&g| ForestGround::from_code(g)).collect();
+    let mut ground: Vec<ForestGround> = thickets.ground.iter().map(|&g| ForestGround::from_code(g)).collect();
     let wiggle = NoiseField::new(rng.random::<u64>());
     let seal_noise = NoiseField::new(rng.random::<u64>());
     let trail_w = s.trail_width_m.max(cell);
@@ -149,7 +149,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, woo
         let (x, y) = ((c % w) as f32 * cell, (c / w) as f32 * cell);
         let jitter = (wiggle.fbm(x / 8.0, y / 8.0, 2) * 8.0) as u32;
         match g {
-            ForestGround::Dense => COST_DENSE + jitter * 2,
+            ForestGround::Thicket => COST_DENSE + jitter * 2,
             ForestGround::Deep => COST_DEEP,
             ForestGround::Rock => COST_ROCK,
             _ => COST_WALK + jitter,
@@ -349,7 +349,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, woo
 fn blocked(g: ForestGround) -> ForestGround {
     match g {
         ForestGround::Shallow | ForestGround::Bridge => ForestGround::Deep,
-        g if g.walkable() => ForestGround::Dense,
+        g if g.walkable() => ForestGround::Thicket,
         g => g,
     }
 }
@@ -368,7 +368,7 @@ fn crossing_kind(ground: &[ForestGround], path: &[usize], rng: &mut ChaCha8Rng, 
         if bridge { CrossingKind::Bridge } else { CrossingKind::Ford }
     } else if has(ForestGround::Rock) {
         CrossingKind::Pass
-    } else if has(ForestGround::Dense) {
+    } else if has(ForestGround::Thicket) {
         CrossingKind::Trail
     } else {
         CrossingKind::Open
@@ -479,7 +479,7 @@ mod tests {
     use super::*;
     use rand_chacha::rand_core::SeedableRng;
 
-    use crate::generator::forest::{areas, terrain, water, woods};
+    use crate::generator::forest::{areas, terrain, thickets, water};
     use crate::model::{GateSpec, MapKind};
 
     fn config() -> LevelConfig {
@@ -495,7 +495,7 @@ mod tests {
         let a = areas::build(c, &mut rng).layout;
         let t = terrain::build(c, &mut rng, &a);
         let wa = water::build(c, &mut rng, &t).layout;
-        let wo = woods::build(c, &mut rng, &a, &t, &wa);
+        let wo = thickets::build(c, &mut rng, &a, &t, &wa);
         let p = build(c, &mut rng, &a, &wo);
         (a, p)
     }

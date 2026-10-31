@@ -862,7 +862,7 @@ impl ForestStyle {
     }
 }
 
-/// What an area looks like inside; sets its woods mix and cover later.
+/// What an area looks like inside; sets its thickets and trees.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ForestCharacter {
@@ -1037,10 +1037,10 @@ pub struct WaterLayout {
 pub enum ForestGround {
     /// Grass, few trees: walkable, seen from far.
     Open,
-    /// Trees with room between them: walkable.
-    Woods,
-    /// Thicket and dense forest: impassable.
-    Dense,
+    /// Forest floor under the trees: walkable (the trunks are objects).
+    Floor,
+    /// Thicket — brush and young trees too dense to pass: impassable.
+    Thicket,
     /// Rock ridge / outcrop: impassable.
     Rock,
     /// Wadeable water: walkable.
@@ -1056,8 +1056,8 @@ pub enum ForestGround {
 impl ForestGround {
     pub const ALL: [ForestGround; 8] = [
         ForestGround::Open,
-        ForestGround::Woods,
-        ForestGround::Dense,
+        ForestGround::Floor,
+        ForestGround::Thicket,
         ForestGround::Rock,
         ForestGround::Shallow,
         ForestGround::Deep,
@@ -1070,18 +1070,18 @@ impl ForestGround {
     }
 
     pub fn from_code(code: u8) -> ForestGround {
-        code.checked_sub(1).and_then(|i| ForestGround::ALL.get(i as usize).copied()).unwrap_or(ForestGround::Woods)
+        code.checked_sub(1).and_then(|i| ForestGround::ALL.get(i as usize).copied()).unwrap_or(ForestGround::Floor)
     }
 
     pub fn walkable(self) -> bool {
-        !matches!(self, ForestGround::Dense | ForestGround::Rock | ForestGround::Deep)
+        !matches!(self, ForestGround::Thicket | ForestGround::Rock | ForestGround::Deep)
     }
 
     pub fn label(self) -> &'static str {
         match self {
             ForestGround::Open => "open ground",
-            ForestGround::Woods => "woods",
-            ForestGround::Dense => "dense forest",
+            ForestGround::Floor => "forest floor",
+            ForestGround::Thicket => "thicket",
             ForestGround::Rock => "rock",
             ForestGround::Shallow => "shallow water",
             ForestGround::Deep => "deep water",
@@ -1096,11 +1096,11 @@ impl ForestGround {
     pub fn color(self) -> [u8; 3] {
         match self {
             ForestGround::Open => [226, 218, 160],
-            ForestGround::Woods => [158, 198, 112],
+            ForestGround::Floor => [158, 198, 112],
             ForestGround::Trail => [204, 160, 100],
             ForestGround::Shallow => [150, 200, 236],
             ForestGround::Bridge => [176, 128, 74],
-            ForestGround::Dense => [22, 60, 32],
+            ForestGround::Thicket => [22, 60, 32],
             ForestGround::Rock => [78, 74, 72],
             ForestGround::Deep => [26, 66, 148],
         }
@@ -1115,8 +1115,8 @@ impl ForestGround {
     pub fn layer_name(self) -> &'static str {
         match self {
             ForestGround::Open => "forest_open",
-            ForestGround::Woods => "forest_woods",
-            ForestGround::Dense => "forest_dense",
+            ForestGround::Floor => "forest_floor",
+            ForestGround::Thicket => "forest_thicket",
             ForestGround::Rock => "forest_rock",
             ForestGround::Shallow => "forest_shallow_water",
             ForestGround::Deep => "forest_deep_water",
@@ -1126,25 +1126,29 @@ impl ForestGround {
     }
 }
 
-/// Forest woods node output (step F4): open / woods / dense per cell
+/// Forest thickets node output (step F4): open ground / forest floor /
+/// thicket per cell
 /// (water and rock keep their own ground).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct WoodsLayout {
+pub struct ThicketLayout {
     /// [`ForestGround::code`] per cell.
     pub ground: Vec<u8>,
+    /// The density value per cell (thicket from 0.62, open below 0.36);
+    /// the trees node grows trunks by it.
+    pub density: Vec<f32>,
     /// Shares of the map, %.
     pub open_pct: f32,
-    pub woods_pct: f32,
-    pub dense_pct: f32,
+    pub floor_pct: f32,
+    pub thicket_pct: f32,
 }
 
 /// How a passage gets from one area into the next.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CrossingKind {
-    /// The woods were already open there.
+    /// The ground was already open there.
     Open,
-    /// A trail cut through dense forest.
+    /// A trail cut through thicket.
     Trail,
     /// A pass through rock.
     Pass,
@@ -1268,6 +1272,19 @@ pub struct ForestTrail {
     pub path_m: Vec<[f32; 2]>,
 }
 
+/// Forest trees node output (step F7): the trunks are objects
+/// (Category::Structure, round) in [`GeneratedLevel::objects`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ForestTreeLayout {
+    /// Trunks placed, per area (index = area id − 1).
+    pub per_area: Vec<u32>,
+    pub total: u32,
+    /// Trunks in rows (plantations).
+    pub in_rows: u32,
+    /// Share of the walkable ground covered by trunks, %.
+    pub cover_pct: f32,
+}
+
 /// Forest clearings & trails node output (step F6).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ClearingLayout {
@@ -1290,11 +1307,13 @@ pub struct ForestLayout {
     #[serde(default)]
     pub water: Option<WaterLayout>,
     #[serde(default)]
-    pub woods: Option<WoodsLayout>,
+    pub thickets: Option<ThicketLayout>,
     #[serde(default)]
     pub passages: Option<PassageLayout>,
     #[serde(default)]
     pub clearings: Option<ClearingLayout>,
+    #[serde(default)]
+    pub trees: Option<ForestTreeLayout>,
 }
 
 impl ForestLayout {
@@ -1305,7 +1324,7 @@ impl ForestLayout {
             .as_ref()
             .map(|c| &c.ground)
             .or_else(|| self.passages.as_ref().map(|p| &p.ground))
-            .or_else(|| self.woods.as_ref().map(|w| &w.ground))
+            .or_else(|| self.thickets.as_ref().map(|w| &w.ground))
     }
 }
 

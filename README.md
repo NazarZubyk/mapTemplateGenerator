@@ -16,7 +16,9 @@ an AI agent (or a level designer) to build a playable prototype fast.
 > (meadow, dense woods, logged...). Streams flow downhill off the map,
 > rock ridges and dense forest separate the areas, and you cross between
 > them on trails, passes, fords and bridges. Glades and winding trails
-> lead you through each area. Cover (fallen trees, boulders) comes next. The app opens on Forest for now.
+> lead you through each area, and tree trunks stand where the forest
+> grows (you set how dense, how thick and how grouped). Cover (fallen
+> trees, boulders) comes next. The app opens on Forest for now.
 
 ## What you get
 
@@ -71,7 +73,7 @@ see `QUICKSTART.md`.
 
 ## Known limitations (beta)
 
-- Only **Town** is tuned. Forest is being rebuilt (areas, land, water, woods, passages, glades and trails so far); Swamp is new (complete,
+- Only **Town** is tuned. Forest is being rebuilt (areas, land, water, thickets, passages, glades, trails and trees so far); Swamp is new (complete,
   still being tuned); Cave is new (complete, still being tuned).
 - The **walkable %** setting is not used yet.
 - Few safety checks. For example, two object types with the same color are

@@ -39,10 +39,11 @@ passages that decide where the barriers hold and where they open.
 | 2 | **Areas** (F1) | large areas: style (wild / managed), character |
 | 3 | **Terrain** (F2) | hidden height field, rock ridges |
 | 4 | **Water** (F3) | streams (spring → map edge), brooks, ponds |
-| 5 | **Woods** (F4) | open ground / woods / dense forest |
+| 5 | **Thickets** (F4) | open ground / forest floor / thicket |
 | 6 | **Passages** (F5) | which areas link and how; gate trails |
 | 7 | **Clearings & trails** (F6) | glades, trails inside the areas; final ground |
-| 8+ | next: cover (deadfall, boulders, trunks), props, interactive, hidden glades, mobs, export | |
+| 8 | **Trees** (F7) | tree trunks (round solid objects) |
+| 9+ | next: cover (deadfall, boulders, fallen trunks), props, interactive, hidden glades, mobs | |
 
 ### Step F1 — Areas — done
 
@@ -88,17 +89,19 @@ raise the height, so water flows around them.
   `width_max_m` by √flow; from `deep_from_m` on the middle 60% is deep
   water, narrower brooks are shallow (wadeable).
 
-### Step F4 — Woods — done
+### Step F4 — Thickets — done
 
-`woods.rs`. One density per cell: the character base (meadow 0.12 …
+`thickets.rs` (first called "Woods"; renamed — it places no trees, it
+says where the ground is open, forest floor or impassable thicket). One
+density per cell (kept in `ThicketLayout::density` for the trees node): the character base (meadow 0.12 …
 dense woods 0.56) + `density_pct` + patches (noise thickets / glades,
 `patchiness_pct`; half in managed areas, whose inner thickets are cut back)
 + moisture near water − height, plus the **border belt**: dense forest
-grows in from every area border (`border_pct`, `border_width_m`), its edge
+(thicket) grows in from every area border (`border_pct`, `border_width_m`), its edge
 pushed in and out by two noise scales (lobes and bays, a ragged fringe) —
 wide irregular masses, not bands — and a belt along the map edge
-(`edge_width_m`). Dense ≥ 0.62, open < 0.36, woods between; dense specks
-< 10 m² become woods. Water and rock keep their ground.
+(`edge_width_m`). Thicket ≥ 0.62, open < 0.36, forest floor between;
+thicket specks < 10 m² become forest floor. Water and rock keep their ground.
 
 ### Step F5 — Passages — done
 
@@ -135,8 +138,8 @@ unlinked pairs do not.
 Rendering is for level prototyping (humans and AI agents), so it is
 unambiguous: one flat color per ground kind, the same on every map, no
 tint, texture or shading. **Walkable kinds are light** (open ground,
-woods, trail, shallow water, bridge), **blocked kinds dark** (dense forest,
-rock, deep water); the legend says "(walkable)" / "(blocked)". layer.png:
+forest floor, trail, shallow water, bridge), **blocked kinds dark**
+(thicket, rock, deep water); tree trunks are round dark-brown objects; the legend says "(walkable)" / "(blocked)". layer.png:
 R = forest ground id 24–31 (`ForestGround::layer_id`), G = area id, B = 1
 walkable / 0 blocked. spec.json `forest_ground` lists every kind with its
 layer id, color and walkable flag. spec.json: `forest_areas`, `forest_water` (streams with
@@ -151,7 +154,7 @@ crossing kind and point, gates, stats, relief). MCP `generate` reports
    ×1.6, meadows none — already open); best of 32 spots by room to the
    area border (≥ 5 m gap) and distance to the area's other glades. Wild:
    an organic blob (radius ± 45% by noise); managed: a cut glade, a rotated
-   rounded rectangle (aspect 0.6–0.9). Woods / inner thickets → open
+   rounded rectangle (aspect 0.6–0.9). Forest floor / inner thickets → open
    ground; water, rock, sealed cells stay.
 2. Trail ends per area: glade centers, its link crossing points, its gate
    points — snapped to the nearest walkable cell of the area, ends closer
@@ -159,7 +162,7 @@ crossing kind and point, gates, stats, relief). MCP `generate` reports
 3. Per area a nearest-first spanning tree over the ends, plus loops
    (`loops_pct` per end, to its nearest unlinked end, areas with ≥ 3 ends).
 4. Trails: the cheapest way inside the area, off sealed cells (open 10,
-   trail 7, woods 14, shallow 45, dense 120; rock / deep never) plus a
+   trail 7, forest floor 14, shallow 45, thicket 120; rock / deep never) plus a
    noise wiggle (up to 90 × fbm², 16 m features; cart tracks 35% of it);
    every 4th cell, 3 Chaikin passes, drawn `footpath_m` (wild) or
    `track_m` (managed) wide as trail ground; shallow water stays (a ford).
@@ -172,12 +175,39 @@ holds (tests + a 30-config sweep on the final ground). spec.json
 `forest_clearings`. layer.png / map.png use the final ground
 (`ForestLayout::ground`).
 
+### Step F7 — Trees — done
+
+`trees.rs`; node 8. A playground map only needs what the player bumps
+into, so a tree is its **trunk**: a round `Category::Structure` object
+("tree trunk", `color`). Trunks stand on open ground and forest floor only
+(never trails, water, rock, thicket).
+- Dart throwing per area (14 darts per possible tree) with a minimum
+  center distance: `spacing_m` / √(`density_pct`/100) × the character's
+  spacing (meadow 1.6, open woods 1.3, dense woods 0.75, old growth 1.7,
+  logged 2.0, camp grounds 1.8) × (1.15 − 0.35 × the thickets density,
+  0..1 between open and thicket).
+- Chance per dart: the character's (meadow 0.25 … dense woods 1.0) × a
+  grove factor — fbm at `grove_size_m`, `groves_pct` blends from even to
+  groves with clear gaps. Open ground and glades: lone trees only
+  (6% × `lone_trees_pct`, 2.5× the spacing).
+- Trunk size `trunk_min_m..trunk_max_m` (most thin: t^1.5), × the
+  character (old growth 1.8, dense woods 0.7). Plantations
+  (`plantation_rows`): one size, on a grid turned to a random angle per
+  area.
+- Room: `trail_clear_m` from trails, 6 m from gates, and every trunk keeps
+  a one-cell ring of free walkable ground — so the walkable ground minus
+  the trunks stays one piece (tests + a 16-config sweep up to 2 000+
+  trunks).
+- spec.json: trunks in `objects`; `forest_trees` (per area, total, in
+  rows, cover %); MCP `forest_trees`.
+
 ## Next steps
 
 - **Main road** option from the gate through the managed areas; fences /
   hedges along managed fields.
-- **Cover**: deadfall patches (trunks lying in the wind direction, drawn as
-  logs), boulders near ridge ends, fallen trunks as low (step-over) cover.
+- **Cover**: deadfall patches (fallen trunks lying in the wind direction,
+  as long thin objects), boulders near ridge ends, low (step-over) cover
+  marked walkable.
 - **Spawns**: props, interactive objects, hidden glades (in dense forest,
   an "overgrown passage" marker), mobs on forest ground; glades as hubs.
 - **Export**: forest ground ids in layer.png, warnings, MCP `spawn_on`

@@ -598,12 +598,58 @@ pub struct ForestSettings {
     pub terrain: ForestTerrainSettings,
     /// Node 4: streams and ponds.
     pub water: ForestWaterSettings,
-    /// Node 5: open ground, woods and dense forest.
-    pub woods: ForestWoodsSettings,
+    /// Node 5: open ground, forest floor and thickets.
+    pub thickets: ForestThicketSettings,
     /// Node 6: which areas link and the ways between them, the gates.
     pub passages: ForestPassageSettings,
     /// Node 7: glades and trails inside the areas.
     pub clearings: ForestClearingSettings,
+    /// Node 8: tree trunks.
+    pub trees: ForestTreeSettings,
+}
+
+/// Settings of the forest trees node: trunks (the only part of a tree a
+/// playground map needs — what the player bumps into).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ForestTreeSettings {
+    /// How many trees, % of the natural amount (0 = none).
+    pub density_pct: f32,
+    /// Usual distance between neighboring trunks in ordinary woods,
+    /// meters (center to center); dense woods closer, old growth farther.
+    pub spacing_m: f32,
+    /// Trunk diameter range, meters (old growth ×1.8, dense woods ×0.7).
+    pub trunk_min_m: f32,
+    pub trunk_max_m: f32,
+    /// How much the trees gather in groves with open gaps between, %:
+    /// 0 = spread evenly, 100 = tight groves.
+    pub groves_pct: f32,
+    /// Grove size, meters.
+    pub grove_size_m: f32,
+    /// Lone trees on open ground and in glades, % of the natural amount.
+    pub lone_trees_pct: f32,
+    /// Plantations plant in rows.
+    pub plantation_rows: bool,
+    /// Free room around trails and gates, meters.
+    pub trail_clear_m: f32,
+    pub color: [u8; 3],
+}
+
+impl Default for ForestTreeSettings {
+    fn default() -> Self {
+        Self {
+            density_pct: 100.0,
+            spacing_m: 4.0,
+            trunk_min_m: 0.5,
+            trunk_max_m: 1.2,
+            groves_pct: 40.0,
+            grove_size_m: 18.0,
+            lone_trees_pct: 100.0,
+            plantation_rows: true,
+            trail_clear_m: 1.0,
+            color: [104, 62, 30],
+        }
+    }
 }
 
 /// Settings of the forest clearings & trails node.
@@ -681,23 +727,23 @@ impl Default for ForestWaterSettings {
     }
 }
 
-/// Settings of the forest woods node.
+/// Settings of the forest thickets node.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-pub struct ForestWoodsSettings {
-    /// How strongly dense forest grows along the borders between areas, %.
+pub struct ForestThicketSettings {
+    /// How strongly thicket grows along the borders between areas, %.
     pub border_pct: f32,
-    /// How far dense forest reaches in from an area border, meters.
+    /// How far thicket reaches in from an area border, meters.
     pub border_width_m: f32,
-    /// Dense forest along the map edge, meters.
+    /// Thicket along the map edge, meters.
     pub edge_width_m: f32,
-    /// Thickets and glades inside the areas, %: 0 = even woods.
+    /// Thickets and glades inside the areas, %: 0 = even forest floor.
     pub patchiness_pct: f32,
     /// Shifts everything denser (+) or more open (−), %.
     pub density_pct: f32,
 }
 
-impl Default for ForestWoodsSettings {
+impl Default for ForestThicketSettings {
     fn default() -> Self {
         Self { border_pct: 70.0, border_width_m: 9.0, edge_width_m: 10.0, patchiness_pct: 50.0, density_pct: 0.0 }
     }
@@ -713,7 +759,7 @@ pub struct ForestPassageSettings {
     pub trail_width_m: f32,
     /// Chance, %, that deep water is crossed by a bridge (else a ford).
     pub bridge_pct: f32,
-    /// Width of the dense forest that closes unlinked borders, meters.
+    /// Width of the thicket that closes unlinked borders, meters.
     pub seal_width_m: f32,
 }
 

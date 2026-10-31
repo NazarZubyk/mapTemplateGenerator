@@ -124,6 +124,10 @@ pub struct ExportSpec {
     /// centerlines.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forest_clearings: Option<ExportForestClearings>,
+    /// Forest trees: trunk counts (the trunks themselves are `objects` of
+    /// type "tree trunk": round, solid).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forest_trees: Option<crate::level::ForestTreeLayout>,
     /// Forest streams (spring → mouth centerlines, widths, where they end)
     /// and ponds.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -519,6 +523,7 @@ impl ExportSpec {
                 trails: l.trails.clone(),
                 walkable_pct: l.walkable_pct,
             }),
+            forest_trees: level.forest.as_ref().and_then(|f| f.trees.clone()),
             forest_water: level.forest.as_ref().and_then(|f| f.water.as_ref()).map(|l| ExportForestWater { streams: l.streams.clone(), ponds: l.ponds.clone() }),
             forest_passages: level.forest.as_ref().and_then(|f| f.passages.as_ref()).map(|l| ExportForestPassages {
                 links: l.links.clone(),

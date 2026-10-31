@@ -709,10 +709,10 @@ mod tests {
                 // map.png: the flat color of the kind.
                 assert_eq!(r.map.get_pixel(x, y).0, g.color());
             } else {
-                assert_eq!(name, "gate", "only gate markers sit on forest ground");
+                assert!(name == "gate" || name == "structure", "only gates and tree trunks sit on forest ground: {name}");
             }
         }
-        for want in ["forest_open", "forest_woods", "forest_dense"] {
+        for want in ["forest_open", "forest_floor", "forest_thicket"] {
             assert!(kinds.contains(want), "{kinds:?}");
         }
     }

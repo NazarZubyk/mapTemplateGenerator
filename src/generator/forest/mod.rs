@@ -7,7 +7,7 @@
 //! 3. **Terrain** — a hidden height field (hills, a tilt) and rock ridges.
 //! 4. **Water** — streams flow downhill from springs off the map, brooks
 //!    join them; ponds fill hollows.
-//! 5. **Woods** — open ground / woods / dense forest from the area
+//! 5. **Thickets** — open ground / forest floor / thicket from the area
 //!    character, belts along the area borders and the map edge, moisture.
 //! 6. **Passages** — which areas link (labyrinth); unlinked borders are
 //!    sealed, linked ones open where the barrier is weakest (trail, pass,
@@ -15,6 +15,8 @@
 //! 7. **Clearings & trails** — glades in the areas (organic in wild, cut in
 //!    managed areas) and trails linking the gates, crossings and glades
 //!    (footpaths in wild, cart tracks in managed areas).
+//! 8. **Trees** — tree trunks (round solid objects) on the walkable ground,
+//!    by density, groves and the area character; plantations in rows.
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -30,7 +32,8 @@ pub mod clearings;
 pub mod passages;
 pub mod terrain;
 pub mod water;
-pub mod woods;
+pub mod thickets;
+pub mod trees;
 
 /// Generate a forest level: one RNG stream, nodes in fixed order.
 pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progress) -> GeneratedLevel {
@@ -48,21 +51,27 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
     let water = water::build(config, &mut rng, &terrain);
     notes.extend(water.notes);
 
-    progress("Growing the woods", 0.5);
-    let woods = woods::build(config, &mut rng, &areas.layout, &terrain, &water.layout);
+    progress("Growing the thickets", 0.5);
+    let thickets = thickets::build(config, &mut rng, &areas.layout, &terrain, &water.layout);
 
     progress("Opening the passages", 0.65);
-    let passages = passages::build(config, &mut rng, &areas.layout, &woods);
+    let passages = passages::build(config, &mut rng, &areas.layout, &thickets);
     notes.extend(passages.notes);
 
     progress("Clearing glades and trails", 0.8);
     let clearings = clearings::build(config, &mut rng, &areas.layout, &passages.layout);
 
+    progress("Planting the trees", 0.9);
+    let trees = trees::build(config, &mut rng, &areas.layout, &thickets, &passages.layout, &clearings);
+    let mut objects = passages.objects;
+    // Gate markers keep their indexes; trunks come after them.
+    objects.extend(trees.objects);
+
     progress("Done", 1.0);
     GeneratedLevel {
         config: config.clone(),
         seed,
-        objects: passages.objects,
+        objects,
         shape: None,
         walls: None,
         regions: None,
@@ -80,9 +89,10 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
             areas: Some(areas.layout),
             terrain: Some(terrain),
             water: Some(water.layout),
-            woods: Some(woods),
+            thickets: Some(thickets),
             passages: Some(passages.layout),
             clearings: Some(clearings),
+            trees: Some(trees.layout),
         }),
         noise_preview: None,
         notes,
