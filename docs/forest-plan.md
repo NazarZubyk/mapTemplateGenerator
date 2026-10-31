@@ -274,15 +274,30 @@ place them.
   markers last (mobs are inserted before them; `remap_objects` also
   shifts the forest gates and prop groups).
 
-## Next steps
+### Step F10 — Export polish — done
 
-- **Main road** option from the gate through the managed areas; fences /
-  hedges along managed fields.
-- **Export**: forest ground ids in layer.png, warnings, MCP `spawn_on`
-  wild / managed.
+- Warnings (`validate::forest`, non-blocking): swapped min / max ranges
+  (stream width, glade size and count, trunk size, prop counts and sizes,
+  long prop width, hidden glade size); areas so small the thicket belts
+  fill them (mean area side < 1.5 × (2 × belt width + edge width)); every
+  character of a style in use weighing 0; Wild 0% / 100% (Mixing has no
+  effect); no gates; no stream reaching Deep from (water separates
+  nothing); trunks as wide as the spacing; near-rock props with Rock 0%;
+  mob / interactive types with no forest terrain or no wild / managed;
+  interactive types only in hidden glades with none asked. The default
+  forest is clean (test).
+- spec.json: the town-only sections (`regions`, `roads`, `region_walls`,
+  `gates`, and `interactive_groups`, `hidden_rooms`, `mobs` when absent)
+  are left out instead of `null`, so a forest spec has no misleading
+  `gates: null` (forest gates are in `forest_passages.gates`). Checked on an
+  exported default forest: every index (gates, prop groups, hidden glades,
+  interactive groups) points at the right object; `forest_ground` matches
+  layer ids 24–31; the legend marks every ground kind walkable / blocked.
+- MCP `generate` on a forest reports `gates` (from the passages) and
+  `props` (the forest props total) instead of null (test).
 
-Per step: logic in `src/generator/forest/<name>.rs` with tests, settings in
-`model.rs` (`#[serde(default)]`), a node in `left_panel.rs` inside
-`forest_node_chain`, a progress slice, PNG snapshots with several seeds,
-docs updated as in workflow.md. The app and the MCP server start on Forest
-for now (`LevelConfig::START_KIND`).
+## Open
+
+- Tuning the default amounts on the 200 m map with the user.
+- Main road option through the managed areas; fences / hedges along
+  managed fields — only if wanted.

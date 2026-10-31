@@ -715,6 +715,16 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
                 "point_m": x.point_m, "region": x.region, "road": x.road_link.is_some(),
             })).collect::<Vec<_>>(),
         })
+    }).or_else(|| {
+        // Forest gates live in the passages node.
+        level.forest.as_ref().and_then(|f| f.passages.as_ref()).map(|p| {
+            json!({
+                "placed": p.gates.len(), "requested": level.config.gates.gates.len(),
+                "gates": p.gates.iter().map(|x| json!({
+                    "id": x.id, "asked_deg": x.direction_deg, "point_m": x.point_m, "area": x.area,
+                })).collect::<Vec<_>>(),
+            })
+        })
     });
     json!({
         "seed": level.seed,
@@ -723,7 +733,8 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
         "regions": level.regions.as_ref().map(|r| r.stats.len()),
         "roads": level.roads.as_ref().map(|r| r.links.len()),
         "houses": level.houses.as_ref().map(|h| h.street_houses + h.yard_houses),
-        "props": level.props.as_ref().map(|p| p.near_houses + p.roadside + p.scattered + p.near_trees + p.shore + p.in_water + p.path_edge + p.near_walls + p.in_tunnels + p.pool_edge),
+        "props": level.props.as_ref().map(|p| p.near_houses + p.roadside + p.scattered + p.near_trees + p.shore + p.in_water + p.path_edge + p.near_walls + p.in_tunnels + p.pool_edge)
+            .or_else(|| level.forest.as_ref().and_then(|f| f.props.as_ref()).map(|p| p.total())),
         "interactive": level.interactive.as_ref().map(|l| l.types.iter().map(|t| json!({"name": t.name, "placed": t.placed, "requested": t.requested})).collect::<Vec<_>>()),
         "hidden_rooms": level.hidden_rooms.as_ref().map(|h| json!({"placed": h.rooms.len(), "requested": h.requested})),
         "gates": gates,
@@ -937,5 +948,18 @@ mod tests {
         assert_eq!(out["gates"]["placed"], 3);
         assert!(out["mobs"]["entities"].as_u64().unwrap() > 0);
         assert!(out["mobs"]["per_type"]["Goblin"].is_number());
+    }
+
+    #[test]
+    fn generate_summarizes_a_forest() {
+        let s = server("forest");
+        s.call("patch_config", &json!({"patch": {"kind": "forest", "map": {"width_m": 120.0, "height_m": 100.0}}})).unwrap();
+        s.call("set_gates", &json!({"count": 2})).unwrap();
+        let out: Value = serde_json::from_str(&s.call("generate", &json!({"seed": 3})).unwrap()).unwrap();
+        assert_eq!(out["kind"], "forest");
+        assert_eq!(out["gates"]["placed"], 2);
+        assert!(out["props"].as_u64().is_some());
+        assert!(out["forest_passages"]["links"].as_u64().unwrap() > 0);
+        assert!(out["mobs"]["entities"].as_u64().unwrap() > 0);
     }
 }

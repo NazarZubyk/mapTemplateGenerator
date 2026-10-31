@@ -22,7 +22,8 @@ an AI agent (or a level designer) to build a playable prototype fast.
 > rock and in the managed areas. Hidden glades sit inside thickets,
 > reached by one overgrown path; interactive objects and mobs spawn on
 > forest ground (wild or managed areas, glades as gathering spots). The
-> forest chain is complete and being tuned. The app opens on Forest for now.
+> forest chain is complete and being tuned; settings that cannot work as
+> asked show a warning. The app opens on Forest for now.
 
 ## What you get
 

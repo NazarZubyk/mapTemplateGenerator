@@ -60,7 +60,7 @@ own chain (`generator/swamp/`, `swamp_node_chain` in left_panel.rs) — the
 list below is the town / forest chain; the swamp one is in
 [swamp-plan.md](swamp-plan.md). **Cave** has its own chain too
 (`generator/cave/`, `cave_node_chain`), built step by step from
-[cave-plan.md](cave-plan.md): C1 style, C2 chambers, C3 tunnels, C4 carve & smooth, C5 hazards, C7 spawns, C8 export done (C6 pillars dropped) — the cave plan is complete. **Forest** is next: its own chain planned in [forest-plan.md](forest-plan.md) (land first: F1 areas → F2 terrain → F3 water → F4 thickets → F5 passages → F6 clearings & trails → F7 trees → F8 props → F9 hidden glades / interactive / mobs, then export polish), F1–F8 done (… thickets, passages, clearings & trails, trees, props, spawns) — the forest chain is complete, export polish open; the app starts on Forest for now.
+[cave-plan.md](cave-plan.md): C1 style, C2 chambers, C3 tunnels, C4 carve & smooth, C5 hazards, C7 spawns, C8 export done (C6 pillars dropped) — the cave plan is complete. **Forest** is next: its own chain planned in [forest-plan.md](forest-plan.md) (land first: F1 areas → F2 terrain → F3 water → F4 thickets → F5 passages → F6 clearings & trails → F7 trees → F8 props → F9 hidden glades / interactive / mobs, then export polish), F1–F8 done (… thickets, passages, clearings & trails, trees, props, spawns) — the forest chain is complete (F10 export polish done), tuning open; the app starts on Forest for now.
 
 Right now:
 

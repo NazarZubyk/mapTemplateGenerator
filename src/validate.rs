@@ -106,6 +106,9 @@ pub fn validate(config: &LevelConfig) -> Vec<Warning> {
     if config.kind == MapKind::Cave {
         cave(config, &mut warnings);
     }
+    if config.kind == MapKind::Forest {
+        forest(config, &mut warnings);
+    }
     warnings
 }
 
@@ -268,6 +271,108 @@ fn cave(config: &LevelConfig, out: &mut Vec<Warning>) {
     }
 }
 
+/// Forest settings that cannot work as asked (the generator still runs and
+/// clamps / skips, with notes).
+fn forest(config: &LevelConfig, out: &mut Vec<Warning>) {
+    let f = &config.forest;
+    let ranges = [
+        ("forest.water.width_max_m", "Stream width", f.water.width_min_m, f.water.width_max_m),
+        ("forest.clearings.glade_max_m", "Glade size", f.clearings.glade_min_m, f.clearings.glade_max_m),
+        ("forest.clearings.glades_max", "Glades per area", f.clearings.glades_min as f32, f.clearings.glades_max as f32),
+        ("forest.trees.trunk_max_m", "Trunk size", f.trees.trunk_min_m, f.trees.trunk_max_m),
+        ("forest.props.group_max", "Props per group", f.props.group_min as f32, f.props.group_max as f32),
+        ("forest.props.group_size_max_m", "Group prop size", f.props.group_size_min_m, f.props.group_size_max_m),
+        ("forest.props.single_size_max_m", "Single prop size", f.props.single_size_min_m, f.props.single_size_max_m),
+        ("forest.props.rock_size_max_m", "Near-rock prop size", f.props.rock_size_min_m, f.props.rock_size_max_m),
+        ("forest.props.managed_size_max_m", "Managed prop size", f.props.managed_size_min_m, f.props.managed_size_max_m),
+        ("forest.props.long_width_max_m", "Long prop width", f.props.long_width_min_m, f.props.long_width_max_m),
+        ("hidden_rooms.size_max_m", "Hidden glade size", config.hidden_rooms.size_min_m, config.hidden_rooms.size_max_m),
+    ];
+    for (fd, label, lo, hi) in ranges {
+        if hi < lo {
+            out.push(field(fd, format!("{label}: max ({hi}) is smaller than min ({lo}) — the two are swapped at generation time")));
+        }
+    }
+    // Areas so small the border belts fill them.
+    let (wm, hm) = (config.map.width_m, config.map.height_m);
+    if wm > 0.0 && hm > 0.0 && f.areas.count > 0 && f.thickets.border_pct > 0.0 {
+        let side = (wm * hm / f.areas.count as f32).sqrt();
+        let belts = 2.0 * f.thickets.border_width_m + f.thickets.edge_width_m;
+        if side < belts * 1.5 {
+            out.push(field(
+                "forest.areas.count",
+                format!(
+                    "{} areas on a {wm}×{hm} m map are about {side:.0} m across — the thicket belts ({:.0} m from each border) leave little ground; fewer areas or narrower belts",
+                    f.areas.count, f.thickets.border_width_m
+                ),
+            ));
+        }
+    }
+    // A style in use whose characters all weigh 0.
+    let c = &f.areas.characters;
+    let wild = c.meadow + c.open_woods + c.dense_woods + c.old_growth;
+    let managed = c.meadow + c.logged + c.plantation + c.camp_grounds;
+    if f.areas.wild_pct > 0.0 && wild <= 0.0 {
+        out.push(field("forest.areas.characters", "Every wild character weighs 0 — wild areas fall back to open woods".to_owned()));
+    }
+    if f.areas.wild_pct < 100.0 && managed <= 0.0 {
+        out.push(field("forest.areas.characters", "Every managed character weighs 0 — managed areas fall back to logged".to_owned()));
+    }
+    let pct = f.areas.wild_pct;
+    if pct <= 0.0 || pct >= 100.0 {
+        let only = if pct <= 0.0 { "managed" } else { "wild" };
+        out.push(field("forest.areas.mixing_pct", format!("Wild {pct:.0}%: the whole forest is {only} — Mixing has no effect")));
+    }
+    if config.gates.gates.is_empty() {
+        out.push(field("gates.gates", "No gates: the forest has no way in from the map edge".to_owned()));
+    }
+    if f.water.streams > 0 && f.water.width_max_m.max(f.water.width_min_m) < f.water.deep_from_m {
+        out.push(field(
+            "forest.water.deep_from_m",
+            format!(
+                "No stream reaches Deep from ({:.1} m; widest {:.1} m): every stream is wadeable and separates nothing",
+                f.water.deep_from_m,
+                f.water.width_max_m.max(f.water.width_min_m)
+            ),
+        ));
+    }
+    if f.trees.density_pct > 0.0 && f.trees.trunk_max_m.max(f.trees.trunk_min_m) >= f.trees.spacing_m {
+        out.push(field(
+            "forest.trees.spacing_m",
+            format!(
+                "Trunks up to {:.1} m are as wide as the {:.1} m spacing — few trees fit",
+                f.trees.trunk_max_m.max(f.trees.trunk_min_m),
+                f.trees.spacing_m
+            ),
+        ));
+    }
+    if f.terrain.rock_pct <= 0.0 && f.props.near_rock_per_ha > 0.0 {
+        out.push(field("forest.props.near_rock_per_ha", "Rock 0%: the near-rock props have no rock and go anywhere".to_owned()));
+    }
+    // Spawn terrains that exist in a forest (mud does not).
+    let forest_any = |s: crate::model::SpawnOn| (s.land || s.path || s.shallow || s.hidden_room) && (s.natural || s.hand_made);
+    for t in &config.mobs.types {
+        if !forest_any(t.spawn_on) {
+            out.push(field(
+                "mobs.types.spawn_on",
+                format!("Mob type '{}' has no forest spawn terrain (ground, trail, shallow water, hidden glade) or wild / managed ticked — it is never placed", t.name),
+            ));
+        }
+    }
+    for t in &config.interactive {
+        if !forest_any(t.spawn_on) {
+            out.push(field(
+                "interactive.spawn_on",
+                format!("Interactive type '{}' has no forest spawn terrain or wild / managed ticked — it is never placed", t.name),
+            ));
+        }
+        let s = t.spawn_on;
+        if s.hidden_room && !s.land && !s.path && !s.shallow && config.hidden_rooms.count == 0 {
+            out.push(field("interactive.spawn_on", format!("Interactive type '{}' spawns only in hidden glades, but there are none", t.name)));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -302,6 +407,33 @@ mod tests {
         let forest = LevelConfig::starting();
         assert_eq!(forest.kind, MapKind::Forest);
         assert!(validate(&forest).is_empty(), "{:?}", validate(&forest));
+    }
+
+    #[test]
+    fn forest_warnings_fire() {
+        let mut c = LevelConfig::starting();
+        c.forest.trees.trunk_min_m = 2.0;
+        c.forest.trees.trunk_max_m = 1.0;
+        c.forest.areas.count = 40;
+        c.forest.areas.wild_pct = 100.0;
+        c.forest.water.deep_from_m = 20.0;
+        c.forest.terrain.rock_pct = 0.0;
+        c.gates.gates.clear();
+        c.mobs.types[0].spawn_on = crate::model::SpawnOn { mud: true, natural: true, hand_made: true, ..crate::model::SpawnOn::NONE };
+        let fields: Vec<String> = validate(&c).into_iter().filter_map(|w| w.field).collect();
+        for want in [
+            "forest.trees.trunk_max_m",
+            "forest.areas.count",
+            "forest.areas.mixing_pct",
+            "forest.water.deep_from_m",
+            "forest.props.near_rock_per_ha",
+            "gates.gates",
+            "mobs.types.spawn_on",
+        ] {
+            assert!(fields.iter().any(|f| f == want), "missing {want}: {fields:?}");
+        }
+        c.kind = MapKind::Town;
+        assert!(validate(&c).iter().all(|w| w.field.as_deref().is_none_or(|f| !f.starts_with("forest."))));
     }
 
     #[test]

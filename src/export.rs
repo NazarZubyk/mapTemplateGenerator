@@ -68,22 +68,30 @@ pub struct ExportSpec {
     /// What kind of map this is ("town", "swamp", ...).
     pub map_kind: &'static str,
     /// The region split, once the regions node is built.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub regions: Option<Vec<ExportRegion>>,
     /// The road network, once the roads node is built.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub roads: Option<ExportRoads>,
     /// The walls between regions and their road openings.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub region_walls: Option<ExportRegionWalls>,
     /// Groups of interactive objects: type, center and member indices into
     /// `objects`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub interactive_groups: Option<Vec<crate::level::InteractiveGroup>>,
     /// Hidden rooms: floor rect, access path centerline + width, whether
     /// mobs may use the path, and their object indices in `objects`.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub hidden_rooms: Option<Vec<crate::level::HiddenRoom>>,
     /// Mob spawn points (center, radius, pack members, cost, on road, hidden
     /// room) and the budget spent.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mobs: Option<crate::level::MobLayout>,
-    /// Gates: direction asked / used (0° = east, 90° = north), point,
-    /// region, wall opening width, gate road link index.
+    /// Town gates: direction asked / used (0° = east, 90° = north), point,
+    /// region, wall opening width, gate road link index. (Swamp, cave and
+    /// forest gates are in their own sections.)
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub gates: Option<Vec<crate::level::GateInfo>>,
     /// Swamp gates: direction asked / used, style (shore / bridge), corner,
     /// gate point on the map edge, where the gate island goes and its
