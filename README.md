@@ -52,7 +52,10 @@ the details.
 
 ## How to use
 
-1. In **1 · Template**, pick the map size (keep **Town** as the kind).
+1. In **1 · Template**, pick the map size (keep **Town** as the kind). Maps
+   can be up to 16 km on a side; for big maps raise the **Cell size** (the
+   app warns when a map will take minutes and gigabytes of memory, and
+   blocks sizes it cannot hold).
 2. Go down the panel on the left. Each block is one step of the map, from
    the outline to walls, regions, roads, gates, houses, props, interactive
    objects, hidden rooms and mobs. Hover any setting to see what it does.
@@ -84,6 +87,8 @@ see `QUICKSTART.md`.
 - Few safety checks. For example, two object types with the same color are
   not flagged yet.
 - Windows builds are not code-signed, so expect the SmartScreen warning.
+- Huge maps export smaller images: map.png and layer.png stay within
+  16384 px on a side (spec.json records the scale used).
 
 Found a bug or have an idea? Open an
 [issue](https://github.com/NazarZubyk/mapTemplateGenerator/issues).

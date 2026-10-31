@@ -160,6 +160,33 @@ chamber id — spelled out in spec.json `layer_encoding`), spec.json
 groups, hidden rooms, mobs, gates; swamp: `gate_anchors`, `islands`,
 `paths`, `gate_bridges`, `water`; cave: `cave_zones`, `chambers`, `tunnels`, `junctions`, `cave_gates`, `cave_floor`, `hazards`).
 
+## Map size limits
+
+What limits a map is the number of grid cells (width / cell size × height
+/ cell size); peak memory is about 75 B per cell on every map kind, time
+grows with the cells too (1024 m at 0.5 m ≈ 4 M cells: 20–30 s).
+- The Template node accepts up to 16384 m a side.
+- `validate`: above 16.8 M cells (4096²) a non-blocking "big map"
+  warning with the memory estimate; above 67.1 M cells (8192², ~5 GB) a
+  blocking one. The app's Generate, Live sync and the MCP `generate` /
+  `export` tools all refuse blocking configs.
+- Export: map.png / layer.png at most 16384 px a side
+  (`export::fitted_px_per_m` lowers the scale; spec.json `px_per_m` and the
+  export status say which).
+- layer.png object instance ids: G + 256·B + 65536·(255 − A); A stays 255
+  up to 65535 objects, so small maps encode as before.
+- Preview textures past the graphics card's largest texture are sampled
+  down (`ctx.input(|i| i.max_texture_side)`). The preview draws only the
+  objects on screen, and on maps with more than 20 000 objects skips those
+  under 1 px at the current zoom (a 4096 m forest has ~535 000 trunks).
+- Stress run, every kind at 4096 m / 1 m cells (16.7 M cells): no crash;
+  peak 0.56–1.2 GB; 100 s (swamp) – 6 min (town).
+- 16-bit ids (cave chambers, junctions, style zones; swamp islands) stop at
+  65534 with a note instead of wrapping.
+- Cave hazards check connectivity locally (the ring around the new
+  hazard), falling back to the whole map only when needed; pool rims are
+  computed in the pool's box — this step was quadratic in the map size.
+
 ## MCP server
 
 `mapgen-mcp` speaks MCP (JSON-RPC over stdio) and edits the config file

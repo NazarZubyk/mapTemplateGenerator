@@ -133,6 +133,9 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, islands: &mut IslandLay
             .filter(|&c| t[c] == Terrain::Path && breath[c] > limit / 2.0)
             .max_by(|&a, &b| breath[a].total_cmp(&breath[b]).then(b.cmp(&a)));
         let Some(at) = worst else { break };
+        if islands.islands.len() >= crate::generator::swamp::islands::MAX_IDS {
+            break;
+        }
         let id = islands.islands.len() as u16 + 1;
         let (ax, ay) = ((at % w) as i64, (at / w) as i64);
         let ri = r.ceil() as i64;

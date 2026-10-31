@@ -532,3 +532,9 @@ several seeds, docs updated as in workflow.md.
    leave progression to the game?
 3. **Hidden rooms**: pocket behind a cracked wall — OK?
 4. **Hand-made rooms**: rotated a little or always axis-aligned?
+
+**Big maps (later fix).** The hazards guard used to rebuild the whole walkable
+mask and re-check the whole map's connectivity per try; now `stays_connected`
+checks only that the cells around the new hazard still reach each other (near
+the hazard first, the whole map only if needed) and pool rims are computed in
+the pool's box. Same results, and 1024 m caves dropped from ~90 s to ~20 s.

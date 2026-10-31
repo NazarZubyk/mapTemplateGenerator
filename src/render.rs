@@ -6,8 +6,9 @@ use crate::level::{CaveStyle, Category, GeneratedLevel};
 pub struct Rasterized {
     /// Human-facing colored map: every object type in its own color.
     pub map: ImageBuffer<Rgb<u8>, Vec<u8>>,
-    /// Machine layer data. Object pixels: R = category layer id (1–7), G/B =
-    /// instance id (1-based, G low byte), A = 255. Swamp ground pixels
+    /// Machine layer data. Object pixels: R = category layer id (1–7),
+    /// instance id (1-based) = G + 256·B + 65536·(255 − A) — A = 255 up to
+    /// 65535 objects. Swamp ground pixels
     /// (under no object): R = ground id (`GROUND_IDS`, 8–14), G = depth (0
     /// safe ground … 254, 255 deep water / thicket), B = island id low byte
     /// (0 off islands), A = 255. Cave ground pixels: R = ground id
@@ -20,6 +21,8 @@ pub struct Rasterized {
 }
 
 pub const GROUND: [u8; 3] = [225, 220, 205];
+/// Object instance ids layer.png can hold (A = 255 − high byte, down to 1).
+pub const MAX_INSTANCES: usize = 255 * 65536 - 1;
 /// The region footprint from the shape node (town, swamp, forest, cave),
 /// painted under every object.
 pub const REGION: [u8; 3] = [204, 186, 158];
@@ -444,7 +447,9 @@ pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
     // corners is tested against the object's rects (pixel centers). A
     // compound house is ONE instance id on layer.png.
     for (idx, o) in level.objects.iter().enumerate() {
-        let instance = (idx + 1) as u16;
+        // Instance id = G + 256·B + 65536·(255 − A): A is 255 for the first
+        // 65535 objects (as always), lower only on huge maps.
+        let instance = (idx + 1).min(MAX_INSTANCES) as u32;
         // Every rect of the object (main + wings of a compound house).
         let corners: Vec<(f32, f32)> = o.all_corners().into_iter().flatten().collect();
         let fold = |f: fn(f32, f32) -> f32, init: f32, pick: fn(&(f32, f32)) -> f32| {
@@ -467,8 +472,8 @@ pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
                     Rgba([
                         o.category.layer_id(),
                         (instance & 0xFF) as u8,
-                        (instance >> 8) as u8,
-                        255,
+                        ((instance >> 8) & 0xFF) as u8,
+                        255 - (instance >> 16) as u8,
                     ]),
                 );
             }
@@ -660,6 +665,38 @@ mod tests {
         // Ground outside the object stays empty.
         assert_eq!(r.map.get_pixel(0, 0).0, GROUND);
         assert_eq!(r.layer.get_pixel(0, 0).0[0], 0);
+    }
+
+    #[test]
+    fn instance_ids_past_65535_use_the_alpha_byte() {
+        // 70 000 one-pixel objects on a 280 × 256 px map (1 px/m).
+        let mut level = level_with_one_object();
+        level.config.map.width_m = 280.0;
+        level.config.map.height_m = 256.0;
+        level.objects = (0..70_000)
+            .map(|i| PlacedObject {
+                category: Category::Prop,
+                type_name: "p".to_owned(),
+                color: [1, 2, 3],
+                x_m: (i % 280) as f32,
+                y_m: (i / 280) as f32,
+                w_m: 1.0,
+                h_m: 1.0,
+                angle_deg: 0.0,
+                parts: Vec::new(),
+                round: false,
+            })
+            .collect();
+        let r = rasterize(&level, 1.0);
+        let id = |x: u32, y: u32| {
+            let p = r.layer.get_pixel(x, y).0;
+            p[1] as u32 + 256 * p[2] as u32 + 65536 * (255 - p[3] as u32)
+        };
+        assert_eq!(id(0, 0), 1);
+        assert_eq!(r.layer.get_pixel(0, 0).0[3], 255, "small ids keep A = 255");
+        let last = 69_999u32;
+        assert_eq!(id(last % 280, last / 280), 70_000);
+        assert_eq!(r.layer.get_pixel(last % 280, last / 280).0[3], 254);
     }
 
     #[test]

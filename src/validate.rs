@@ -1,5 +1,13 @@
 use crate::model::{LevelConfig, MapKind, Warning};
 
+/// Grid cells (map / cell size, both ways) above which generation is
+/// blocked: 8192 × 8192 cells, about 5 GB of memory.
+pub const MAX_CELLS: f64 = 8192.0 * 8192.0;
+/// Above this a "big map" warning (minutes, gigabytes): 4096 × 4096 cells.
+pub const BIG_CELLS: f64 = 4096.0 * 4096.0;
+/// Peak memory per cell measured on every map kind (about 75 B), rounded up.
+const BYTES_PER_CELL: f64 = 80.0;
+
 /// Validate a config and collect every warning. Blocking warnings prevent
 /// generation until resolved. Grows back per section (docs/workflow.md).
 pub fn validate(config: &LevelConfig) -> Vec<Warning> {
@@ -18,6 +26,31 @@ pub fn validate(config: &LevelConfig) -> Vec<Warning> {
     }
     if config.cell_size_m <= 0.0 {
         warnings.push(Warning::new("Cell size must be positive"));
+    }
+    // Size: memory and time grow with the number of grid cells.
+    if config.cell_size_m > 0.0 && config.map.width_m > 0.0 && config.map.height_m > 0.0 {
+        let cells = (config.map.width_m / config.cell_size_m).ceil() as f64 * (config.map.height_m / config.cell_size_m).ceil() as f64;
+        let gb = cells * BYTES_PER_CELL / 1e9;
+        if cells > MAX_CELLS {
+            warnings.push(Warning {
+                field: Some("map.width_m".to_owned()),
+                message: format!(
+                    "Map too big: {:.0} million grid cells would need about {gb:.0} GB of memory (limit {:.0} million) — use a bigger cell size or a smaller map",
+                    cells / 1e6,
+                    MAX_CELLS / 1e6
+                ),
+                blocking: true,
+            });
+        } else if cells > BIG_CELLS {
+            warnings.push(Warning {
+                field: Some("map.width_m".to_owned()),
+                message: format!(
+                    "Big map: {:.0} million grid cells — generation can take minutes and about {gb:.1} GB of memory; a bigger cell size makes it faster",
+                    cells / 1e6
+                ),
+                blocking: false,
+            });
+        }
     }
     if !(1.0..=99.0).contains(&config.shape.coverage_target_pct) {
         warnings.push(Warning {
@@ -407,6 +440,24 @@ mod tests {
         let forest = LevelConfig::starting();
         assert_eq!(forest.kind, MapKind::Forest);
         assert!(validate(&forest).is_empty(), "{:?}", validate(&forest));
+    }
+
+    #[test]
+    fn map_size_warns_then_blocks() {
+        let mut c = LevelConfig::starting();
+        c.map.width_m = 2048.0;
+        c.map.height_m = 2048.0;
+        c.cell_size_m = 1.0;
+        assert!(validate(&c).iter().all(|w| w.field.as_deref() != Some("map.width_m")), "4M cells is fine");
+        c.map.width_m = 3000.0;
+        c.map.height_m = 3000.0;
+        c.cell_size_m = 0.5;
+        let w: Vec<Warning> = validate(&c).into_iter().filter(|w| w.field.as_deref() == Some("map.width_m")).collect();
+        assert!(w.len() == 1 && !w[0].blocking, "{w:?}");
+        c.map.width_m = 8192.0;
+        c.map.height_m = 8192.0;
+        let w: Vec<Warning> = validate(&c).into_iter().filter(|w| w.field.as_deref() == Some("map.width_m")).collect();
+        assert!(w.len() == 1 && w[0].blocking, "{w:?}");
     }
 
     #[test]

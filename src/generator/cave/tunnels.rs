@@ -171,7 +171,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout, ch
             })
             .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)));
         match best {
-            Some((c, _, to_j)) if rock_dist[c] >= gap_cells && to_j >= JUNCTION_GAP_M / cell => {
+            Some((c, _, to_j)) if rock_dist[c] >= gap_cells && to_j >= JUNCTION_GAP_M / cell && junctions.len() < u16::MAX as usize - 1 => {
                 let id = junctions.len() as u16 + 1;
                 junctions.push(Junction { id, point_m: center(c, w, cell) });
                 nodes.push(Node { cell: c, end: TunnelEnd::Junction(id), zone: style.ids[c], style: style.style_at(c), chamber: 0 });

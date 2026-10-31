@@ -25,6 +25,9 @@ use crate::generator::noise::NoiseField;
 use crate::level::{CaveStyle, CaveZone, CellMask, StyleLayout};
 use crate::model::LevelConfig;
 
+/// Zone ids are 16-bit.
+const MAX_ZONE: u32 = u16::MAX as u32 - 1;
+
 /// Patch size at mixing 100%, meters (about one chamber).
 const PATCH_MIN_M: f32 = 16.0;
 /// Wobble of the boundary line at low mixing, as a share of the gradient.
@@ -125,15 +128,18 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng) -> StyleBuild {
     // 4. Zones.
     let mut ids = vec![0u16; n];
     let mut zones = Vec::new();
+    let mut merged_zones = 0u32;
     for style in [CaveStyle::Natural, CaveStyle::HandMade] {
         let want = style == CaveStyle::Natural;
         let probe = CellMask { cells: natural.cells.iter().map(|&v| v == want).collect(), ..natural.clone() };
         let (labels, count) = grid::components(&probe);
-        let base = zones.len() as u16;
+        // Zone ids are 16-bit: on a huge map, patches past the last id
+        // share it (a note says so).
+        let base = zones.len().min(MAX_ZONE as usize) as u32;
         let mut sums = vec![(0u32, 0.0f32, 0.0f32); count as usize];
         for (k, &l) in labels.iter().enumerate() {
             if l > 0 {
-                ids[k] = base + l as u16;
+                ids[k] = (base + l).min(MAX_ZONE) as u16;
                 let e = &mut sums[l as usize - 1];
                 e.0 += 1;
                 e.1 += ((k % w) as f32 + 0.5) * cell;
@@ -141,8 +147,12 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng) -> StyleBuild {
             }
         }
         for (i, (cells, sx, sy)) in sums.into_iter().enumerate() {
+            if base + i as u32 + 1 > MAX_ZONE {
+                merged_zones += 1;
+                continue;
+            }
             zones.push(CaveZone {
-                id: base + i as u16 + 1,
+                id: (base + i as u32 + 1) as u16,
                 style,
                 area_m2: cells as f32 * cell * cell,
                 center_m: [sx / cells.max(1) as f32, sy / cells.max(1) as f32],
@@ -156,6 +166,10 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng) -> StyleBuild {
             "Style: natural share came out {natural_pct:.0}% (asked {:.0}%) — small patches joined the other style; lower the min zone size",
             s.natural_pct
         ));
+    }
+
+    if merged_zones > 0 {
+        notes.push(format!("Style: {merged_zones} zones past the 65534th share its id — raise the min zone size on a map this big"));
     }
 
     StyleBuild {

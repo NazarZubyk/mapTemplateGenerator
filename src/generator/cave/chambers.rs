@@ -31,6 +31,9 @@ use crate::generator::swamp::islands::tidy;
 use crate::level::{CaveStyle, Chamber, ChamberKind, ChamberLayout, StyleLayout};
 use crate::model::{LevelConfig, NodeAmount};
 
+/// Chamber ids are 16-bit: no more than this many chambers.
+const MAX_IDS: usize = u16::MAX as usize - 1;
+
 pub struct ChamberBuild {
     pub layout: ChamberLayout,
     pub notes: Vec<String>,
@@ -243,6 +246,10 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout) ->
             continue;
         };
         if (cells.len() as f32) < (target * 0.2).max(4.0) {
+            dropped += 1;
+            continue;
+        }
+        if chambers.len() >= MAX_IDS {
             dropped += 1;
             continue;
         }

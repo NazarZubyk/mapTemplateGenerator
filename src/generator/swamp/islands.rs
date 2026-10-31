@@ -31,6 +31,9 @@ use crate::generator::noise::NoiseField;
 use crate::level::{CellMask, GateAnchor, Island, IslandKind, IslandLayout};
 use crate::model::{LevelConfig, NodeAmount};
 
+/// Island ids are 16-bit: no more than this many islands (hummocks too).
+pub(crate) const MAX_IDS: usize = u16::MAX as usize - 1;
+
 pub struct IslandBuild {
     pub layout: IslandLayout,
     pub notes: Vec<String>,
@@ -217,6 +220,10 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, anchors: &[GateAnchor])
             continue;
         };
         if (cells.len() as f32) < (target * 0.2).max(4.0) {
+            dropped += 1;
+            continue;
+        }
+        if islands.len() >= MAX_IDS {
             dropped += 1;
             continue;
         }

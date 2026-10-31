@@ -137,6 +137,7 @@ impl Server {
             }),
             "generate" => {
                 let config = self.load()?;
+                blocking_check(&config)?;
                 let seed = args.get("seed").and_then(Value::as_u64).unwrap_or(config.seed);
                 let level = crate::generator::generate(&config, seed);
                 Ok(serde_json::to_string_pretty(&summary(&level)).unwrap_or_default())
@@ -146,13 +147,15 @@ impl Server {
                 let seed = args.get("seed").and_then(Value::as_u64).unwrap_or(config.seed);
                 let dir = args.get("dir").and_then(Value::as_str).unwrap_or("exports");
                 let px = args.get("px_per_m").and_then(Value::as_f64).unwrap_or(20.0) as f32;
+                blocking_check(&config)?;
                 let level = crate::generator::generate(&config, seed);
                 let r = crate::export::export_bundle(&level, Path::new(dir), px)?;
                 Ok(format!(
-                    "exported {}, {}, {}\n{}",
+                    "exported {}, {}, {} at {:.2} px/m\n{}",
                     r.map_path.display(),
                     r.layer_path.display(),
                     r.spec_path.display(),
+                    r.px_per_m,
                     serde_json::to_string_pretty(&summary(&level)).unwrap_or_default()
                 ))
             }
@@ -673,6 +676,13 @@ fn merge_patch(target: &mut Value, patch: &Value) {
 }
 
 /// What Claude needs to judge a generated level.
+/// Refuses a config the app would not generate either (blocking warnings:
+/// e.g. a map too big for memory).
+fn blocking_check(config: &LevelConfig) -> Result<(), String> {
+    let blocking: Vec<String> = crate::validate::validate(config).into_iter().filter(|w| w.blocking).map(|w| w.message).collect();
+    if blocking.is_empty() { Ok(()) } else { Err(format!("cannot generate: {}", blocking.join("; "))) }
+}
+
 fn summary(level: &crate::level::GeneratedLevel) -> Value {
     let mobs = level.mobs.as_ref().map(|m| {
         let per: serde_json::Map<String, Value> = level

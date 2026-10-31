@@ -221,13 +221,21 @@ impl MapGenApp {
             })
             .collect();
 
-        // Bench textures: one pixel per grid cell, drawn crisp (NEAREST).
+        // Bench textures: one pixel per grid cell, drawn crisp (NEAREST). A
+        // grid bigger than the graphics card's largest texture is sampled
+        // down (every k-th cell) — uploading it whole would crash. The
+        // preview stretches the texture over the map, so only detail drops.
+        let max_side = ctx.input(|i| i.max_texture_side).max(256);
         let upload = |name: &str, pixels: Vec<egui::Color32>, w: usize, h: usize| {
-            ctx.load_texture(
-                name,
-                egui::ColorImage::new([w, h], pixels),
-                egui::TextureOptions::NEAREST,
-            )
+            let k = w.max(h).div_ceil(max_side).max(1);
+            let image = if k == 1 {
+                egui::ColorImage::new([w, h], pixels)
+            } else {
+                let (sw, sh) = (w.div_ceil(k), h.div_ceil(k));
+                let small = (0..sw * sh).map(|i| pixels[((i / sw) * k).min(h - 1) * w + ((i % sw) * k).min(w - 1)]).collect();
+                egui::ColorImage::new([sw, sh], small)
+            };
+            ctx.load_texture(name, image, egui::TextureOptions::NEAREST)
         };
         // A level without a layer (a swamp has no noise view or town shape)
         // must not keep showing the previous level's.

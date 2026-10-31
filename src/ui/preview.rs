@@ -161,9 +161,30 @@ fn color32(rgb: [u8; 3]) -> Color32 {
     Color32::from_rgb(rgb[0], rgb[1], rgb[2])
 }
 
+/// Above this many objects, objects smaller than `TINY_PX` on screen are
+/// not drawn (they are invisible at that zoom; zoom in to see them).
+const BUSY_OBJECTS: usize = 20_000;
+const TINY_PX: f32 = 1.0;
+
 fn draw_level(painter: &egui::Painter, map_rect: Rect, zoom: f32, level: &GeneratedLevel) {
     let clipped = painter.with_clip_rect(map_rect);
+    // Only what is on screen: the visible part of the map, in meters.
+    let view = clipped.clip_rect().intersect(map_rect);
+    let (vx0, vy0) = ((view.left() - map_rect.left()) / zoom, (view.top() - map_rect.top()) / zoom);
+    let (vx1, vy1) = ((view.right() - map_rect.left()) / zoom, (view.bottom() - map_rect.top()) / zoom);
+    let busy = level.objects.len() > BUSY_OBJECTS;
     for o in &level.objects {
+        let always = matches!(o.category, Category::MobSpawn | Category::Gate);
+        // Rotation can reach out to the half diagonal; wings of a compound
+        // house reach farther, so those are never culled.
+        let reach = if o.parts.is_empty() { 0.5 * o.w_m.hypot(o.h_m) } else { f32::INFINITY };
+        let (cx, cy) = (o.x_m + o.w_m / 2.0, o.y_m + o.h_m / 2.0);
+        if cx + reach < vx0 || cx - reach > vx1 || cy + reach < vy0 || cy - reach > vy1 {
+            continue;
+        }
+        if busy && !always && o.parts.is_empty() && o.w_m.max(o.h_m) * zoom < TINY_PX {
+            continue;
+        }
         match o.category {
             Category::MobSpawn => {
                 let center = to_screen(

@@ -10,6 +10,21 @@ pub struct ExportResult {
     pub map_path: PathBuf,
     pub layer_path: PathBuf,
     pub spec_path: PathBuf,
+    /// The scale used: the one asked for, or lower when the images would
+    /// pass `MAX_IMAGE_SIDE_PX`.
+    pub px_per_m: f32,
+}
+
+/// Longest side of map.png / layer.png, pixels. Bigger images need
+/// gigabytes of memory to build and most tools cannot open them, so the
+/// scale is lowered to fit (spec.json records the scale used).
+pub const MAX_IMAGE_SIDE_PX: f32 = 16384.0;
+
+/// The export scale for `level`: `asked`, lowered so neither image side
+/// passes `MAX_IMAGE_SIDE_PX`.
+pub fn fitted_px_per_m(level: &GeneratedLevel, asked: f32) -> f32 {
+    let side = level.config.map.width_m.max(level.config.map.height_m).max(1.0);
+    asked.max(0.1).min(MAX_IMAGE_SIDE_PX / side)
 }
 
 /// Write the full export bundle into `dir`: map.png, layer.png, spec.json.
@@ -20,6 +35,7 @@ pub fn export_bundle(
 ) -> Result<ExportResult, String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
 
+    let px_per_m = fitted_px_per_m(level, px_per_m);
     let rasterized = render::rasterize(level, px_per_m);
     let map_path = dir.join("map.png");
     rasterized
@@ -42,6 +58,7 @@ pub fn export_bundle(
         map_path,
         layer_path,
         spec_path,
+        px_per_m,
     })
 }
 
@@ -188,7 +205,7 @@ pub struct LayerEncoding {
 impl Default for LayerEncoding {
     fn default() -> Self {
         Self {
-            object: "R = category id (1-7, see layer_categories); G + 256*B = instance id = index in `objects` + 1; A = 255",
+            object: "R = category id (1-7, see layer_categories); G + 256*B + 65536*(255-A) = instance id = index in `objects` + 1 (A = 255 unless the map has more than 65535 objects)",
             ground: "swamp maps, pixels under no object: R = ground id (8-14, see layer_categories); \
 G = depth: 0 = safe ground (island, hummock, boardwalk), 1-254 = breath used to wade there from safe \
 ground (254 = the wading limit, see `water`), 255 = deep water / thicket (not walkable); \
@@ -587,6 +604,15 @@ fn color_hex(c: [u8; 3]) -> String {
 mod tests {
     use super::*;
     use crate::level::{Category, PlacedObject};
+
+    #[test]
+    fn huge_maps_export_at_a_lower_scale() {
+        let mut level = crate::generator::generate(&crate::model::LevelConfig::test_64(), 1);
+        assert_eq!(fitted_px_per_m(&level, 20.0), 20.0);
+        level.config.map.width_m = 4096.0;
+        level.config.map.height_m = 1000.0;
+        assert!((fitted_px_per_m(&level, 20.0) - MAX_IMAGE_SIDE_PX / 4096.0).abs() < 1e-4);
+    }
 
     #[test]
     fn bundle_writes_three_valid_files() {

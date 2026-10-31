@@ -78,6 +78,8 @@ pub fn build(
     let mut hazards = Vec::new();
     let mut dropped = 0;
     let margin = MARGIN_M / cell;
+    // Walkable floor so far (kept up to date as hazards are placed).
+    let mut walk = floor.clone();
 
     for ch in &chambers.chambers {
         // Always roll everything, so the stream does not depend on outcomes.
@@ -113,18 +115,12 @@ pub fn build(
                 HazardKind::Pool => split_pool(&blob, s.shallow_m, w, h, cell),
             };
             // Guard: the walkable floor stays one piece.
-            let mut walk = CellMask {
-                width: w,
-                height: h,
-                cell_size_m: cell,
-                cells: (0..n).map(|c| floor.cells[c] && !chasm.cells[c] && !deep.cells[c]).collect(),
-            };
-            for &c in &blocked {
-                walk.cells[c] = false;
-            }
-            if !grid::is_connected(&walk) {
+            if !stays_connected(&walk, &blocked) {
                 target = (target as f32 * SHRINK) as usize;
                 continue;
+            }
+            for &c in &blocked {
+                walk.cells[c] = false;
             }
             let id = hazards.len() as u16 + 1;
             let (mx, my) = blob.iter().fold((0.0, 0.0), |a, &c| (a.0 + center(c).0, a.1 + center(c).1));
@@ -197,6 +193,52 @@ fn shape(ch: &Chamber, allowed: &[usize], target: usize, (angle, off): (f32, f32
     largest_piece(&picked, w, allowed.iter().map(|&c| c / w).max().unwrap_or(0) + 1, cell)
 }
 
+/// Does the walkable floor `walk` (one piece) stay one piece without the
+/// `blocked` cells? Every remaining cell still reaches the cells around the
+/// blocked ones, so it does exactly when those ring cells still reach each
+/// other. Checked near the blob first (cheap), then over the whole map.
+fn stays_connected(walk: &CellMask, blocked: &[usize]) -> bool {
+    let (w, h) = (walk.width, walk.height);
+    if blocked.is_empty() {
+        return true;
+    }
+    let mut gone = std::collections::HashSet::with_capacity(blocked.len());
+    gone.extend(blocked.iter().copied());
+    let open = |c: usize| walk.cells[c] && !gone.contains(&c);
+    let n4 = |c: usize| {
+        let (x, y) = (c % w, c / w);
+        [(x > 0).then(|| c - 1), (x + 1 < w).then(|| c + 1), (y > 0).then(|| c - w), (y + 1 < h).then(|| c + w)].into_iter().flatten()
+    };
+    let mut ring: Vec<usize> = blocked.iter().flat_map(|&c| n4(c)).filter(|&c| open(c)).collect();
+    ring.sort_unstable();
+    ring.dedup();
+    if ring.len() <= 1 {
+        return true;
+    }
+    let (x0, x1) = blocked.iter().fold((usize::MAX, 0), |a, &c| (a.0.min(c % w), a.1.max(c % w)));
+    let (y0, y1) = blocked.iter().fold((usize::MAX, 0), |a, &c| (a.0.min(c / w), a.1.max(c / w)));
+    let pad = (x1 - x0).max(y1 - y0).max(8);
+    let local = (x0.saturating_sub(pad), y0.saturating_sub(pad), (x1 + pad + 1).min(w), (y1 + pad + 1).min(h));
+    let reach_all = |bounds: (usize, usize, usize, usize)| {
+        let inside = |c: usize| {
+            let (x, y) = (c % w, c / w);
+            x >= bounds.0 && y >= bounds.1 && x < bounds.2 && y < bounds.3
+        };
+        let mut seen = std::collections::HashSet::new();
+        let mut stack = vec![ring[0]];
+        seen.insert(ring[0]);
+        while let Some(c) = stack.pop() {
+            for nb in n4(c) {
+                if inside(nb) && open(nb) && seen.insert(nb) {
+                    stack.push(nb);
+                }
+            }
+        }
+        ring.iter().all(|c| seen.contains(c))
+    };
+    reach_all(local) || reach_all((0, 0, w, h))
+}
+
 fn largest_piece(cells: &[usize], w: usize, h: usize, cell: f32) -> Vec<usize> {
     let mut m = CellMask::new(w, h, cell);
     for &c in cells {
@@ -214,13 +256,22 @@ fn largest_piece(cells: &[usize], w: usize, h: usize, cell: f32) -> Vec<usize> {
 /// Splits a pool into (deep, shallow): shallow = within `shallow_m` of the
 /// pool's edge.
 fn split_pool(pool: &[usize], shallow_m: f32, w: usize, h: usize, cell: f32) -> (Vec<usize>, Vec<usize>) {
-    let mut inside = vec![false; w * h];
-    for &c in pool {
-        inside[c] = true;
+    let _ = h;
+    if pool.is_empty() {
+        return (Vec::new(), Vec::new());
     }
-    let to_edge = distance_field(w, h, |c| !inside[c]);
+    // Only the pool's box (one cell of margin) matters.
+    let (x0, x1) = pool.iter().fold((usize::MAX, 0), |a, &c| (a.0.min(c % w), a.1.max(c % w)));
+    let (y0, y1) = pool.iter().fold((usize::MAX, 0), |a, &c| (a.0.min(c / w), a.1.max(c / w)));
+    let (bx, by) = (x0.saturating_sub(1), y0.saturating_sub(1));
+    let (lw, lh) = (x1 + 2 - bx, y1 + 2 - by);
+    let mut inside = vec![false; lw * lh];
+    for &c in pool {
+        inside[(c / w - by) * lw + (c % w - bx)] = true;
+    }
+    let to_edge = distance_field(lw, lh, |c| !inside[c]);
     let band = shallow_m.max(0.0) / cell;
-    pool.iter().copied().partition(|&c| to_edge[c] > band + 0.5)
+    pool.iter().copied().partition(|&c| to_edge[(c / w - by) * lw + (c % w - bx)] > band + 0.5)
 }
 
 /// A straight rope bridge across the chasm's narrow axis through its

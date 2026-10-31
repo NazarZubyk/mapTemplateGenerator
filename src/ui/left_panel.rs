@@ -1112,8 +1112,11 @@ fn flow_arrow(ui: &mut egui::Ui, what: &str) {
 /// decides the shape character and, later, which nodes the pipeline gets.
 fn node_template(ui: &mut egui::Ui, app: &mut MapGenApp) {
     const TIP_SIZE: &str = "Map size in meters — the empty field the Template node \
-outputs and every other node works on. The preview keeps the old picture until you \
-press ⚙ Generate.";
+outputs and every other node works on, up to 16384 m. What limits a map is the number of \
+grid cells (size / cell size, both ways): past 16 million a warning (minutes, gigabytes \
+of memory), past 67 million Generate is blocked — use a bigger cell size for huge maps \
+(e.g. 2048 m at 0.5 m, 4096 m at 1 m, 8192 m at 1 m is the limit). The preview keeps the \
+old picture until you press ⚙ Generate.";
     const TIP_CELL: &str = "Grid resolution in meters per cell; everything the generator \
 builds is quantized to this grid. 0.5 m: fine, crisp edges, but 4× more cells than 1 m \
 (and slower). 1–2 m: chunkier edges, faster. Changing it re-samples the noise, so the \
@@ -1149,7 +1152,7 @@ being built). Switching the kind loads that kind's shape defaults.";
                     .on_hover_text(TIP_SIZE);
                 ui.add(
                     egui::DragValue::new(&mut app.config.map.width_m)
-                        .range(4.0..=512.0)
+                        .range(4.0..=16384.0)
                         .speed(1.0)
                         .suffix(" m"),
                 )
@@ -1159,7 +1162,7 @@ being built). Switching the kind loads that kind's shape defaults.";
                     .on_hover_text(TIP_SIZE);
                 ui.add(
                     egui::DragValue::new(&mut app.config.map.height_m)
-                        .range(4.0..=512.0)
+                        .range(4.0..=16384.0)
                         .speed(1.0)
                         .suffix(" m"),
                 )
@@ -3371,6 +3374,15 @@ fn export_section(ui: &mut egui::Ui, app: &mut MapGenApp) {
             );
         });
         ui.weak("Writes map.png + layer.png (layer data) + spec.json (legend and objects)");
+        if let Some(level) = app.generated.as_ref() {
+            let fit = crate::export::fitted_px_per_m(level, app.export_px_per_m);
+            if fit < app.export_px_per_m - 1e-3 {
+                ui.weak(format!(
+                    "This map exports at {fit:.2} px/m (images at most {} px on a side)",
+                    crate::export::MAX_IMAGE_SIDE_PX
+                ));
+            }
+        }
 
         let response = ui.add_enabled(
             app.generated.is_some(),
@@ -3383,10 +3395,15 @@ fn export_section(ui: &mut egui::Ui, app: &mut MapGenApp) {
                     Ok(r) => ConfigStatus {
                         ok: true,
                         text: format!(
-                            "Exported: {}, {}, {}",
+                            "Exported: {}, {}, {}{}",
                             r.map_path.display(),
                             r.layer_path.display(),
-                            r.spec_path.display()
+                            r.spec_path.display(),
+                            if r.px_per_m < app.export_px_per_m - 1e-3 {
+                                format!(" — scale lowered to {:.2} px/m so the images stay within {} px", r.px_per_m, crate::export::MAX_IMAGE_SIDE_PX)
+                            } else {
+                                String::new()
+                            }
                         ),
                     },
                     Err(e) => ConfigStatus { ok: false, text: e },
