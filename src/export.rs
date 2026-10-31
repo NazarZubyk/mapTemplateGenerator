@@ -128,6 +128,12 @@ pub struct ExportSpec {
     /// type "tree trunk": round, solid).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forest_trees: Option<crate::level::ForestTreeLayout>,
+    /// Forest props: the groups (center, radius, direction, their props'
+    /// indexes in `objects`) and counts. The props themselves are `objects`
+    /// of type "prop" — shape and place only, all blocked; what they are is
+    /// up to the level designer.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forest_props: Option<crate::level::ForestPropLayout>,
     /// Forest streams (spring → mouth centerlines, widths, where they end)
     /// and ponds.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -524,6 +530,7 @@ impl ExportSpec {
                 walkable_pct: l.walkable_pct,
             }),
             forest_trees: level.forest.as_ref().and_then(|f| f.trees.clone()),
+            forest_props: level.forest.as_ref().and_then(|f| f.props.clone()),
             forest_water: level.forest.as_ref().and_then(|f| f.water.as_ref()).map(|l| ExportForestWater { streams: l.streams.clone(), ponds: l.ponds.clone() }),
             forest_passages: level.forest.as_ref().and_then(|f| f.passages.as_ref()).map(|l| ExportForestPassages {
                 links: l.links.clone(),

@@ -132,7 +132,9 @@ fn forest_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     flow_arrow(ui, "areas with glades and trails (final ground)");
     node_forest_trees(ui, app);
     flow_arrow(ui, "the forest with its tree trunks");
-    ui.weak("Next: cover — deadfall, boulders, fallen trunks (docs/forest-plan.md).");
+    node_forest_props(ui, app);
+    flow_arrow(ui, "the forest with its props (all blocked)");
+    ui.weak("Next: interactive objects, hidden glades, mobs (docs/forest-plan.md).");
     ui.add_space(4.0);
     ui.separator();
 }
@@ -545,6 +547,109 @@ clear. Every trunk also keeps one free cell around it, so no passage gets plugge
             ui.weak(format!(
                 "generated: {} trunks ({} in rows) · trunks cover {:.1}% of the walkable ground",
                 t.total, t.in_rows, t.cover_pct
+            ));
+        }
+    });
+}
+
+/// Forest node 9: uninteractive props — shape and place only (step F8 in
+/// docs/forest-plan.md).
+fn node_forest_props(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_INTRO: &str = "Uninteractive props: the generator only decides shape (long / \
+round / box), size and place — what a prop is, is up to the level designer. All props count \
+as blocked. They lie on open ground and forest floor, off trails and gates, never on a trunk or \
+another prop, with free ground around them so no passage gets plugged.";
+    const TIP_GROUPS: &str = "Prop groups per hectare of forest floor: a patch of props lying \
+together (more in old growth and dense woods, none at camp grounds). spec.json lists each group \
+with its props, so a group can become one thing. 0 = none.";
+    const TIP_G_COUNT: &str = "Props per group (rolled per group); some do not fit and are skipped.";
+    const TIP_G_RADIUS: &str = "Group radius, meters.";
+    const TIP_SHAPE: &str = "Shape: long (a rotated bar), round (a disc) or box (a rotated rectangle).";
+    const TIP_SIZE: &str = "Size range, meters: the long side (long, box) or the diameter (round).";
+    const TIP_SAME: &str = "All groups lie along one map-wide direction (else each group its \
+own). NO EFFECT on round props.";
+    const TIP_SPREAD: &str = "How far props in a group turn off the group's direction, degrees. \
+0: all parallel. NO EFFECT on round props.";
+    const TIP_CLEAR: &str = "Share of the standing tree trunks removed under a group, %, so it \
+has room. 0: groups squeeze between the trees (few props fit).";
+    const TIP_SINGLES: &str = "Single props per hectare of forest floor, any direction (more in \
+old growth).";
+    const TIP_ROCK: &str = "Props per hectare of the map near the rock ridges (closer = likelier \
+and bigger), 15% anywhere.";
+    const TIP_REACH: &str = "How far from the rock those props lie, meters.";
+    const TIP_MANAGED: &str = "Props per hectare in logged areas (other managed areas a tenth, \
+wild areas none).";
+    const TIP_WIDTH: &str = "Width range of long props, meters.";
+    const TIP_TRAIL: &str = "Free room between a prop and a trail, meters. Gates keep 6 m clear.";
+    let shape_pick = |ui: &mut egui::Ui, id: &str, v: &mut crate::model::PropShape| {
+        egui::ComboBox::from_id_salt(id)
+            .width(70.0)
+            .selected_text(v.label())
+            .show_ui(ui, |ui| {
+                for sh in crate::model::PropShape::ALL {
+                    ui.selectable_value(v, sh, sh.label());
+                }
+            })
+            .response
+    };
+    node(ui, "9 · Props", |ui| {
+        ui.weak("input: trees · output: uninteractive props — shape and place only, all blocked (forest)")
+            .on_hover_text(TIP_INTRO);
+        let s = &mut app.config.forest.props;
+        egui::Grid::new("forest_props_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Groups / ha", TIP_GROUPS, |ui| ui.add(egui::DragValue::new(&mut s.groups_per_ha).range(0.0..=20.0).speed(0.05)));
+            param_row(ui, "Props / group", TIP_G_COUNT, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add(egui::DragValue::new(&mut s.group_min).range(1..=30).speed(0.1));
+                    ui.label("–");
+                    ui.add(egui::DragValue::new(&mut s.group_max).range(1..=30).speed(0.1))
+                })
+                .response
+            });
+            param_row(ui, "Group radius", TIP_G_RADIUS, |ui| ui.add(meters(&mut s.group_radius_m, 40.0)));
+            param_row(ui, "Group shape", TIP_SHAPE, |ui| shape_pick(ui, "fp_group_shape", &mut s.group_shape));
+            param_row(ui, "Group size", TIP_SIZE, |ui| range_m(ui, &mut s.group_size_min_m, &mut s.group_size_max_m, 0.2..=30.0));
+            param_row(ui, "Same direction", TIP_SAME, |ui| ui.checkbox(&mut s.same_direction, ""));
+            param_row(ui, "Direction spread", TIP_SPREAD, |ui| ui.add(egui::Slider::new(&mut s.align_spread_deg, 0.0..=90.0).suffix("°")));
+            param_row(ui, "Clear trees", TIP_CLEAR, |ui| ui.add(egui::Slider::new(&mut s.clear_trees_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Singles / ha", TIP_SINGLES, |ui| ui.add(egui::DragValue::new(&mut s.singles_per_ha).range(0.0..=60.0).speed(0.1)));
+            param_row(ui, "Single shape", TIP_SHAPE, |ui| shape_pick(ui, "fp_single_shape", &mut s.single_shape));
+            param_row(ui, "Single size", TIP_SIZE, |ui| range_m(ui, &mut s.single_size_min_m, &mut s.single_size_max_m, 0.2..=30.0));
+            param_row(ui, "Near rock / ha", TIP_ROCK, |ui| ui.add(egui::DragValue::new(&mut s.near_rock_per_ha).range(0.0..=60.0).speed(0.1)));
+            param_row(ui, "Rock reach", TIP_REACH, |ui| ui.add(meters(&mut s.rock_reach_m, 60.0)));
+            param_row(ui, "Near rock shape", TIP_SHAPE, |ui| shape_pick(ui, "fp_rock_shape", &mut s.rock_shape));
+            param_row(ui, "Near rock size", TIP_SIZE, |ui| range_m(ui, &mut s.rock_size_min_m, &mut s.rock_size_max_m, 0.2..=10.0));
+            param_row(ui, "Managed / ha", TIP_MANAGED, |ui| ui.add(egui::DragValue::new(&mut s.managed_per_ha).range(0.0..=300.0).speed(0.5)));
+            param_row(ui, "Managed shape", TIP_SHAPE, |ui| shape_pick(ui, "fp_managed_shape", &mut s.managed_shape));
+            param_row(ui, "Managed size", TIP_SIZE, |ui| range_m(ui, &mut s.managed_size_min_m, &mut s.managed_size_max_m, 0.2..=10.0));
+            param_row(ui, "Long width", TIP_WIDTH, |ui| range_m(ui, &mut s.long_width_min_m, &mut s.long_width_max_m, 0.1..=3.0));
+            param_row(ui, "Trail clearance", TIP_TRAIL, |ui| ui.add(meters(&mut s.trail_clear_m, 10.0)));
+        });
+        ui.horizontal(|ui| {
+            if ui.button("🎲 Random params").on_hover_text("Rolls every prop setting independently inside its reasonable range (shapes stay). Set values only; press Generate.").clicked() {
+                let mut rng = rand::rng();
+                s.groups_per_ha = rng.random_range(0.0..=4.0);
+                s.group_min = rng.random_range(2..=6);
+                s.group_max = rng.random_range(5..=14);
+                s.group_radius_m = rng.random_range(5.0..=16.0);
+                s.align_spread_deg = rng.random_range(5.0..=40.0);
+                s.clear_trees_pct = rng.random_range(30.0..=100.0);
+                s.singles_per_ha = rng.random_range(0.0..=15.0);
+                s.near_rock_per_ha = rng.random_range(0.0..=15.0);
+                s.rock_reach_m = rng.random_range(4.0..=20.0);
+                s.managed_per_ha = rng.random_range(0.0..=100.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(p) = app.generated.as_ref().and_then(|l| l.forest.as_ref()).and_then(|f| f.props.as_ref()) {
+            let in_groups: usize = p.groups.iter().map(|g| g.objects.len()).sum();
+            ui.weak(format!(
+                "generated: {} props · {} groups ({in_groups} props) · {} singles · {} near rock · {} in managed areas",
+                p.total(),
+                p.groups.len(),
+                p.singles,
+                p.near_rock,
+                p.managed
             ));
         }
     });

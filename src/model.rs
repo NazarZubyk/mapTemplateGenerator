@@ -606,6 +606,109 @@ pub struct ForestSettings {
     pub clearings: ForestClearingSettings,
     /// Node 8: tree trunks.
     pub trees: ForestTreeSettings,
+    /// Node 9: props — shapes and places only.
+    pub props: ForestPropSettings,
+}
+
+/// The shape of a forest prop (what it is, is up to the level designer).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PropShape {
+    /// A long bar, rotated.
+    Long,
+    /// A disc.
+    Round,
+    /// A rectangle, rotated.
+    Box,
+}
+
+impl PropShape {
+    pub const ALL: [PropShape; 3] = [PropShape::Long, PropShape::Round, PropShape::Box];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            PropShape::Long => "long",
+            PropShape::Round => "round",
+            PropShape::Box => "box",
+        }
+    }
+}
+
+/// Settings of the forest props node: uninteractive props, shape and
+/// place only, all blocked (docs/forest-plan.md, F8).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ForestPropSettings {
+    /// Prop groups per hectare of forest floor.
+    pub groups_per_ha: f32,
+    /// Props per group, and the group radius, meters.
+    pub group_min: u32,
+    pub group_max: u32,
+    pub group_radius_m: f32,
+    pub group_shape: PropShape,
+    /// Group prop size (the long side), meters.
+    pub group_size_min_m: f32,
+    pub group_size_max_m: f32,
+    /// All groups lie along one map-wide direction (else one per group).
+    pub same_direction: bool,
+    /// How far props in a group turn off its direction, degrees.
+    pub align_spread_deg: f32,
+    /// Share of the standing trunks cleared under a group, %.
+    pub clear_trees_pct: f32,
+    /// Single props per hectare of forest floor.
+    pub singles_per_ha: f32,
+    pub single_shape: PropShape,
+    pub single_size_min_m: f32,
+    pub single_size_max_m: f32,
+    /// Props near the rock per hectare of the map; how far from the rock.
+    pub near_rock_per_ha: f32,
+    pub rock_reach_m: f32,
+    pub rock_shape: PropShape,
+    pub rock_size_min_m: f32,
+    pub rock_size_max_m: f32,
+    /// Props per hectare in logged areas (other managed areas a tenth).
+    pub managed_per_ha: f32,
+    pub managed_shape: PropShape,
+    pub managed_size_min_m: f32,
+    pub managed_size_max_m: f32,
+    /// Width range of long props, meters.
+    pub long_width_min_m: f32,
+    pub long_width_max_m: f32,
+    /// Free room around trails and gates, meters.
+    pub trail_clear_m: f32,
+}
+
+impl Default for ForestPropSettings {
+    fn default() -> Self {
+        Self {
+            groups_per_ha: 1.0,
+            group_min: 4,
+            group_max: 9,
+            group_radius_m: 9.0,
+            group_shape: PropShape::Long,
+            group_size_min_m: 3.0,
+            group_size_max_m: 10.0,
+            same_direction: true,
+            align_spread_deg: 20.0,
+            clear_trees_pct: 80.0,
+            singles_per_ha: 6.0,
+            single_shape: PropShape::Long,
+            single_size_min_m: 2.5,
+            single_size_max_m: 8.0,
+            near_rock_per_ha: 5.0,
+            rock_reach_m: 10.0,
+            rock_shape: PropShape::Round,
+            rock_size_min_m: 0.8,
+            rock_size_max_m: 2.8,
+            managed_per_ha: 40.0,
+            managed_shape: PropShape::Round,
+            managed_size_min_m: 0.4,
+            managed_size_max_m: 0.8,
+            long_width_min_m: 0.4,
+            long_width_max_m: 0.9,
+            trail_clear_m: 1.0,
+        }
+    }
 }
 
 /// Settings of the forest trees node: trunks (the only part of a tree a

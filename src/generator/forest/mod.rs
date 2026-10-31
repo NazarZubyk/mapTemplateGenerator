@@ -16,7 +16,9 @@
 //!    managed areas) and trails linking the gates, crossings and glades
 //!    (footpaths in wild, cart tracks in managed areas).
 //! 8. **Trees** — tree trunks (round solid objects) on the walkable ground,
-//!    by density, groves and the area character; plantations in rows.
+//!    by density, groves and the area character.
+//! 9. **Props** — uninteractive props, shape and place only (groups along a
+//!    direction, singles, near the rock, in managed areas); all blocked.
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -30,6 +32,7 @@ use crate::model::LevelConfig;
 pub mod areas;
 pub mod clearings;
 pub mod passages;
+pub mod props;
 pub mod terrain;
 pub mod water;
 pub mod thickets;
@@ -62,10 +65,25 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
     let clearings = clearings::build(config, &mut rng, &areas.layout, &passages.layout);
 
     progress("Planting the trees", 0.9);
-    let trees = trees::build(config, &mut rng, &areas.layout, &thickets, &passages.layout, &clearings);
+    let mut trees = trees::build(config, &mut rng, &areas.layout, &thickets, &passages.layout, &clearings);
+
+    progress("Placing the props", 0.95);
+    let mut props = props::build(config, &mut rng, &areas.layout, &terrain, &passages.layout, &clearings, &mut trees.objects);
+    // Trunks cleared for the prop groups: count them out.
+    for (n, f) in trees.layout.per_area.iter_mut().zip(&props.cleared) {
+        *n -= f;
+    }
+    trees.layout.total = trees.objects.len() as u32;
     let mut objects = passages.objects;
-    // Gate markers keep their indexes; trunks come after them.
+    // Gate markers keep their indexes; trunks and props come after them.
     objects.extend(trees.objects);
+    let base = objects.len();
+    for g in &mut props.layout.groups {
+        for i in &mut g.objects {
+            *i += base;
+        }
+    }
+    objects.extend(props.objects);
 
     progress("Done", 1.0);
     GeneratedLevel {
@@ -93,6 +111,7 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
             passages: Some(passages.layout),
             clearings: Some(clearings),
             trees: Some(trees.layout),
+            props: Some(props.layout),
         }),
         noise_preview: None,
         notes,

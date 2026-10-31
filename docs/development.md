@@ -124,8 +124,10 @@ pass, ford, bridge; gate trails; the gate list lives here) → 7
 trails linking gates, crossings and glades: winding footpaths / cart
 tracks) → 8 **Trees** (tree trunks as round solid objects: density,
 spacing, trunk size, groves, irregularity / clumps, lone trees, plantation
-rows). Next: cover
-(deadfall, boulders). The town chain is `generator::town_chain`.
+rows) → 9 **Props** (uninteractive props, shape and place only — long /
+round / box — in groups along a direction, singles, near the rock, in
+managed areas; all blocked; the designer decides what they are). Next:
+interactive objects, hidden glades, mobs. The town chain is `generator::town_chain`.
 
 **Cave** has its own chain (complete, see [cave-plan.md](cave-plan.md)):
 1 Template → 2 **Style** (natural % + mixing → natural / hand-made zones;

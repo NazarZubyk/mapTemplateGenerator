@@ -1285,6 +1285,37 @@ pub struct ForestTreeLayout {
     pub cover_pct: f32,
 }
 
+/// One prop group: props lying together (the designer decides what the
+/// group is).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ForestPropGroup {
+    pub id: u32,
+    pub center_m: [f32; 2],
+    pub radius_m: f32,
+    /// The direction its long props lie along, degrees (like `angle_deg`).
+    pub direction_deg: f32,
+    /// Indexes of its props in [`GeneratedLevel::objects`].
+    pub objects: Vec<usize>,
+}
+
+/// Forest props node output (step F8). The props are `Category::Prop`
+/// objects in [`GeneratedLevel::objects`], all blocked.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ForestPropLayout {
+    /// The map-wide direction of the groups' long props, degrees.
+    pub direction_deg: f32,
+    pub groups: Vec<ForestPropGroup>,
+    pub singles: u32,
+    pub near_rock: u32,
+    pub managed: u32,
+}
+
+impl ForestPropLayout {
+    pub fn total(&self) -> u32 {
+        self.groups.iter().map(|g| g.objects.len() as u32).sum::<u32>() + self.singles + self.near_rock + self.managed
+    }
+}
+
 /// Forest clearings & trails node output (step F6).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ClearingLayout {
@@ -1314,6 +1345,8 @@ pub struct ForestLayout {
     pub clearings: Option<ClearingLayout>,
     #[serde(default)]
     pub trees: Option<ForestTreeLayout>,
+    #[serde(default)]
+    pub props: Option<ForestPropLayout>,
 }
 
 impl ForestLayout {

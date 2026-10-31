@@ -752,6 +752,9 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
         "forest_trees": level.forest.as_ref().and_then(|f| f.trees.as_ref()).map(|t| json!({
             "trunks": t.total, "in_rows": t.in_rows, "cover_pct": t.cover_pct,
         })),
+        "forest_props": level.forest.as_ref().and_then(|f| f.props.as_ref()).map(|p| json!({
+            "total": p.total(), "groups": p.groups.len(), "singles": p.singles, "near_rock": p.near_rock, "managed": p.managed,
+        })),
         "forest_passages": level.forest.as_ref().and_then(|f| f.passages.as_ref()).map(|l| json!({
             "links": l.links.iter().filter(|x| x.linked).count(),
             "crossings": crate::level::CrossingKind::ALL.iter().filter_map(|&k| {

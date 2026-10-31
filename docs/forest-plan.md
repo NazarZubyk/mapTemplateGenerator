@@ -43,7 +43,8 @@ passages that decide where the barriers hold and where they open.
 | 6 | **Passages** (F5) | which areas link and how; gate trails |
 | 7 | **Clearings & trails** (F6) | glades, trails inside the areas; final ground |
 | 8 | **Trees** (F7) | tree trunks (round solid objects) |
-| 9+ | next: cover (deadfall, boulders, fallen trunks), props, interactive, hidden glades, mobs | |
+| 9 | **Props** (F8) | uninteractive props — shape and place only, all blocked |
+| 10+ | next: interactive, hidden glades, mobs (spawns) | |
 
 ### Step F1 — Areas — done
 
@@ -213,13 +214,42 @@ into, so a tree is its **trunk**: a round `Category::Structure` object
 - spec.json: trunks in `objects`; `forest_trees` (per area, total, in
   rows, cover %); MCP `forest_trees`.
 
+### Step F8 — Props — done
+
+`props.rs`; node 9. A first version ("Cover") decided what things were —
+deadfall logs, boulders, stumps, step-over vs blocking. Dropped: the
+generator decides **shape and place only**; what a prop is, and whether
+the player can step over it, is the level designer's call at
+prototyping. So every piece is a plain `prop` (`Category::Prop`, the
+props color `config.props.color`, type "prop") and counts as **blocked**.
+Shapes: long (rotated bar, width `long_width_min_m..max`), round (disc),
+box (rotated rect, depth 0.6–1 × the size), chosen per placement.
+- Groups: `groups_per_ha` per hectare of forest floor × the character
+  (old growth 1.6, dense 1.5, open 0.8, plantation 0.5, logged 0.2,
+  meadow 0.1, camp 0); `group_min..max` props uniformly in
+  `group_radius_m`, `group_shape`, size `group_size_min_m..max`; long /
+  box props along the group direction (one map-wide with
+  `same_direction`) ± `align_spread_deg`. `clear_trees_pct` of the
+  standing trunks within 1.1 × the radius are removed first (the trees
+  node's counts reduced), else groups barely fit between trunks.
+- Singles: `singles_per_ha` of forest floor × the character (old growth
+  2.0 … meadow / camp 0.2), any direction, 36 tries each.
+- Near rock: `near_rock_per_ha` of the map; 85% within `rock_reach_m` of
+  rock (kept with chance = closeness, bigger closer), 15% anywhere.
+- Managed: `managed_per_ha` in logged areas, a tenth in other managed
+  areas.
+- Rules: open ground / forest floor only, `trail_clear_m` off trails, 6 m
+  off gates, a one-cell gap to every trunk / prop, walkable ground all
+  around — the walkable ground minus trunks and props stays one piece
+  (tests).
+- spec.json `forest_props`: map direction, groups (center, radius,
+  direction, their props' indexes in `objects`), counts — a group can
+  become one thing; MCP `forest_props`.
+
 ## Next steps
 
 - **Main road** option from the gate through the managed areas; fences /
   hedges along managed fields.
-- **Cover**: deadfall patches (fallen trunks lying in the wind direction,
-  as long thin objects), boulders near ridge ends, low (step-over) cover
-  marked walkable.
 - **Spawns**: props, interactive objects, hidden glades (in dense forest,
   an "overgrown passage" marker), mobs on forest ground; glades as hubs.
 - **Export**: forest ground ids in layer.png, warnings, MCP `spawn_on`
