@@ -119,6 +119,11 @@ pub struct ExportSpec {
     /// player can walk on it — the key to both map.png and layer.png.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forest_ground: Option<Vec<ExportGroundKind>>,
+    /// Forest glades (open spots: fights, camps, landmarks) and trails
+    /// (footpaths in wild areas, cart tracks in managed ones) with their
+    /// centerlines.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub forest_clearings: Option<ExportForestClearings>,
     /// Forest streams (spring → mouth centerlines, widths, where they end)
     /// and ponds.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -192,6 +197,15 @@ pub struct ExportGroundKind {
     /// The map.png color.
     pub color: String,
     pub walkable: bool,
+}
+
+/// Forest glades and trails.
+#[derive(Debug, Clone, Serialize)]
+pub struct ExportForestClearings {
+    pub glades: Vec<crate::level::ForestGlade>,
+    pub trails: Vec<crate::level::ForestTrail>,
+    /// Walkable share of the map after the clearings, %.
+    pub walkable_pct: f32,
 }
 
 /// Forest water.
@@ -499,6 +513,11 @@ impl ExportSpec {
                     .iter()
                     .map(|g| ExportGroundKind { layer_id: g.layer_id(), name: g.layer_name(), label: g.label(), color: color_hex(g.color()), walkable: g.walkable() })
                     .collect()
+            }),
+            forest_clearings: level.forest.as_ref().and_then(|f| f.clearings.as_ref()).map(|l| ExportForestClearings {
+                glades: l.glades.clone(),
+                trails: l.trails.clone(),
+                walkable_pct: l.walkable_pct,
             }),
             forest_water: level.forest.as_ref().and_then(|f| f.water.as_ref()).map(|l| ExportForestWater { streams: l.streams.clone(), ponds: l.ponds.clone() }),
             forest_passages: level.forest.as_ref().and_then(|f| f.passages.as_ref()).map(|l| ExportForestPassages {

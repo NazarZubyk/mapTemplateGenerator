@@ -602,6 +602,35 @@ pub struct ForestSettings {
     pub woods: ForestWoodsSettings,
     /// Node 6: which areas link and the ways between them, the gates.
     pub passages: ForestPassageSettings,
+    /// Node 7: glades and trails inside the areas.
+    pub clearings: ForestClearingSettings,
+}
+
+/// Settings of the forest clearings & trails node.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ForestClearingSettings {
+    /// Glades per area (rolled per area in this range; camp grounds get one
+    /// big glade, meadows none — they are open already).
+    pub glades_min: u32,
+    pub glades_max: u32,
+    /// Glade size range, meters (across).
+    pub glade_min_m: f32,
+    pub glade_max_m: f32,
+    /// Footpath width in wild areas, meters.
+    pub footpath_m: f32,
+    /// Cart track width in managed areas, meters.
+    pub track_m: f32,
+    /// How much footpaths wind, %. Cart tracks wind a quarter of it.
+    pub wiggle_pct: f32,
+    /// Chance, %, of an extra trail closing a loop between near trail ends.
+    pub loops_pct: f32,
+}
+
+impl Default for ForestClearingSettings {
+    fn default() -> Self {
+        Self { glades_min: 1, glades_max: 2, glade_min_m: 12.0, glade_max_m: 22.0, footpath_m: 2.0, track_m: 3.5, wiggle_pct: 50.0, loops_pct: 20.0 }
+    }
 }
 
 /// Settings of the forest terrain node: the land everything else follows.

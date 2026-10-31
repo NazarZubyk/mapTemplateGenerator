@@ -234,7 +234,7 @@ pub fn forest_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[
     use crate::level::ForestGround as G;
     let forest = level.forest.as_ref()?;
     let l = forest.areas.as_ref()?;
-    let ground = forest.passages.as_ref().map(|p| &p.ground).or_else(|| forest.woods.as_ref().map(|w| &w.ground)).filter(|g| g.len() == l.ids.len());
+    let ground = forest.ground().filter(|g| g.len() == l.ids.len());
     let colors = (0..l.ids.len())
         .map(|c| match ground {
             Some(g) => G::from_code(g[c]).color(),
@@ -248,7 +248,7 @@ pub fn forest_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[
 /// each marked walkable or blocked.
 pub fn forest_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
     let Some(f) = level.forest.as_ref() else { return Vec::new() };
-    let Some(g) = f.passages.as_ref().map(|p| &p.ground).or_else(|| f.woods.as_ref().map(|w| &w.ground)) else { return Vec::new() };
+    let Some(g) = f.ground() else { return Vec::new() };
     crate::level::ForestGround::ALL
         .into_iter()
         .filter(|k| g.contains(&k.code()))
@@ -420,13 +420,13 @@ pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
     // Forest ground on layer.png, under the objects: ground id, area id,
     // walkable flag.
     if let Some(forest) = &level.forest
-        && let (Some(areas), Some(p)) = (&forest.areas, &forest.passages)
+        && let (Some(areas), Some(p), Some(ground)) = (&forest.areas, &forest.passages, forest.ground())
     {
         let cs = p.cell_size_m * px_per_m;
         for cy in 0..p.height {
             for cx in 0..p.width {
                 let c = cy * p.width + cx;
-                let g = p.ground_at(c);
+                let g = crate::level::ForestGround::from_code(ground[c]);
                 let px = Rgba([g.layer_id(), (areas.ids[c] & 0xFF) as u8, g.walkable() as u8, 255]);
                 let (x0, x1) = ((cx as f32 * cs).round() as u32, ((cx + 1) as f32 * cs).round() as u32);
                 let (y0, y1) = ((cy as f32 * cs).round() as u32, ((cy + 1) as f32 * cs).round() as u32);
@@ -694,14 +694,14 @@ mod tests {
         let level = crate::generator::generate(&c, 3);
         let r = rasterize(&level, 1.0);
         let f = level.forest.as_ref().unwrap();
-        let (areas, p) = (f.areas.as_ref().unwrap(), f.passages.as_ref().unwrap());
+        let (areas, p, ground) = (f.areas.as_ref().unwrap(), f.passages.as_ref().unwrap(), f.ground().unwrap());
         let names = layer_categories();
         let mut kinds = std::collections::HashSet::new();
         for (x, y, px) in r.layer.enumerate_pixels() {
             let k = y as usize * p.width + x as usize;
             let name = names[px.0[0] as usize];
             if name.starts_with("forest_") {
-                let g = p.ground_at(k);
+                let g = crate::level::ForestGround::from_code(ground[k]);
                 assert_eq!(name, g.layer_name());
                 assert_eq!(px.0[1] as u16, areas.ids[k] & 0xFF, "area id in G");
                 assert_eq!(px.0[2] == 1, g.walkable(), "walkable flag in B");

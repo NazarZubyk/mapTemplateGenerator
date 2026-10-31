@@ -119,8 +119,10 @@ brooks joining, ponds in hollows; wide streams deep) → 5 **Woods** (open /
 woods / dense forest from the character, ragged belts along area borders
 and the map edge, patches, moisture) → 6 **Passages** (labyrinth slider:
 unlinked borders sealed, linked ones opened at the weakest spot — trail,
-pass, ford, bridge; gate trails; the gate list lives here). Next: clearings
-& trails. The town chain is `generator::town_chain`.
+pass, ford, bridge; gate trails; the gate list lives here) → 7
+**Clearings & trails** (glades: organic in wild, cut in managed areas;
+trails linking gates, crossings and glades: winding footpaths / cart
+tracks). Next: cover (deadfall, boulders). The town chain is `generator::town_chain`.
 
 **Cave** has its own chain (complete, see [cave-plan.md](cave-plan.md)):
 1 Template → 2 **Style** (natural % + mixing → natural / hand-made zones;

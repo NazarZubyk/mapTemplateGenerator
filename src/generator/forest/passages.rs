@@ -217,16 +217,28 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, woo
         if linked[e] {
             let src: Vec<usize> = (0..n).filter(|&c| ids[c] == b.a && ground[c].walkable()).collect();
             let inside = |c: usize| ids[c] == b.a || ids[c] == b.b;
-            let path = cheapest(w, h, &src, |c| ids[c] == b.b && ground[c].walkable(), |c| (inside(c) && !locked[c]).then(|| step_cost(ground[c], c)));
+            let target = |c: usize| ids[c] == b.b && ground[c].walkable();
+            // Off the sealed strips first; if they close the whole border
+            // (a short border between two sealed ones), through them. That
+            // is safe: a sealed border is sealed on both sides, and this
+            // cuts only inside a and b, so the far side stays closed.
+            let path = cheapest(w, h, &src, target, |c| (inside(c) && !locked[c]).then(|| step_cost(ground[c], c)))
+                .or_else(|| cheapest(w, h, &src, target, |c| inside(c).then(|| step_cost(ground[c], c))));
             match path {
                 Some(path) => {
                     let kind = crossing_kind(&ground, &path, rng, s.bridge_pct);
                     let at = path.windows(2).find(|p| ids[p[0]] != ids[p[1]]).map(|p| p[0]).unwrap_or(path[0]);
-                    carve(&mut ground, &locked, w, h, &path, r_trail, inside, kind);
+                    let free = vec![false; n];
+                    carve(&mut ground, if path.iter().any(|&c| locked[c]) { &free } else { &locked }, w, h, &path, r_trail, inside, kind);
                     link.crossing = Some(kind);
                     link.point_m = Some([((at % w) as f32 + 0.5) * cell, ((at / w) as f32 + 0.5) * cell]);
                 }
-                None => notes.push(format!("Passages: no way found between areas {} and {}", b.a, b.b)),
+                None => {
+                    // Rock or deep water all along: they stay apart.
+                    link.linked = false;
+                    link.extra = false;
+                    notes.push(format!("Passages: areas {} and {} could not be linked (rock or deep water all along)", b.a, b.b));
+                }
             }
         }
         links.push(link);
@@ -319,6 +331,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, woo
             height: h,
             cell_size_m: cell,
             ground: ground.iter().map(|g| g.code()).collect(),
+            sealed: CellMask { width: w, height: h, cell_size_m: cell, cells: locked },
             links,
             gates,
             main_route_areas,
@@ -396,7 +409,7 @@ fn carve(ground: &mut [ForestGround], locked: &[bool], w: usize, h: usize, path:
 /// Cheapest 8-neighbor way from any of `sources` to a cell where `target`
 /// holds; `cost(c)` is the price of stepping onto `c` (None = blocked).
 /// Returns the cells source → target.
-fn cheapest(w: usize, h: usize, sources: &[usize], target: impl Fn(usize) -> bool, cost: impl Fn(usize) -> Option<u32>) -> Option<Vec<usize>> {
+pub(crate) fn cheapest(w: usize, h: usize, sources: &[usize], target: impl Fn(usize) -> bool, cost: impl Fn(usize) -> Option<u32>) -> Option<Vec<usize>> {
     let n = w * h;
     let mut best = vec![u32::MAX; n];
     let mut prev = vec![usize::MAX; n];

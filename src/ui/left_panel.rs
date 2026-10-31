@@ -128,7 +128,9 @@ fn forest_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     flow_arrow(ui, "open ground / woods / dense forest");
     node_forest_passages(ui, app);
     flow_arrow(ui, "one walkable forest: linked areas, gate trails");
-    ui.weak("Next: clearings & trails inside the areas (docs/forest-plan.md).");
+    node_forest_clearings(ui, app);
+    flow_arrow(ui, "areas with glades and trails (final ground)");
+    ui.weak("Next: cover — deadfall, boulders, fallen trunks (docs/forest-plan.md).");
     ui.add_space(4.0);
     ui.separator();
 }
@@ -414,6 +416,68 @@ first gate is where the area graph starts (and, with Managed at gate, the manage
             if !kinds.is_empty() {
                 ui.weak(format!("crossings: {}", kinds.join(" · ")));
             }
+        }
+    });
+}
+
+/// Forest node 7: glades and trails inside the areas (step F6 in
+/// docs/forest-plan.md).
+fn node_forest_clearings(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_GLADES: &str = "Glades per area, rolled per area in this range — open spots for \
+fights, camps, landmarks. Wild areas: ragged, organic glades; managed areas: cut glades \
+(rounded rectangles). Camp grounds always get one big glade, meadows none (they are open \
+already). A glade that finds no room (small area) is skipped.";
+    const TIP_SIZE: &str = "Glade size range, meters across (camp grounds ×1.6).";
+    const TIP_FOOT: &str = "Footpath width in wild areas, meters.";
+    const TIP_TRACK: &str = "Cart track width in managed areas, meters.";
+    const TIP_WIGGLE: &str = "How much footpaths wind, %. Cart tracks wind about a third of \
+it. 0%: the shortest way (still around thickets and water).";
+    const TIP_LOOPS: &str = "Chance per trail end, %, of an extra trail to its nearest other \
+end — a loop. 0%: one way between any two ends of an area. NO EFFECT in areas with fewer \
+than 3 ends.";
+    node(ui, "7 · Clearings & trails", |ui| {
+        ui.weak("input: passages · output: glades, trails between gates, crossings and glades (forest)");
+        let s = &mut app.config.forest.clearings;
+        egui::Grid::new("forest_clearings_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Glades / area", TIP_GLADES, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add(egui::DragValue::new(&mut s.glades_min).range(0..=6).speed(0.05));
+                    ui.label("–");
+                    ui.add(egui::DragValue::new(&mut s.glades_max).range(0..=6).speed(0.05))
+                })
+                .response
+            });
+            param_row(ui, "Glade size", TIP_SIZE, |ui| range_m(ui, &mut s.glade_min_m, &mut s.glade_max_m, 4.0..=60.0));
+            param_row(ui, "Footpath", TIP_FOOT, |ui| ui.add(meters(&mut s.footpath_m, 8.0)));
+            param_row(ui, "Cart track", TIP_TRACK, |ui| ui.add(meters(&mut s.track_m, 10.0)));
+            param_row(ui, "Wiggle", TIP_WIGGLE, |ui| ui.add(egui::Slider::new(&mut s.wiggle_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Loops", TIP_LOOPS, |ui| ui.add(egui::Slider::new(&mut s.loops_pct, 0.0..=100.0).suffix("%")));
+        });
+        ui.horizontal(|ui| {
+            if ui.button("🎲 Random params").on_hover_text("Rolls every clearing setting independently inside its reasonable range. Set values only; press Generate.").clicked() {
+                let mut rng = rand::rng();
+                s.glades_min = rng.random_range(0..=2);
+                s.glades_max = rng.random_range(1..=4);
+                s.glade_min_m = rng.random_range(8.0..=18.0);
+                s.glade_max_m = rng.random_range(14.0..=32.0);
+                s.footpath_m = rng.random_range(1.5..=3.0);
+                s.track_m = rng.random_range(3.0..=5.0);
+                s.wiggle_pct = rng.random_range(0.0..=100.0);
+                s.loops_pct = rng.random_range(0.0..=60.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(l) = app.generated.as_ref().and_then(|l| l.forest.as_ref()).and_then(|f| f.clearings.as_ref()) {
+            let len: f32 = l.trails.iter().map(|t| t.length_m).sum();
+            let tracks = l.trails.iter().filter(|t| t.kind == crate::level::TrailKind::CartTrack).count();
+            ui.weak(format!(
+                "generated: {} glades ({} cut) · {} trails ({tracks} cart tracks, {len:.0} m, {} loops) · walkable {:.0}%",
+                l.glades.len(),
+                l.glades.iter().filter(|g| g.cut).count(),
+                l.trails.len(),
+                l.trails.iter().filter(|t| t.extra).count(),
+                l.walkable_pct
+            ));
         }
     });
 }

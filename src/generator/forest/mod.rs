@@ -12,6 +12,9 @@
 //! 6. **Passages** — which areas link (labyrinth); unlinked borders are
 //!    sealed, linked ones open where the barrier is weakest (trail, pass,
 //!    ford, bridge); gate trails.
+//! 7. **Clearings & trails** — glades in the areas (organic in wild, cut in
+//!    managed areas) and trails linking the gates, crossings and glades
+//!    (footpaths in wild, cart tracks in managed areas).
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -23,6 +26,7 @@ use crate::level::{ForestLayout, GeneratedLevel};
 use crate::model::LevelConfig;
 
 pub mod areas;
+pub mod clearings;
 pub mod passages;
 pub mod terrain;
 pub mod water;
@@ -51,6 +55,9 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
     let passages = passages::build(config, &mut rng, &areas.layout, &woods);
     notes.extend(passages.notes);
 
+    progress("Clearing glades and trails", 0.8);
+    let clearings = clearings::build(config, &mut rng, &areas.layout, &passages.layout);
+
     progress("Done", 1.0);
     GeneratedLevel {
         config: config.clone(),
@@ -75,6 +82,7 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
             water: Some(water.layout),
             woods: Some(woods),
             passages: Some(passages.layout),
+            clearings: Some(clearings),
         }),
         noise_preview: None,
         notes,

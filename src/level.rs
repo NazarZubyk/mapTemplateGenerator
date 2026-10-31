@@ -1202,8 +1202,10 @@ pub struct PassageLayout {
     pub width: usize,
     pub height: usize,
     pub cell_size_m: f32,
-    /// [`ForestGround::code`] per cell, final.
+    /// [`ForestGround::code`] per cell.
     pub ground: Vec<u8>,
+    /// Cells closing unlinked borders: later nodes never open them.
+    pub sealed: CellMask,
     pub links: Vec<AreaLink>,
     pub gates: Vec<ForestGate>,
     /// Areas on the longest walk from a gate (gate area = 1).
@@ -1231,6 +1233,52 @@ impl PassageLayout {
     }
 }
 
+/// A glade: an open spot inside an area (a fight, a camp, a landmark).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ForestGlade {
+    pub id: u32,
+    pub area: u16,
+    pub center_m: [f32; 2],
+    /// Open ground it cut, m².
+    pub area_m2: f32,
+    /// Managed areas: a cut glade (rounded rectangle); wild: organic.
+    pub cut: bool,
+}
+
+/// What a trail is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TrailKind {
+    /// Narrow, winding (wild areas).
+    Footpath,
+    /// Wider, smoother cart track (managed areas).
+    CartTrack,
+}
+
+/// One trail inside an area, between two of its trail ends.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ForestTrail {
+    pub id: u32,
+    pub area: u16,
+    pub kind: TrailKind,
+    pub width_m: f32,
+    pub length_m: f32,
+    /// The trail closes a loop (not part of the area's trail tree).
+    pub extra: bool,
+    pub path_m: Vec<[f32; 2]>,
+}
+
+/// Forest clearings & trails node output (step F6).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ClearingLayout {
+    /// [`ForestGround::code`] per cell, final.
+    pub ground: Vec<u8>,
+    pub glades: Vec<ForestGlade>,
+    pub trails: Vec<ForestTrail>,
+    /// Walkable share of the map, %.
+    pub walkable_pct: f32,
+}
+
 /// The forest node chain's output, filled node by node
 /// (docs/forest-plan.md).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -1245,6 +1293,20 @@ pub struct ForestLayout {
     pub woods: Option<WoodsLayout>,
     #[serde(default)]
     pub passages: Option<PassageLayout>,
+    #[serde(default)]
+    pub clearings: Option<ClearingLayout>,
+}
+
+impl ForestLayout {
+    /// The ground of the last node that made one ([`ForestGround::code`]
+    /// per cell).
+    pub fn ground(&self) -> Option<&Vec<u8>> {
+        self.clearings
+            .as_ref()
+            .map(|c| &c.ground)
+            .or_else(|| self.passages.as_ref().map(|p| &p.ground))
+            .or_else(|| self.woods.as_ref().map(|w| &w.ground))
+    }
 }
 
 /// The cave node chain's output, filled node by node (docs/cave-plan.md).

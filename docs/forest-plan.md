@@ -40,8 +40,9 @@ passages that decide where the barriers hold and where they open.
 | 3 | **Terrain** (F2) | hidden height field, rock ridges |
 | 4 | **Water** (F3) | streams (spring → map edge), brooks, ponds |
 | 5 | **Woods** (F4) | open ground / woods / dense forest |
-| 6 | **Passages** (F5) | which areas link and how; gate trails; final ground |
-| 7+ | next: clearings & trails, cover (deadfall, rocks), props, interactive, hidden glades, mobs, export | |
+| 6 | **Passages** (F5) | which areas link and how; gate trails |
+| 7 | **Clearings & trails** (F6) | glades, trails inside the areas; final ground |
+| 8+ | next: cover (deadfall, boulders, trunks), props, interactive, hidden glades, mobs, export | |
 
 ### Step F1 — Areas — done
 
@@ -113,8 +114,11 @@ wide irregular masses, not bands — and a belt along the map edge
    the cheapest way, smaller ones are filled; an area with no walkable
    ground gets a small clearing.
 4. Links: per linked pair the cheapest 8-neighbor way from one area's
-   ground into the other's, inside the two areas, never through locked
-   cells (walk 10, dense 70, deep 120, rock 350, plus a noise wiggle): it
+   ground into the other's, inside the two areas, off the locked cells
+   (if the sealed strips close the whole border — a short border between
+   two sealed ones — through them: safe, since a sealed border is sealed
+   on both sides and the cut stays inside the two areas; if even that
+   fails, rock / deep water all along, the pair is recorded unlinked) (walk 10, dense 70, deep 120, rock 350, plus a noise wiggle): it
    takes a natural gap when there is one, else the thinnest spot. Cut
    `trail_width_m` wide: forest / rock → trail, deep water → bridge
    (`bridge_pct`) or ford. Kind recorded: open / trail / pass / ford /
@@ -140,12 +144,38 @@ centerlines, widths, mouths; ponds), `forest_passages` (links with
 crossing kind and point, gates, stats, relief). MCP `generate` reports
 `forest_areas`, `forest_land`, `forest_passages`.
 
+### Step F6 — Clearings & trails — done
+
+`clearings.rs`; node 7.
+1. Glades: per area `glades_min..=glades_max` (camp grounds one glade
+   ×1.6, meadows none — already open); best of 32 spots by room to the
+   area border (≥ 5 m gap) and distance to the area's other glades. Wild:
+   an organic blob (radius ± 45% by noise); managed: a cut glade, a rotated
+   rounded rectangle (aspect 0.6–0.9). Woods / inner thickets → open
+   ground; water, rock, sealed cells stay.
+2. Trail ends per area: glade centers, its link crossing points, its gate
+   points — snapped to the nearest walkable cell of the area, ends closer
+   than 4 m merged.
+3. Per area a nearest-first spanning tree over the ends, plus loops
+   (`loops_pct` per end, to its nearest unlinked end, areas with ≥ 3 ends).
+4. Trails: the cheapest way inside the area, off sealed cells (open 10,
+   trail 7, woods 14, shallow 45, dense 120; rock / deep never) plus a
+   noise wiggle (up to 90 × fbm², 16 m features; cart tracks 35% of it);
+   every 4th cell, 3 Chaikin passes, drawn `footpath_m` (wild) or
+   `track_m` (managed) wide as trail ground; shallow water stays (a ford).
+5. Anything a glade opened that is not joined to the passages' walkable
+   ground goes back (no islands beyond water).
+
+The walkable ground only grows, inside single areas, so the area graph
+holds (tests + a 30-config sweep on the final ground). spec.json
+`forest_clearings` (glades, trails with kind, width, centerline); MCP
+`forest_clearings`. layer.png / map.png use the final ground
+(`ForestLayout::ground`).
+
 ## Next steps
 
-- **Clearings & trails** inside the areas: glades (cut rectangles in managed
-  areas), trails between the crossings and the glades (wild footpaths
-  winding, managed cart roads), a main road from the gate through the
-  managed areas; fences / hedges along managed fields.
+- **Main road** option from the gate through the managed areas; fences /
+  hedges along managed fields.
 - **Cover**: deadfall patches (trunks lying in the wind direction, drawn as
   logs), boulders near ridge ends, fallen trunks as low (step-over) cover.
 - **Spawns**: props, interactive objects, hidden glades (in dense forest,

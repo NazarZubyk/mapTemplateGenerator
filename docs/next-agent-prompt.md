@@ -71,8 +71,10 @@ chambers, C3 tunnels, C4 carve & smooth, C5 hazards, C7 spawns and C8 export are
 (gameplay skeleton) → F2 terrain (height + rock ridges) → F3 water (streams
 flow downhill off the map, brooks, ponds) → F4 woods (open / woods / dense
 masses) → F5 passages (labyrinth: seal unlinked borders, open linked ones
-at the weakest spot; gates) — all done. Next: clearings & trails inside the
-areas, then cover (deadfall as logs), spawns, export. The app / MCP start on
+at the weakest spot; gates) → F6 clearings & trails (glades, footpaths / cart
+tracks) — all done. map.png is flat and unambiguous (walkable light, blocked
+dark; layer.png B = walkable). Next: cover (deadfall as logs, boulders),
+then spawns, export. The app / MCP start on
 Forest (`LevelConfig::starting()`); `default()` stays Town for the tests.
 
 **MCP server** `mapgen-mcp` (`src/mcp.rs`, `src/bin/mapgen-mcp.rs`,

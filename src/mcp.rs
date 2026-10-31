@@ -743,6 +743,12 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
             "woods_pct": f.woods.as_ref().map(|w| w.woods_pct),
             "dense_pct": f.woods.as_ref().map(|w| w.dense_pct),
         })),
+        "forest_clearings": level.forest.as_ref().and_then(|f| f.clearings.as_ref()).map(|l| json!({
+            "glades": l.glades.len(),
+            "trails": l.trails.len(),
+            "trail_m": l.trails.iter().map(|t| t.length_m).sum::<f32>(),
+            "walkable_pct": l.walkable_pct,
+        })),
         "forest_passages": level.forest.as_ref().and_then(|f| f.passages.as_ref()).map(|l| json!({
             "links": l.links.iter().filter(|x| x.linked).count(),
             "crossings": crate::level::CrossingKind::ALL.iter().filter_map(|&k| {
