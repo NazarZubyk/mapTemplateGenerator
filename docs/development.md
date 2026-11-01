@@ -70,9 +70,14 @@ src/
 │       ├── trees.rs     #   forest node 8: tree trunks (round solid objects)
 │       ├── props.rs     #   forest node 9: props by shape and place
 │       └── spawns.rs    #   forest nodes 10–12: hidden glades, interactive, mobs
-│   └── mixed/           # the mixed chain (docs/mixed-plan.md; branch mixed-regions)
-│       └── mod.rs       #   mixed pipeline; node 2: map regions (kind, share, placement)
-├── render.rs            # map.png / layer.png rasterizers
+│   ├── mixed/           # the mixed chain (docs/mixed-plan.md)
+│   │   ├── mod.rs       #   mixed pipeline; node 2 map regions, node 3 land, node 4 water
+│   │   ├── connections.rs # node 5: links, portals, map gates, river crossings
+│   │   ├── chains.rs    #   node 6: every region's own chain in its ground
+│   │   └── seams.rs     #   node 7: seal stray contacts, join openings, one piece
+│   ├── region.rs        # RegionCtx: a map region as its kind's chain sees it
+│   └── mountains.rs     # a mountain region: passes over the massif, caves inside
+├── render.rs            # map.png / layer.png / regions.png rasterizers
 ├── export.rs            # export bundle writer + spec.json
 ├── validate.rs          # config validation (early subset; step 13 extends it)
 └── ui/                  # app shell, node panel, preview, warnings, bench
@@ -107,7 +112,7 @@ body and apply on ⚙ Generate. The algorithms are described step by step in
 12. **Mobs**: typed packs bought from a budget, with combinations, balance,
     minimum, spacing and gate clearance.
 
-**Swamp** has its own chain (being built, see
+**Swamp** has its own chain (complete, being tuned, see
 [swamp-plan.md](swamp-plan.md)): 1 Template → 2 **Gate anchors** (gate
 points on the border, shore or bridge style, corner snap, where each gate
 island goes) → 3 **Islands** (gate islands, hubs, small islands; shape
@@ -148,7 +153,7 @@ cores on forest ground: ground / trail / shallow water / hidden glade, wild
 (forest warnings, no empty town sections in spec.json) is done; open:
 tuning. The town chain is `generator::town_chain`.
 
-**Mixed** (being built on branch `mixed-regions`, see
+**Mixed** (complete M1–M9, being tuned; see
 [mixed-plan.md](mixed-plan.md)): the map is split into map regions, each of
 one kind with its own settings: 1 Template → 2 **Map regions** (kind, share,
 placement anywhere / on the map edge / inside; the town district growth on
@@ -217,6 +222,16 @@ forest: `forest_areas`, `forest_ground`, `forest_water`, `forest_passages`,
 `forest_clearings`, `forest_trees`, `forest_props`). Sections a map kind does
 not use are left out.
 
+Mixed maps: layer.png takes each region's own ground (town regions R =
+32 town_district, 33 road, 34 town_wall, 35 district_wall, their rivers as
+the forest water ids; mountain passes 36; a joined opening its region's
+path id — `render::ground_layer`, the same values as before for single
+maps); **regions.png** (R = map region id, G = kind 1 town / 2 swamp / 3
+forest / 4 mountains, B = 255 walkable); spec.json `mixed_regions`,
+`mixed_water`, `mixed_relief_m`, `mixed_connections`, `mixed_seams` and
+`mixed_region_specs` (each built region's own full spec, `object_offset`
+into the top-level `objects`, `mountain_passes`).
+
 ## Map size limits
 
 What limits a map is the number of grid cells (width / cell size × height
@@ -259,18 +274,31 @@ rebuild it after code changes.
 | `upsert_mob_type` / `remove_mob_type` | add or change one type (rename too, swamp `spawn_on`) / remove one |
 | `set_mob_combination` | allow/forbid two types at one spawn |
 | `set_mob_settings` | budget, max, minimum (count or density), pack size, spacing, on roads, gate clearance, swamp guards / hub share, `reroll` |
-| `patch_config` | JSON merge patch for any other node (map, regions, roads, houses, props, …) |
+| `set_mixed_regions` | make the map mixed with these map regions (kind town / swamp / forest / mountains, share, placement, name) |
+| `patch_region` | merge patch on one map region's own config (`patch`) and/or its row (`row`: name, share, placement, scale_amounts) |
+| `patch_config` | JSON merge patch for any other node (map, regions, roads, houses, props, mixed land / water / connections, …) |
 | `get_config` / `reset_config` | read the config (or one section) / back to defaults |
 | `generate` / `export` | generate and summarize (mobs per type, budget, gates, notes) / write the bundle |
 
 Missing names become "Mob #n", missing colors are picked to differ from
-every color in use, and mob shares are kept at 100%.
+every color in use, and mob shares are kept at 100%. On a mixed map every
+mob tool takes `region` (1-based) to set that region's mobs; `generate`
+also reports `mixed_regions`, `mixed_water`, `mixed_connections`,
+`mixed_built` and `mixed_walkable_pieces`.
 
 ## README media
 
-`docs/media/town-build.gif` and `docs/media/map-kinds.gif` are rendered
-with `render::rasterize` from a temporary `examples/` file (deleted
-afterwards) and put together with ImageMagick + gifsicle:
+`docs/media/mixed-build.gif`, `docs/media/town-build.gif` and
+`docs/media/map-kinds.gif` are rendered with `render::rasterize` from a
+temporary `examples/` file (deleted afterwards; frames under `target/`) and
+put together with ImageMagick + gifsicle (Noto Sans captions on a dark bar,
+600 × 600 + 56 px, 1.1 s per step, the last held 3.8 s):
+
+- **mixed-build.gif** (the README's first picture): the default mixed map
+  (`LevelConfig::of_kind(MapKind::Mixed)`, 200 m) at seed 5, 3 px/m, nine
+  steps from the finished level: map regions only, + land, + rivers, +
+  connections and gate markers, then the forest, town, swamp and mountain
+  regions one by one (each with its objects), then the joined map.
 
 - **town-build.gif**: a 120 × 120 m town, seed 21, 4 regions (15/20/25/40 %),
   region walls 1 m, gates at 0° / 120° / 240°, two interactive types

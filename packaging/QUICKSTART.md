@@ -1,10 +1,12 @@
 # mapTemplateGenerator — quick start
 
-Generates 2D map blueprints for ARPG levels (town, swamp, forest, cave) and
-exports them as `map.png`, `layer.png` and `spec.json`.
+Generates 2D map blueprints for ARPG levels (town, swamp, forest, cave, or a
+mixed map with several of them) and exports them as `map.png`, `layer.png`
+and `spec.json` (a mixed map also `regions.png`).
 
-> **Beta.** Only the **Town** map kind is ready. Swamp, Forest and Cave are
-> experimental. Settings and file formats may change between releases.
+> **Beta.** Only the **Town** map kind is ready. Swamp, Forest, Cave and
+> Mixed are experimental. Settings and file formats may change between
+> releases.
 
 ## What's in this folder
 
@@ -26,10 +28,12 @@ exports them as `map.png`, `layer.png` and `spec.json`.
 Start the app from this folder: config and exports paths are relative to
 the folder you start it in (`configs/config.json`, `exports/`).
 
-1. In node 1 set the kind to **Town** (the app opens on a Mixed map) and
-   pick the map size, then adjust the nodes below it.
+1. In node 1 pick the kind (the app opens on a **Mixed** map) and the map
+   size, then adjust the nodes below it. On a Mixed map, list the regions
+   in **Map regions**, then pick a region under the shared nodes to change
+   its own settings.
 2. Press **⚙ Generate** (🎲 **Re-roll** tries another seed).
-3. **Export** writes the three files into `exports/`.
+3. **Export** writes the files into `exports/`.
 4. **Config file → Save** keeps your settings; **Load** brings them back.
 
 ## Let Claude configure maps (optional)

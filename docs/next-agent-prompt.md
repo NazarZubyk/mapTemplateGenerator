@@ -65,7 +65,7 @@ town-chain tests use `LevelConfig::test_64()`.
 gates → C4 carve & smooth → C5 hazards → C7 spawns → C8 export). C1 style, C2
 chambers, C3 tunnels, C4 carve & smooth, C5 hazards, C7 spawns and C8 export are done (C6 pillars dropped — just props) — the cave plan is complete; open: tuning (e.g. spawn amounts for 200 m); the user drives it one step at a time.
 
-**Forest is being built**: its own chain (`src/generator/forest/`), planned in
+**Forest is done**: its own chain (`src/generator/forest/`), planned in
 `docs/forest-plan.md`. The land comes first and everything follows from it
 (a first "painted borders" attempt was dropped as fake-looking): F1 areas
 (gameplay skeleton) → F2 terrain (height + rock ridges) → F3 water (streams
@@ -81,32 +81,25 @@ dark; layer.png B = walkable). Export polish (forest warnings, no null
 town sections in spec.json, MCP summary) is done; open: tuning with the user. The app / MCP start on
 a Mixed map (`LevelConfig::starting()`); `default()` stays Town for the tests.
 
-**Mixed maps are being built** on branch `mixed-regions`, planned in
-`docs/mixed-plan.md` (read its "core idea" and "problems" first): the map
-is split into map regions (kind + share + placement, each with its own
-full kind config), shared things are decided globally (land, water,
-connections/portals), then each region runs its own kind's chain inside its
-ground with portals as gates, then the seams. M1 (map regions:
-`MapKind::Mixed`, `MixedSettings`, `generator/mixed/`, `regions::build_placed`,
-the Map regions node and the region picker) and M2 (land from the kinds,
-global water via `forest::water::build_drainage` with swamp sinks and dry
-caves) and M3 (connections: links tree + loops, portals, map gates per
-region, river crossings — `mixed/connections.rs`) are done, plus river
-length/shape settings and the river border rule (rivers cross a border
-clearly or keep `river_clearance_m` off it). On a mixed map the cave kind
-is labelled **Mountains** (a massif with the caves inside); M4 (forest
-regions: `generator/region.rs` `RegionCtx`, `mixed/chains.rs`,
-`forest::generate_in`) and M5 (town regions: `generator::town_in`, fixed
-gates in `gates::build`, rivers on bridges) and M6 (swamp regions:
-`swamp::generate_in`) and M7 (mountain regions: `generator::mountains`,
-passes + caves) and M8 (seams: `mixed/seams.rs` — stray contacts sealed,
-openings joined, one walkable piece; per-region mob re-roll) are done; next
-M9, export and MCP (layer.png / regions.png for mixed maps, per-region spec
-sections, region MCP tools), then M10 blending; next M4, the
-forest region chain inside its own ground (domain, portals and gates as
-fixed gates, the global water). The app and MCP start on Mixed.
-Single-kind maps must stay byte-identical (the chains get the new behaviour
-only when given a region).
+**Mixed maps are done (M1–M9), being tuned** — planned and documented step
+by step in `docs/mixed-plan.md` (read its "core idea" and "problems"
+first). The map is split into map regions (kind + share + placement, each
+with its own whole kind config; the cave kind is labelled **Mountains** — a
+massif with passes over it and the caves inside). The shared things are
+decided globally — land from the kinds, rivers (`forest::water::
+build_drainage` with swamp sinks, dry mountains, a border rule), the
+connections (links tree + loops, portals, map gates per region, river
+crossings, `mixed/connections.rs`) — then every region runs its own chain
+inside its ground (`generator/region.rs` `RegionCtx`, `mixed/chains.rs`:
+`forest::generate_in`, `generator::town_in`, `swamp::generate_in`,
+`generator::mountains` → `cave::generate_in`), then the seams
+(`mixed/seams.rs`: stray contacts sealed on one side, every opening joined,
+one walkable piece). Export: layer.png per region (town ids 32–35, pass
+36), regions.png, `mixed_region_specs`; MCP `set_mixed_regions`,
+`patch_region`, `region` on the mob tools. Single-kind maps must stay
+byte-identical (the chains change only when given a region; check with a
+fingerprint of generated levels and rendered images). Next: M10 blending
+(nature crossing borders), tuning.
 
 **MCP server** `mapgen-mcp` (`src/mcp.rs`, `src/bin/mapgen-mcp.rs`,
 registered in `.mcp.json`): Claude edits the same config file

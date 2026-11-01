@@ -8,12 +8,13 @@ Make 2D map blueprints for ARPG levels in a few clicks. Hand the result to
 an AI agent (or a level designer) to build a playable prototype fast.
 
 <p align="center">
-  <img src="docs/media/town-build.gif" width="480" alt="A town map built step by step: shape, outer walls, regions, roads, region walls, gates, houses, props, interactive objects, hidden rooms and mobs">
+  <img src="docs/media/mixed-build.gif" width="520" alt="A mixed map built step by step: map regions, land, rivers, connections, then a forest, a town, a swamp and a mountain region, joined into one map">
 </p>
 
-Every map is built as a chain of steps, each one using the result of the
-one before. Above, a town grows from its outline to houses, hidden rooms
-and mobs.
+One map, several kinds of land. The map is split into regions (a town, a
+forest, a swamp, mountains with caves), each with its own settings. The
+land, the rivers and the ways between the regions are shared, so they fit
+together into one walkable map.
 
 > **⚠ Beta.** This is an early version. Settings and file formats may still
 > change between releases. **Only the Town map kind is ready**; the others
@@ -25,18 +26,25 @@ and mobs.
 | **Swamp** | islands, mud paths, boardwalks, water by depth, trees | 🧪 being tuned |
 | **Forest** | wild and managed areas, rock ridges, streams, thickets, trails, trees | 🧪 being tuned |
 | **Cave** | natural caverns and hand-dug mines, tunnels, chasms, pools | 🧪 being tuned |
-| **Mixed** | several regions on one map — town, swamp, forest, mountains with caves — each with its own settings | 🚧 being built (every kind works and the regions join into one walkable map; export details next) |
+| **Mixed** | regions of the kinds above on one map; mountains are a massif with caves inside and passes over it | 🧪 new, being tuned |
 
 Every kind also places props, interactive objects, hidden rooms and mobs.
 The app opens on a Mixed map; switch the kind in **1 · Template**.
 
 <p align="center">
-  <img src="docs/media/map-kinds.gif" width="560" alt="Town, swamp, forest and cave maps, cycling through four seeds">
+  <img src="docs/media/map-kinds.gif" width="520" alt="Town, swamp, forest and cave maps, cycling through four seeds">
 </p>
+
+<details>
+<summary>How a single map is built (town)</summary>
+<p align="center">
+  <img src="docs/media/town-build.gif" width="440" alt="A town map built step by step: shape, outer walls, regions, roads, region walls, gates, houses, props, interactive objects, hidden rooms and mobs">
+</p>
+</details>
 
 ## What you get
 
-Each map is exported as three files:
+Each map is exported as three files (a Mixed map adds a fourth):
 
 - **map.png**: the colored map. Walls, roads, houses, props, mobs, gates
   and everything else each have their own color.
@@ -44,6 +52,8 @@ Each map is exported as three files:
   agents.
 - **spec.json**: a legend plus the exact position and size of every
   object.
+- **regions.png** (Mixed maps): which region each pixel belongs to, its
+  kind, and whether it is walkable.
 
 The same settings and the same seed always give the same map. Re-roll the
 seed for a new variant.
@@ -61,18 +71,25 @@ the details.
 
 ## How to use
 
-1. In **1 · Template**, set the kind to **Town** and pick the map size. Maps
-   can be up to 16 km on a side; for big maps raise the **Cell size** (the
-   app warns when a map will take minutes and gigabytes of memory, and
-   blocks sizes it cannot hold).
-2. Go down the panel on the left. Each block is one step of the map, from
-   the outline to walls, regions, roads, gates, houses, props, interactive
-   objects, hidden rooms and mobs. Hover any setting to see what it does.
+1. In **1 · Template**, pick the kind and the map size. Maps can be up to
+   16 km on a side; for big maps raise the **Cell size** (the app warns
+   when a map will take minutes and gigabytes of memory, and blocks sizes
+   it cannot hold).
+2. Go down the panel on the left. Each block is one step of the map. Hover
+   any setting to see what it does.
+   - **Mixed**: list the regions in **Map regions** (kind, share of the
+     map, placement), then set the land, rivers and connections. Pick a
+     region under them to change its own settings: they are the same
+     blocks as a map of that kind.
+   - **Town** and the other kinds: from the outline to walls, districts,
+     roads, gates, houses, props, interactive objects, hidden rooms and
+     mobs.
 3. Press **⚙ Generate**. Press **🎲 Re-roll** for another variant. To move
-   only the mobs, use **🎲 Re-roll mobs** in the Mobs block.
+   only the mobs, use **🎲 Re-roll mobs** in the Mobs block (on a Mixed
+   map, the picked region's mobs).
 4. Drag or swipe to move the preview, and pinch or Ctrl+scroll to zoom.
-5. Use **Export** to write the three files, and **Config file → Save**
-   to keep your settings.
+5. Use **Export** to write the files, and **Config file → Save** to keep
+   your settings.
 
 Not sure where to start? Every block has a **🎲 Random params** button.
 
@@ -85,13 +102,19 @@ Just describe what you want:
 > *"Bandit camp: gates east and west, rats, bandits and a bandit chief, the
 > chief never with rats, crowded."*
 
+> *"A walled town in the middle of a big forest, a swamp to the south and
+> mountains on the east edge; wolves in the forest, trolls in the caves."*
+
 The open app picks up each change and regenerates. Setup takes one command;
 see `QUICKSTART.md`.
 
 ## Known limitations (beta)
 
-- Only **Town** is tuned. Swamp, Forest and Cave are complete but still
-  being tuned; settings that cannot work as asked show a warning.
+- Only **Town** is tuned. Swamp, Forest, Cave and Mixed are complete but
+  still being tuned; settings that cannot work as asked show a warning.
+- On a Mixed map the regions meet at sharp borders; land that blends from
+  one kind into the next (trees in town yards, a wet forest edge by a
+  swamp) is planned.
 - The **walkable %** setting is not used yet.
 - Few safety checks. For example, two object types with the same color are
   not flagged yet.
@@ -106,5 +129,6 @@ Found a bug or have an idea? Open an
 
 Building from source, project layout, the MCP tools and how to make a
 release are in [docs/development.md](docs/development.md). How the
-generator works, step by step, is in [docs/workflow.md](docs/workflow.md).
+generator works, step by step, is in [docs/workflow.md](docs/workflow.md);
+mixed maps in [docs/mixed-plan.md](docs/mixed-plan.md).
 The requirements are in [docs/goals.md](docs/goals.md).
