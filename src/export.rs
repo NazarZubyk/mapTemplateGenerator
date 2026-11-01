@@ -168,6 +168,10 @@ pub struct ExportSpec {
     /// graph stats; the ground shares.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forest_passages: Option<ExportForestPassages>,
+    /// Mixed maps: the map regions — id, name, kind, placement, target /
+    /// actual share, cells, map color (docs/mixed-plan.md).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mixed_regions: Option<Vec<crate::level::MixedRegionStat>>,
     /// Cave chambers: id, kind (hall / grotto), style, zone, center, size,
     /// long-axis angle, area.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -566,6 +570,7 @@ impl ExportSpec {
                 walkable_pct: l.walkable_pct,
                 relief_m: level.forest.as_ref().and_then(|f| f.terrain.as_ref()).map_or(0.0, |t| t.relief_m),
             }),
+            mixed_regions: level.mixed.as_ref().map(|m| m.regions.clone()),
             chambers: level.cave.as_ref().and_then(|c| c.chambers.as_ref()).map(|l| l.chambers.clone()),
             tunnels: level.cave.as_ref().and_then(|c| c.tunnels.as_ref()).map(|l| l.tunnels.clone()),
             junctions: level.cave.as_ref().and_then(|c| c.tunnels.as_ref()).map(|l| l.junctions.clone()),
@@ -658,6 +663,7 @@ mod tests {
             swamp: None,
             cave: None,
             forest: None,
+            mixed: None,
             regions: None,
             noise_preview: None,
             notes: Vec::new(),

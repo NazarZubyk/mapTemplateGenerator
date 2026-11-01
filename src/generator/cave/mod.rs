@@ -116,6 +116,7 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
             hazards: Some(hazards.layout),
         }),
         forest: None,
+        mixed: None,
         noise_preview: None,
         notes,
     };

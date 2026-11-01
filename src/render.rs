@@ -259,15 +259,29 @@ pub fn forest_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
         .collect()
 }
 
+/// Mixed maps: every cell in its map region's color.
+pub fn mixed_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[u8; 3]>)> {
+    let m = level.mixed.as_ref()?;
+    let colors = (0..m.map.ids.len()).map(|c| m.region_at(c).map_or(GROUND, |r| r.color)).collect();
+    Some((m.map.width, m.map.height, m.map.cell_size_m, colors))
+}
+
+/// Mixed map legend entries: one per map region.
+pub fn mixed_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
+    let Some(m) = level.mixed.as_ref() else { return Vec::new() };
+    m.regions.iter().map(|r| (r.color, format!("{} · {} ({})", r.id, r.name, r.kind.label()))).collect()
+}
+
 /// Per-cell ground colors of the kinds that paint their own ground (cave,
-/// forest).
+/// forest, mixed).
 pub fn ground_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[u8; 3]>)> {
-    cave_colors(level).or_else(|| forest_colors(level))
+    mixed_colors(level).or_else(|| cave_colors(level)).or_else(|| forest_colors(level))
 }
 
 /// Legend entries of [`ground_colors`].
 pub fn ground_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
-    let mut out = cave_legend(level);
+    let mut out = mixed_legend(level);
+    out.extend(cave_legend(level));
     out.extend(forest_legend(level));
     out
 }
@@ -549,6 +563,7 @@ mod tests {
             swamp: None,
             cave: None,
             forest: None,
+            mixed: None,
             regions: None,
             noise_preview: None,
             notes: Vec::new(),

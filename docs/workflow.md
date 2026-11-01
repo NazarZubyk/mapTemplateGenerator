@@ -11,6 +11,9 @@ export polish), cleanup. Every map kind now has its full chain: Town (this
 file), Swamp ([swamp-plan.md](swamp-plan.md)), Cave
 ([cave-plan.md](cave-plan.md)) and Forest ([forest-plan.md](forest-plan.md));
 Swamp, Cave and Forest are complete and being tuned with the user.
+**Mixed** maps (map regions of several kinds, each with its own settings)
+are being built on branch `mixed-regions`: [mixed-plan.md](mixed-plan.md)
+(M1 map regions done).
 Swamp — its own node chain, planned in
 [swamp-plan.md](swamp-plan.md) (step list and notes live there). Done:
 S1 gate anchors, S2 islands, S3 paths, S4 depth & border, S5 trees, S6
@@ -164,7 +167,8 @@ src/
 │   ├── mobs.rs        # step 11 / node 12: budgeted mob packs
 │   ├── placement.rs   # shared: rotated footprints, dilation, road tangents
 │   ├── swamp/, cave/  # the swamp and cave chains (their plans)
-│   └── forest/        # forest chain: areas, terrain, water, thickets, passages, clearings, trees, props, spawns
+│   ├── forest/        # forest chain: areas, terrain, water, thickets, passages, clearings, trees, props, spawns
+│   └── mixed/         # mixed chain: map regions (docs/mixed-plan.md)
 ├── render.rs          # map.png / layer.png rasterizer
 ├── export.rs          # export bundle: map.png + layer.png + spec.json (format v2)
 ├── validate.rs        # config validation (still the early subset — step 13)

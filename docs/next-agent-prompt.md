@@ -81,6 +81,17 @@ dark; layer.png B = walkable). Export polish (forest warnings, no null
 town sections in spec.json, MCP summary) is done; open: tuning with the user. The app / MCP start on
 Forest (`LevelConfig::starting()`); `default()` stays Town for the tests.
 
+**Mixed maps are being built** on branch `mixed-regions`, planned in
+`docs/mixed-plan.md` (read its "core idea" and "problems" first): the map
+is split into map regions (kind + share + placement, each with its own
+full kind config), shared things are decided globally (land, water,
+connections/portals), then each region runs its own kind's chain inside its
+ground with portals as gates, then the seams. M1 (map regions:
+`MapKind::Mixed`, `MixedSettings`, `generator/mixed/`, `regions::build_placed`,
+the Map regions node and the region picker) is done; next M2 land and water.
+Single-kind maps must stay byte-identical (the chains get the new behaviour
+only when given a region).
+
 **MCP server** `mapgen-mcp` (`src/mcp.rs`, `src/bin/mapgen-mcp.rs`,
 registered in `.mcp.json`): Claude edits the same config file
 (`configs/config.json`) — gates, mob types/settings/combinations with auto

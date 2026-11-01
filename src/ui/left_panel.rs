@@ -2,7 +2,7 @@ use eframe::egui;
 use rand::Rng;
 
 use crate::level::{CaveStyle, CrossingKind, ForestCharacter, ForestStyle, IslandKind};
-use crate::model::{GateSpec, GateStyle, SpawnOn, HiddenRoomPlace, InteractiveSpot, InteractiveType, LevelConfig, MapKind, MobType, NodeAmount, ShapeSettings};
+use crate::model::{MixedRegion, RegionPlacement, GateSpec, GateStyle, SpawnOn, HiddenRoomPlace, InteractiveSpot, InteractiveType, LevelConfig, MapKind, MobType, NodeAmount, ShapeSettings};
 use crate::ui::app::{ConfigStatus, MapGenApp};
 use crate::ui::widgets::param_row;
 
@@ -39,6 +39,15 @@ fn generation_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
         forest_node_chain(ui, app);
         return;
     }
+    if app.config.kind == MapKind::Mixed {
+        mixed_node_chain(ui, app);
+        return;
+    }
+    town_node_chain(ui, app);
+}
+
+/// The town chain after the template (docs/workflow.md).
+fn town_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_shape(ui, app);
     flow_arrow(ui, "region mask");
     node_outer_walls(ui, app);
@@ -142,6 +151,200 @@ fn forest_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     ui.weak("The forest chain is complete (docs/forest-plan.md); open: export polish.");
     ui.add_space(4.0);
     ui.separator();
+}
+
+const TIP_MIXED_KIND: &str = "What this map region is: town, swamp, forest or cave. It \
+decides which nodes the region gets (below, when the region is picked). Changing it keeps \
+the region's other settings (props, mobs...) and loads the new kind's shape defaults.";
+const TIP_MIXED_SHARE: &str = "The region's share of the whole map, %. The shares stay at \
+100 in total: raising one lowers the rest. Regions are grown smallest first; the largest \
+takes whatever is left, so the result is close to these shares, not exact.";
+const TIP_MIXED_PLACEMENT: &str = "Where the region starts growing. anywhere: beside the \
+regions placed before it. on the map edge: touching the border of the map (a cave massif \
+at the side, a swamp in a corner). inside: deep in the map, so the regions grown after it \
+close around it — a town in the middle of a forest. NO EFFECT on the largest region's \
+shape: it is placed last and takes what is left.";
+const TIP_MIXED_IRREGULARITY: &str = "How irregular the borders between map regions are: \
+0% round compact blobs, higher: stretched regions with lobes, bays and fingers.";
+const TIP_MIXED_NAME: &str = "The region's name: shown in the legend, the region picker \
+and spec.json. Only a label.";
+
+/// The mixed chain (docs/mixed-plan.md): the map regions, then the picked
+/// region's own nodes.
+fn mixed_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    node_map_regions(ui, app);
+    flow_arrow(ui, "map regions (kind + ground of each)");
+    let n = app.config.mixed.regions.len();
+    if n == 0 {
+        ui.weak("Add a map region to configure it.");
+        return;
+    }
+    app.mixed_selected = app.mixed_selected.min(n - 1);
+    ui.horizontal_wrapped(|ui| {
+        ui.label(egui::RichText::new("Region").strong()).on_hover_text(
+            "Pick the map region whose own nodes show below. Each region is configured on its own, \
+             like a whole map of its kind; the map size, cell size and seed are the mixed map's.",
+        );
+        for (i, r) in app.config.mixed.regions.iter().enumerate() {
+            let label = format!("{} · {}", i + 1, r.name);
+            if ui.selectable_label(app.mixed_selected == i, label).on_hover_text(r.kind.label()).clicked() {
+                app.mixed_selected = i;
+            }
+        }
+    });
+    let i = app.mixed_selected;
+    ui.weak(
+        "Step M1: only the split into map regions is generated yet. These settings are kept \
+         and used once the region chains are built (docs/mixed-plan.md, M4–M7). Gates will move \
+         to the mixed map (M3).",
+    );
+    // The region's own nodes are the kind's normal nodes: its config takes
+    // the app config's place while they draw.
+    let mut region = app.config.mixed.regions[i].resolved(&app.config);
+    std::mem::swap(&mut app.config, &mut region);
+    match app.config.kind {
+        MapKind::Swamp => swamp_node_chain(ui, app),
+        MapKind::Cave => cave_node_chain(ui, app),
+        MapKind::Forest => forest_node_chain(ui, app),
+        _ => town_node_chain(ui, app),
+    }
+    std::mem::swap(&mut app.config, &mut region);
+    // Keep what the nodes changed; the region kind stays the row's.
+    let row = &mut app.config.mixed.regions[i];
+    region.kind = row.kind;
+    region.mixed = Default::default();
+    row.config = region;
+}
+
+/// Mixed node 2: the map regions — kind, share, placement of each
+/// (step M1 in docs/mixed-plan.md).
+fn node_map_regions(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    node(ui, "2 · Map regions", |ui| {
+        ui.weak("input: empty field · output: map region id map (a kind each)");
+        let mixed = &mut app.config.mixed;
+        let mut remove = None;
+        egui::Grid::new("map_regions_grid").num_columns(5).spacing([6.0, 3.0]).show(ui, |ui| {
+            ui.weak("#");
+            ui.weak("name").on_hover_text(TIP_MIXED_NAME);
+            ui.weak("kind").on_hover_text(TIP_MIXED_KIND);
+            ui.weak("share").on_hover_text(TIP_MIXED_SHARE);
+            ui.weak("placement").on_hover_text(TIP_MIXED_PLACEMENT);
+            ui.end_row();
+            let n = mixed.regions.len();
+            for i in 0..n {
+                ui.label(format!("{}", i + 1));
+                let r = &mut mixed.regions[i];
+                ui.add(egui::TextEdit::singleline(&mut r.name).desired_width(86.0)).on_hover_text(TIP_MIXED_NAME);
+                let before = r.kind;
+                egui::ComboBox::from_id_salt(("map_region_kind", i))
+                    .width(70.0)
+                    .selected_text(r.kind.label())
+                    .show_ui(ui, |ui| {
+                        for kind in MapKind::ALL {
+                            ui.selectable_value(&mut r.kind, kind, kind.label());
+                        }
+                    })
+                    .response
+                    .on_hover_text(TIP_MIXED_KIND);
+                if r.kind != before {
+                    if r.name == before.label() {
+                        r.name = r.kind.label().to_owned();
+                    }
+                    r.config.kind = r.kind;
+                    r.config.shape = ShapeSettings::for_kind(r.kind);
+                }
+                let share_before = r.share_pct;
+                ui.add(egui::DragValue::new(&mut r.share_pct).range(1.0..=98.0).speed(0.3).suffix(" %").max_decimals(1))
+                    .on_hover_text(TIP_MIXED_SHARE);
+                if r.share_pct != share_before {
+                    let mut shares: Vec<f32> = mixed.regions.iter().map(|r| r.share_pct).collect();
+                    rebalance(&mut shares, i);
+                    for (r, s) in mixed.regions.iter_mut().zip(shares) {
+                        r.share_pct = s;
+                    }
+                }
+                let r = &mut mixed.regions[i];
+                ui.horizontal(|ui| {
+                    egui::ComboBox::from_id_salt(("map_region_placement", i))
+                        .width(95.0)
+                        .selected_text(r.placement.label())
+                        .show_ui(ui, |ui| {
+                            for p in RegionPlacement::ALL {
+                                ui.selectable_value(&mut r.placement, p, p.label());
+                            }
+                        })
+                        .response
+                        .on_hover_text(TIP_MIXED_PLACEMENT);
+                    if ui.small_button("✖").on_hover_text("Remove this map region (its settings are lost).").clicked() {
+                        remove = Some(i);
+                    }
+                });
+                ui.end_row();
+            }
+        });
+        if let Some(i) = remove {
+            mixed.regions.remove(i);
+            let mut shares: Vec<f32> = mixed.regions.iter().map(|r| r.share_pct).collect();
+            let sum: f32 = shares.iter().sum();
+            if sum > 0.0 {
+                shares.iter_mut().for_each(|s| *s = *s / sum * 100.0);
+            }
+            for (r, s) in mixed.regions.iter_mut().zip(shares) {
+                r.share_pct = s;
+            }
+        }
+        egui::Grid::new("map_regions_params").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Irregularity", TIP_MIXED_IRREGULARITY, |ui| {
+                ui.add(egui::Slider::new(&mut mixed.irregularity_pct, 0.0..=100.0).suffix(" %"))
+            });
+        });
+        ui.horizontal(|ui| {
+            let max = crate::generator::mixed::MAX_REGIONS;
+            if ui
+                .add_enabled(mixed.regions.len() < max, egui::Button::new("➕ Add region"))
+                .on_hover_text("Add a forest region with the forest defaults; pick its kind in the list. Its share comes from the others.")
+                .clicked()
+            {
+                let n = mixed.regions.len() as f32;
+                let share = 100.0 / (n + 1.0);
+                for r in &mut mixed.regions {
+                    r.share_pct *= 1.0 - share / 100.0;
+                }
+                mixed.regions.push(MixedRegion::of(MapKind::Forest, share));
+            }
+            if ui
+                .button("🎲 Random params")
+                .on_hover_text(
+                    "Rolls 2–6 map regions with random kinds, shares and placements, and the \
+                     irregularity. Regions that keep their kind keep their own settings. Press Generate.",
+                )
+                .clicked()
+            {
+                let mut rng = rand::rng();
+                let count = rng.random_range(2..=6);
+                let raw: Vec<f32> = (0..count).map(|_| rng.random_range(1.0..=10.0)).collect();
+                let sum: f32 = raw.iter().sum();
+                let mut rows = Vec::with_capacity(count);
+                for (i, v) in raw.iter().enumerate() {
+                    let kind = MapKind::ALL[rng.random_range(0..MapKind::ALL.len())];
+                    let mut r = match mixed.regions.get(i) {
+                        Some(old) if old.kind == kind => old.clone(),
+                        _ => MixedRegion::of(kind, 0.0),
+                    };
+                    r.share_pct = v / sum * 100.0;
+                    r.placement = RegionPlacement::ALL[rng.random_range(0..RegionPlacement::ALL.len())];
+                    rows.push(r);
+                }
+                mixed.regions = rows;
+                mixed.irregularity_pct = rng.random_range(0.0..=100.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+        if let Some(m) = app.generated.as_ref().and_then(|l| l.mixed.as_ref()) {
+            let line = m.regions.iter().map(|r| format!("#{} {} {:.1}%", r.id, r.kind.label(), r.actual_pct)).collect::<Vec<_>>().join(" · ");
+            ui.weak(format!("generated: {line}"));
+        }
+    });
 }
 
 /// Forest node 2: the map split into large areas, each wild or managed
@@ -1124,8 +1327,9 @@ region shape can shift.";
     const TIP_KIND: &str = "What this map is. It picks the shape defaults (a TOWN keeps \
 most of the map and cuts the rest away; forest / cave scatter islands and bridge them) \
 and decides which nodes the pipeline gets — a forest has no buildings node, for example. \
-SWAMP has its own node chain (gate anchors first, islands, paths and water next — still \
-being built). Switching the kind loads that kind's shape defaults.";
+SWAMP, FOREST and CAVE have their own node chains. MIXED splits the map into map regions, \
+each of one kind with its own settings (docs/mixed-plan.md; being built). Switching the \
+kind loads that kind's shape defaults.";
     node(ui, "1 · Template", |ui| {
         ui.weak("input: nothing · output: empty field + map kind");
         egui::Grid::new("template_node_grid")
@@ -1138,7 +1342,7 @@ being built). Switching the kind loads that kind's shape defaults.";
                 egui::ComboBox::from_id_salt("map_kind_combo")
                     .selected_text(app.config.kind.label())
                     .show_ui(ui, |ui| {
-                        for kind in MapKind::ALL {
+                        for kind in MapKind::TEMPLATE {
                             ui.selectable_value(&mut app.config.kind, kind, kind.label());
                         }
                     })
@@ -1146,6 +1350,9 @@ being built). Switching the kind loads that kind's shape defaults.";
                     .on_hover_text(TIP_KIND);
                 if app.config.kind != before {
                     app.config.shape = ShapeSettings::for_kind(app.config.kind);
+                    if app.config.kind == MapKind::Mixed && app.config.mixed.regions.is_empty() {
+                        app.config.mixed.regions = crate::model::MixedSettings::starter();
+                    }
                 }
                 ui.end_row();
                 ui.label(egui::RichText::new("Width").underline())

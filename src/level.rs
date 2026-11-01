@@ -1490,6 +1490,40 @@ pub struct RegionWalls {
     pub recolored_cells: u32,
 }
 
+/// One map region of a mixed map, as generated.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MixedRegionStat {
+    /// Region id, 1-based (the config row + 1).
+    pub id: u8,
+    pub name: String,
+    pub kind: crate::model::MapKind,
+    pub placement: crate::model::RegionPlacement,
+    /// Configured share of the map, %.
+    pub target_pct: f32,
+    /// Claimed share after the split, %.
+    pub actual_pct: f32,
+    pub cells: u32,
+    /// The region's map color (its kind's ground, varied per region).
+    pub color: [u8; 3],
+}
+
+/// A mixed map's output (docs/mixed-plan.md).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MixedLayout {
+    /// Map region id per cell (1-based; every cell belongs to a region).
+    pub map: RegionMap,
+    /// Per region, in id order.
+    pub regions: Vec<MixedRegionStat>,
+}
+
+impl MixedLayout {
+    /// The region at cell `c`.
+    pub fn region_at(&self, c: usize) -> Option<&MixedRegionStat> {
+        let id = *self.map.ids.get(c)?;
+        self.regions.get((id as usize).checked_sub(1)?)
+    }
+}
+
 /// A generated level: the config snapshot it came from plus everything placed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GeneratedLevel {
@@ -1535,6 +1569,9 @@ pub struct GeneratedLevel {
     /// The forest chain's output (forest maps only).
     #[serde(default)]
     pub forest: Option<ForestLayout>,
+    /// The mixed map's output (mixed maps only; docs/mixed-plan.md).
+    #[serde(default)]
+    pub mixed: Option<MixedLayout>,
     /// Raw noise field behind the region shape, for the bench "noise texture"
     /// view.
     pub noise_preview: Option<NoiseTexture>,

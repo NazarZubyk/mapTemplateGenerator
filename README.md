@@ -25,6 +25,7 @@ and mobs.
 | **Swamp** | islands, mud paths, boardwalks, water by depth, trees | 🧪 being tuned |
 | **Forest** | wild and managed areas, rock ridges, streams, thickets, trails, trees | 🧪 being tuned |
 | **Cave** | natural caverns and hand-dug mines, tunnels, chasms, pools | 🧪 being tuned |
+| **Mixed** | several regions of different kinds on one map, each with its own settings | 🚧 being built (only the split into regions so far) |
 
 Every kind also places props, interactive objects, hidden rooms and mobs.
 The app opens on Forest for now; switch the kind in **1 · Template**.

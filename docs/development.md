@@ -70,6 +70,8 @@ src/
 │       ├── trees.rs     #   forest node 8: tree trunks (round solid objects)
 │       ├── props.rs     #   forest node 9: props by shape and place
 │       └── spawns.rs    #   forest nodes 10–12: hidden glades, interactive, mobs
+│   └── mixed/           # the mixed chain (docs/mixed-plan.md; branch mixed-regions)
+│       └── mod.rs       #   mixed pipeline; node 2: map regions (kind, share, placement)
 ├── render.rs            # map.png / layer.png rasterizers
 ├── export.rs            # export bundle writer + spec.json
 ├── validate.rs          # config validation (early subset; step 13 extends it)
@@ -145,6 +147,16 @@ cores on forest ground: ground / trail / shallow water / hidden glade, wild
 / managed filter, glades as hubs, guards in dead-end areas). Export polish
 (forest warnings, no empty town sections in spec.json) is done; open:
 tuning. The town chain is `generator::town_chain`.
+
+**Mixed** (being built on branch `mixed-regions`, see
+[mixed-plan.md](mixed-plan.md)): the map is split into map regions, each of
+one kind with its own settings: 1 Template → 2 **Map regions** (kind, share,
+placement anywhere / on the map edge / inside; the town district growth on
+the whole map, `regions::build_placed`; nested regions grow first and keep
+a wavy margin off the edge) → next: land, water, connections (portals),
+each region's own chain in its ground, seams. In the app, the picked
+region's nodes are the kind's normal nodes: its config is swapped into
+`app.config` while they draw. spec.json `mixed_regions`.
 
 **Cave** has its own chain (complete, see [cave-plan.md](cave-plan.md)):
 1 Template → 2 **Style** (natural % + mixing → natural / hand-made zones;

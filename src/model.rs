@@ -10,11 +10,19 @@ pub enum MapKind {
     Swamp,
     Forest,
     Cave,
+    /// Several map regions, each of one of the kinds above
+    /// (docs/mixed-plan.md). Only the template picks it; a map region is
+    /// never mixed.
+    Mixed,
 }
 
 impl MapKind {
+    /// The kinds a map region can be (every kind but Mixed).
     pub const ALL: [MapKind; 4] =
         [MapKind::Town, MapKind::Swamp, MapKind::Forest, MapKind::Cave];
+    /// The kinds the template offers: the plain kinds and Mixed.
+    pub const TEMPLATE: [MapKind; 5] =
+        [MapKind::Town, MapKind::Swamp, MapKind::Forest, MapKind::Cave, MapKind::Mixed];
 
     /// Display name.
     pub fn label(self) -> &'static str {
@@ -23,6 +31,7 @@ impl MapKind {
             MapKind::Swamp => "Swamp",
             MapKind::Forest => "Forest",
             MapKind::Cave => "Cave",
+            MapKind::Mixed => "Mixed",
         }
     }
 
@@ -33,6 +42,7 @@ impl MapKind {
             MapKind::Swamp => "swamp",
             MapKind::Forest => "forest",
             MapKind::Cave => "cave",
+            MapKind::Mixed => "mixed",
         }
     }
 }
@@ -75,6 +85,8 @@ pub struct LevelConfig {
     pub cave: CaveSettings,
     /// The forest node chain (forest maps only; docs/forest-plan.md).
     pub forest: ForestSettings,
+    /// The map regions of a mixed map (mixed maps only; docs/mixed-plan.md).
+    pub mixed: MixedSettings,
     pub cell_size_m: f32,
     pub seed: u64,
 }
@@ -98,6 +110,7 @@ impl Default for LevelConfig {
             swamp: SwampSettings::default(),
             cave: CaveSettings::default(),
             forest: ForestSettings::default(),
+            mixed: MixedSettings::default(),
             cell_size_m: 0.5,
             seed: 0,
         }
@@ -123,6 +136,115 @@ impl LevelConfig {
         c.map.width_m = 64.0;
         c.map.height_m = 64.0;
         c
+    }
+}
+
+/// Where a map region starts growing (docs/mixed-plan.md, M1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RegionPlacement {
+    /// Wherever it fits beside the regions placed before it.
+    #[default]
+    Anywhere,
+    /// Touching the map edge.
+    Edge,
+    /// Deep inside, so the regions placed after it close around it
+    /// (a town in the middle of a forest).
+    Inside,
+}
+
+impl RegionPlacement {
+    pub const ALL: [RegionPlacement; 3] = [RegionPlacement::Anywhere, RegionPlacement::Edge, RegionPlacement::Inside];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            RegionPlacement::Anywhere => "anywhere",
+            RegionPlacement::Edge => "on the map edge",
+            RegionPlacement::Inside => "inside",
+        }
+    }
+}
+
+/// One map region of a mixed map: its kind, its share of the map and its
+/// own settings, almost a whole map config of that kind.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MixedRegion {
+    /// Display name ("Old town", "Bog"...).
+    pub name: String,
+    /// The region's kind (never Mixed).
+    pub kind: MapKind,
+    /// Share of the map, %. The UI keeps the shares at 100 in total; the
+    /// generator normalizes anyway.
+    pub share_pct: f32,
+    /// Where the region starts growing.
+    pub placement: RegionPlacement,
+    /// The region's own settings: every node of its kind. The map size,
+    /// cell size, gates and seed come from the mixed map.
+    pub config: LevelConfig,
+}
+
+impl MixedRegion {
+    /// A region of `kind` with that kind's defaults.
+    pub fn of(kind: MapKind, share_pct: f32) -> Self {
+        let kind = if kind == MapKind::Mixed { MapKind::Forest } else { kind };
+        Self {
+            name: kind.label().to_owned(),
+            kind,
+            share_pct,
+            placement: RegionPlacement::Anywhere,
+            config: LevelConfig { kind, shape: ShapeSettings::for_kind(kind), ..LevelConfig::default() },
+        }
+    }
+
+    /// This region's config as its chain sees it: its own settings with the
+    /// mixed map's size, cell size and kind.
+    pub fn resolved(&self, mixed: &LevelConfig) -> LevelConfig {
+        let mut c = self.config.clone();
+        c.kind = if self.kind == MapKind::Mixed { MapKind::Forest } else { self.kind };
+        c.map = mixed.map;
+        c.cell_size_m = mixed.cell_size_m;
+        c.seed = mixed.seed;
+        // A region never nests a mixed map of its own.
+        c.mixed = MixedSettings::default();
+        c
+    }
+}
+
+impl Default for MixedRegion {
+    fn default() -> Self {
+        Self::of(MapKind::Forest, 25.0)
+    }
+}
+
+/// Settings of a mixed map (docs/mixed-plan.md).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MixedSettings {
+    /// The map regions, in id order (id = index + 1).
+    pub regions: Vec<MixedRegion>,
+    /// How irregular the region borders are, %: 0 = compact round blobs,
+    /// higher = lobes, bays and fingers (as in the town districts).
+    pub irregularity_pct: f32,
+}
+
+impl MixedSettings {
+    /// The starting mix: forest, a town, a swamp and a cave massif.
+    pub fn starter() -> Vec<MixedRegion> {
+        let mut cave = MixedRegion::of(MapKind::Cave, 15.0);
+        cave.placement = RegionPlacement::Edge;
+        vec![
+            MixedRegion::of(MapKind::Forest, 45.0),
+            MixedRegion::of(MapKind::Town, 20.0),
+            MixedRegion::of(MapKind::Swamp, 20.0),
+            cave,
+        ]
+    }
+}
+
+impl Default for MixedSettings {
+    fn default() -> Self {
+        Self { regions: Vec::new(), irregularity_pct: 50.0 }
     }
 }
 
@@ -1735,12 +1857,15 @@ impl ShapeSettings {
             MapKind::Swamp => (18.0, 4, 35.0, 4, 2, 2.0),
             MapKind::Forest => (12.0, 5, 50.0, 6, 2, 4.0),
             MapKind::Cave => (16.0, 4, 30.0, 3, 1, 8.0),
+            // Unused: a mixed map has no shape node (its regions have).
+            MapKind::Mixed => (24.0, 4, 85.0, 4, 2, 6.0),
         };
         let (warp, silhouette, wander) = match kind {
             MapKind::Town => (45.0, 70.0, 60.0),
             MapKind::Swamp => (60.0, 35.0, 70.0),
             MapKind::Forest => (40.0, 25.0, 60.0),
             MapKind::Cave => (70.0, 45.0, 80.0),
+            MapKind::Mixed => (45.0, 70.0, 60.0),
         };
         Self {
             noise_scale_m: scale,

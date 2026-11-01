@@ -52,6 +52,12 @@ pub fn validate(config: &LevelConfig) -> Vec<Warning> {
             });
         }
     }
+    // A mixed map has no nodes of its own past the map regions: each map
+    // region is checked as the map of its kind it is.
+    if config.kind == MapKind::Mixed {
+        mixed(config, &mut warnings);
+        return warnings;
+    }
     if !(1.0..=99.0).contains(&config.shape.coverage_target_pct) {
         warnings.push(Warning {
             field: Some("shape.coverage_target_pct".to_owned()),
@@ -406,8 +412,57 @@ fn forest(config: &LevelConfig, out: &mut Vec<Warning>) {
     }
 }
 
+/// Mixed maps (docs/mixed-plan.md): the region list, then every region's
+/// own settings as a map of its kind, each warning prefixed with the region.
+fn mixed(config: &LevelConfig, warnings: &mut Vec<Warning>) {
+    let rows = &config.mixed.regions;
+    if rows.is_empty() {
+        warnings.push(Warning { field: Some("mixed.regions".to_owned()), message: "Mixed map has no map regions — add one in the Map regions node".to_owned(), blocking: false });
+        return;
+    }
+    let max = crate::generator::mixed::MAX_REGIONS;
+    if rows.len() > max {
+        warnings.push(Warning { field: Some("mixed.regions".to_owned()), message: format!("{} map regions — only the first {max} are used", rows.len()), blocking: false });
+    }
+    let total: f32 = rows.iter().map(|r| r.share_pct.max(0.1)).sum();
+    let area = config.map.width_m.max(0.0) * config.map.height_m.max(0.0);
+    for (i, r) in rows.iter().enumerate().take(max) {
+        let label = format!("Map region {} ({}, {})", i + 1, r.name, r.kind.label());
+        // A region about this many meters across (as a square).
+        let across = (area * r.share_pct.max(0.1) / total).sqrt();
+        if across < 24.0 {
+            warnings.push(Warning {
+                field: Some(format!("mixed.regions[{i}].share_pct")),
+                message: format!("{label} is only about {across:.0} m across — too small for its own layout; raise its share or the map size"),
+                blocking: false,
+            });
+        }
+        for mut w in validate(&r.resolved(config)) {
+            // The map size is checked once, for the whole map.
+            if w.field.as_deref() == Some("map.width_m") {
+                continue;
+            }
+            w.message = format!("{label}: {}", w.message);
+            w.field = w.field.map(|f| format!("mixed.regions[{i}].config.{f}"));
+            warnings.push(w);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn mixed_regions_are_checked_with_their_own_settings() {
+        let mut c = LevelConfig { kind: MapKind::Mixed, ..LevelConfig::default() };
+        assert!(validate(&c).iter().any(|w| w.message.contains("no map regions")));
+        c.mixed.regions = crate::model::MixedSettings::starter();
+        c.mixed.regions.push(crate::model::MixedRegion::of(MapKind::Town, 0.5));
+        c.mixed.regions[1].config.outer_wall.thickness_m = 0.0;
+        let w = validate(&c);
+        assert!(w.iter().any(|w| w.message.starts_with("Map region 2 (Town, Town): Wall thickness")), "{w:?}");
+        assert!(w.iter().any(|w| w.message.contains("Map region 5") && w.message.contains("too small")), "{w:?}");
+    }
+
     use super::*;
 
     #[test]

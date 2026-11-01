@@ -1,0 +1,264 @@
+# Mixed maps — plan
+
+A mixed map is split into **map regions**, each of one kind (Town, Swamp,
+Forest, Cave), and every region is configured on its own, almost like a
+whole map of that kind. The regions still have to read as **one land**:
+rivers run across them, paths lead from one into the next, a town sits on
+the river, the cave is a rock massif with a mouth into the forest.
+
+Built on branch `mixed-regions`, one step at a time like the other plans.
+
+**Words.** A *map region* is one region of a mixed map (`MixedRegion`). The
+town's own *regions* node (districts inside one town) keeps its name in the
+code; in the UI and these notes they are *town districts* when both could
+be meant.
+
+## The core idea: one skeleton, a chain per region, then the seams
+
+Three rules decide the whole design:
+
+1. **What is shared is decided first, globally.** Who is where (the
+   regions), how high the land is, where the water flows, and where one
+   region opens into the next (portals) are decided once, for the whole
+   map, before any region is built. A region never decides something its
+   neighbour has to agree with.
+2. **Each region runs its own kind's chain, unchanged as much as possible,
+   inside its own ground.** The chains already know two things that make
+   this work:
+   - *a map edge*: forest thicket belt, swamp deep water / thicket border,
+     cave rock band, town outer wall. Inside a mixed map, a region's
+     **border is its map edge**. Two neighbours put their edge bands back to
+     back, which is how real borders look: a town wall with the forest
+     outside, a swamp turning into thicket at the forest's edge, the
+     rock face of a massif.
+   - *gates*: a point on the edge where the outside world comes in. A
+     **portal** (the opening between two regions) is a gate for both
+     regions, at the same point. Each side builds its own way in from
+     there (a gate road, a gate island, a gate tunnel, a gate trail), and
+     the two meet at the border.
+3. **Seams last.** After every region is built, one global pass cuts the
+   portal corridors through both edge bands, checks that the whole map is
+   one walkable piece, and puts everything into one level for the preview
+   and the export.
+
+What this gives: every region keeps all its own nodes and settings (the
+user's "configure each region separately"); the shared things (water,
+connections) cannot disagree; and a single-kind map does not change at all
+(the chains only get the new behaviour when they are given a region).
+
+## The chain (node order) and why
+
+```
+1 Template (kind = Mixed, map size, cell size)
+2 Map regions      who is where: kinds, shares, placement
+3 Land             one height field, derived from the kinds
+4 Water            rivers, lakes, sinks, across the regions
+5 Connections      which regions link; portals; map gates; river crossings
+6 Region chains    every region: its own kind's nodes in its own ground
+     Region 1 · Forest: Areas → Terrain* → Water* → Thickets → Passages → …
+     Region 2 · Town:   Shape* → Outer walls → Districts → Roads → … → Mobs
+     Region 3 · Swamp:  Gate anchors* → Islands → Paths → Depth → …
+     Region 4 · Cave:   Style → Chambers → Tunnels* → Carve → …
+     (* = takes its input from the global nodes instead of making its own)
+7 Seams            portal corridors, edge bands, stray pockets
+8 Check & compose  one walkable piece; one level; mobs per region
+  Export
+```
+
+- **Map regions first.** Everything later depends on which kind is where.
+  The split reuses the town's region growth (`regions.rs`: shares,
+  smallest first, nesting, irregular borders) on the whole map, with a
+  placement per region: *anywhere*, *on the map edge*, *inside* (nested —
+  a town inside a forest). Seeds per region are drawn here.
+- **Land after the regions.** The kinds *cause* the land rather than the
+  other way round: a cave region is a rock massif (high), a swamp is a
+  basin (low, badly drained), a town sits on a flattened terrace, a forest
+  is rolling ground. Noise on top so nothing is perfectly flat. This keeps
+  the user in control of what goes where, and the water still follows a
+  real slope.
+- **Water after the land, before the connections.** Rivers decide where
+  bridges and fords must be, so connections need them. One priority-flood
+  drainage for the whole map (the forest's `water.rs` is that algorithm):
+  springs off the map edge and on the massif's flanks, rivers downhill,
+  lakes in hollows. A swamp is a sink: a river that reaches it ends there
+  (its water becomes the swamp's water). Caves are high, so rivers go
+  around them. A river may cross a town (towns are built on rivers).
+- **Connections after the water.** The region adjacency graph gets a
+  labyrinth slider (tree → tree + loops, like forest passages) and every
+  link gets one portal on the shared border, where it is natural for
+  *both* sides (see problem 5). Map gates (global, by direction) are given
+  to the region they land in. If a river cuts a region into pieces, its
+  crossings are fixed here too, so the region's chain routes through them.
+- **Region chains in the middle.** Each region gets a ready config (its own
+  settings + the global map size, cell size, ground, portals as gates,
+  the imposed water) and its own random stream, `seed ⊕ hash(region id)`.
+  Changing one region's settings never reshuffles another region. The
+  chains can run in parallel later (they share nothing).
+- **Seams and composition last**, because they need every region's result.
+
+## Problems and how they are solved
+
+1. **Single-kind maps must not change.** The chains only change behaviour
+   when given a region context (`None` everywhere else). The determinism
+   tests and old config files keep working; a test checks a single-kind
+   level is byte-identical with and without the mixed code.
+2. **Every chain assumes the map rectangle.** The first node of each chain
+   gets the region's ground mask (*domain*) and only builds inside it:
+   forest areas only in the domain, cave chambers only in the domain,
+   swamp islands only in the domain, the town shape = the domain. The
+   "distance to the map edge" each chain uses for its edge band becomes
+   the distance to the outside of the domain (one shared helper). A final
+   clip makes anything outside the domain that chain's blocked ground, so
+   a missed spot cannot leak.
+3. **Gates are directions from the map center.** Each chain computes a gate
+   point with `edge_hit(center, direction)` (cave, forest, swamp) or by
+   walking out to the wall (town). `GateSpec` gets an optional fixed point
+   + outward direction; when set, the chain uses it instead. Portals and
+   map gates become such fixed gates in the region's config.
+4. **Two sides of a portal must meet.** Both sides use the same point, the
+   same width and the same outward/inward direction. Each side carves its
+   own way in to the border; the seam pass (node 7) cuts the corridor
+   through what is left of both edge bands and checks the two ends touch.
+   A portal that cannot be joined becomes a note and the link is dropped
+   (the tree is rebuilt without it, so the map stays one piece).
+5. **Where should a portal be?** On the shared border, scored for both
+   sides: short crossing of the two edge bands, flat land, not on a river
+   (unless the link is meant as a bridge or a ford), not on the cave's
+   steepest face, away from other portals of the same regions, and for a
+   town at a spot its wall can open. A cave side becomes a cave mouth, a
+   swamp side a gate island (shore or bridge style, from that swamp's own
+   gate style), a forest side a trail, a town side a wall gate with a gate
+   road.
+6. **Thin regions and necks.** A region narrower than its two edge bands
+   has no inside. Validation estimates each region's inner size from its
+   share and the kind's band widths and warns; generation reports regions
+   that came out without inside ground and merges them into a neighbour
+   instead of failing.
+7. **Amounts tuned for a 200 m map.** Absolute counts (hidden rooms,
+   interactive quantity, mob budget, house counts) would crowd a small
+   region. Each region has *scale amounts with area* (on by default): counts
+   are multiplied by region area / full map area at generation time. The
+   config keeps the values the user typed.
+8. **Rivers that split a region.** A river through a town must not cut the
+   town in two: node 5 finds the pieces of each region minus the river
+   and fixes crossings (bridges in towns, fords or bridges in forests) that
+   the region's chain must route through (they are passed as inner
+   gates). The town wall gets a water gate where the river passes it
+   (blocked for walking, the river is deep there).
+9. **Rivers and the chains that make their own water.** The forest takes
+   the global water instead of running its own (`water.rs` stays for
+   single forests). The swamp's water is everywhere already; the river
+   mouth just keeps the swamp's border band open water at that spot. The
+   town gets a new "river" input: houses avoid it, roads cross it on
+   bridges. The cave never gets a river (it is high); if the user forces
+   one, it ends in a pool at the cave's edge.
+10. **Rivers through edge bands.** Water may pass any edge band (the band
+    stays blocked for walking anyway): the forest belt and swamp border
+    already allow water; the town wall gets a water gate; cave rock is
+    never crossed.
+11. **Nested regions.** A region placed *inside* links only to the region
+    around it (the graph forces it); the water avoids running *into* a
+    nested cave and may end in a nested swamp.
+12. **Map gates.** Gates stay a global list (direction from the map
+    center). Each lands in the region at that edge spot and uses that
+    region's gate look (swamp gate style, cave tunnel, town gate road).
+    A gate landing on a cave's rock or on a band is slid along the edge to
+    the nearest usable spot, as the chains already do.
+13. **One walkable piece.** Each chain already keeps its own ground in one
+    piece. With every link's portal open, the regions form a connected
+    graph, so the whole map is one piece. Node 8 checks it with one flood
+    fill and reports any pocket.
+14. **Objects at the seams.** Objects belong to the region that placed them
+    and stay inside its domain (the domain clip removes any centre outside
+    it). Objects never straddle a seam, because the edge bands are
+    blocked ground where nothing is placed.
+15. **Mobs.** Every region keeps its own mob settings and runs its own mobs
+    node. Gate clearance already covers portals (they are gates for the
+    chain). *Re-roll mobs* re-rolls every region's mobs; per-region re-roll
+    can come later.
+16. **Preview, map.png and layer.png.** Rendering is split into a ground
+    pass and an objects pass. The mixed ground takes each cell from its
+    region's level (its kind's colors); the objects of all regions draw on
+    top. layer.png ground ids are already unique per kind (swamp 8–14,
+    cave 15–23, forest 24–31); town ground gets its own ids (walls, road,
+    district ground) after them. A new `regions.png` holds the map region
+    id per pixel (mixed maps only), so tools know which kind a pixel is.
+17. **spec.json.** A `mixed` section: map regions (id, name, kind, share,
+    cells, bounding box, placement), the links and portals, the global
+    water, and per region the kind's own spec sections (the same
+    builders), with object indices shifted to the global object list.
+18. **Memory and time.** v1 runs every region chain on the full grid
+    (simple; the masks line up for free). That costs about regions × the
+    cost of one map. Later: run each region on its bounding box with an
+    offset. Validation's cell-count limits count regions × cells.
+19. **Big configs.** Each region stores a whole kind config. The file grows,
+    but every part is optional (`#[serde(default)]`); MCP `patch_config` can
+    reach `mixed.regions[i].config`.
+20. **UI.** The left panel shows the global nodes, then a region picker
+    (one button per region: "2 · Town"). The picked region's own chain is
+    drawn by the existing node functions: its config is swapped into
+    `app.config` while its nodes draw, then swapped back. Nodes that are
+    global in a mixed map (map size, gates, the forest's own terrain and
+    water) show "set by the mixed map" instead of their controls.
+21. **Kinds with no neighbour of their kind in mind.** Some pairs need a
+    look the chains do not have (swamp water next to a cave rock face).
+    v1 keeps both edge bands; *blending* (below) makes the pairs look
+    good.
+
+## Data
+
+- `MapKind::Mixed` (only in the template; a map region is never Mixed).
+- `LevelConfig.mixed: MixedSettings { regions: Vec<MixedRegion>,
+  nesting_pct, irregularity_pct, ... }`;
+  `MixedRegion { name, kind, share_pct, placement, config: LevelConfig }`.
+- `GeneratedLevel.mixed: Option<MixedLayout>`: the region map and stats,
+  later the land, water, links and portals, and `levels: Vec<GeneratedLevel>`
+  (one per region, its own objects); the top level's `objects` are the
+  regions' objects joined, kept in sync after a mobs re-roll.
+
+## Step list
+
+- [x] **M1 — Map regions**: `MapKind::Mixed`, the region list (kind,
+      share, placement, own config), the split by growth on the whole map,
+      the kind-colored region map in the preview / map.png, the region
+      picker in the UI with each region's own nodes, spec.json `mixed`.
+- [ ] **M2 — Land and water**: the height field from the kinds; global
+      rivers, lakes, sinks; drawn on the region map.
+- [ ] **M3 — Connections**: adjacency graph, labyrinth slider, portals,
+      map gates per region, river crossings.
+- [ ] **M4 — Region chains: Forest** (domain, fixed gates, global water,
+      domain edge band). Forest first: it already uses the same water.
+- [ ] **M5 — Region chains: Town** (shape = domain, wall around it, gates
+      at portals, river input: bridges, water gates).
+- [ ] **M6 — Region chains: Swamp** (islands in the domain, gate anchors at
+      portals, river mouths).
+- [ ] **M7 — Region chains: Cave** (chambers in the domain, gate tunnels at
+      portals = cave mouths).
+- [ ] **M8 — Seams and composition**: portal corridors, global flood fill,
+      composite preview / map.png / layer.png (+ regions.png), mobs re-roll
+      across regions.
+- [ ] **M9 — Export and MCP**: spec.json per-region sections, validation
+      (thin regions, cell budget), MCP region tools.
+- [ ] **M10 — Blending** (the next big step): nature crossing borders —
+      trees in the yards of a district next to a forest, a wet forest belt
+      by a swamp, boulders from the massif in the forest, a river crossing
+      a town with its embankments. Needs its own small plan: per border
+      pair, a transition width and what crosses.
+
+## Step M1 notes — map regions
+
+- Template kind **Mixed**. Switching to it fills the region list with
+  Forest 45 % · Town 20 % · Swamp 20 % · Cave 15 % if it is empty.
+- **Map regions** node: one row per region (name, kind, share %, placement
+  anywhere / on the map edge / inside) + add / remove / 🎲 Random params;
+  shares auto-balance like the town districts. Global nesting is replaced
+  by the per-region placement; irregularity stays global.
+- The split is `regions::build_placed` (the town growth with per-region
+  placement) on the whole map. Region ids are stable (row order).
+- Preview and map.png paint each region in its kind's main ground color,
+  slightly varied per region, until the region chains exist.
+- Region picker: one button per region; the picked region's own node chain
+  (the same nodes as a map of that kind) edits that region's config. Map
+  size, cell size and gates are global (shown as such).
+- spec.json `mixed_regions`: id, name, kind, placement, target / actual %,
+  cells.

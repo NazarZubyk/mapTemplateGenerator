@@ -48,20 +48,81 @@ pub(crate) fn build_with_progress(
     town: &CellMask,
     stage: &Stage,
 ) -> Option<RegionSplit> {
-    let total = town.count_true() as u32;
-    if total == 0 {
-        return None;
-    }
-    let (w, h) = (town.width, town.height);
     let count = (config.regions.count as usize).clamp(1, 16);
-
-    // Normalized shares (the UI keeps them near 100; hand-edited config files
-    // may not — the generator self-heals either way).
-    let mut shares = if config.regions.shares.len() == count {
+    let shares = if config.regions.shares.len() == count {
         config.regions.shares.clone()
     } else {
         vec![100.0 / count as f32; count]
     };
+    let nesting = config.regions.nesting_pct.clamp(0.0, 100.0) / 100.0;
+    let irregularity = config.regions.irregularity_pct.clamp(0.0, 100.0) / 100.0;
+    // Each region: nested with the nesting chance, otherwise on the wall.
+    let start = |rng: &mut ChaCha8Rng, _i: usize| if rng.random::<f32>() < nesting { Start::Nested } else { Start::Edge };
+    split(rng, town, shares, irregularity, &start, None, stage)
+}
+
+/// Where a region's growth starts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Start {
+    /// On the edge of the area (the wall, or the map border).
+    Edge,
+    /// Deep inside, so later regions close around it.
+    Nested,
+    /// Wherever it fits beside the regions placed before it.
+    Anywhere,
+}
+
+/// Split the whole map into map regions (mixed maps, docs/mixed-plan.md):
+/// the same growth as the town districts, with one start per region.
+pub fn build_placed(
+    rng: &mut ChaCha8Rng,
+    area: &CellMask,
+    shares: Vec<f32>,
+    starts: &[Start],
+    irregularity_pct: f32,
+) -> Option<RegionSplit> {
+    let start = |_: &mut ChaCha8Rng, i: usize| starts.get(i).copied().unwrap_or(Start::Anywhere);
+    let stage = Stage { progress: &|_, _| {}, from: 0.0, to: 1.0 };
+    // Nested regions grow first: started beside an edge region, a nested
+    // one would end up on the edge too.
+    let first: Vec<bool> = (0..shares.len()).map(|i| starts.get(i) == Some(&Start::Nested)).collect();
+    // ... and keep a margin off the map edge (8% of the short side), not
+    // just its last cells, so a stretched nested region stays inside.
+    let margin = ((area.width.min(area.height) as f32 * 0.08) as u32).max(1);
+    split(rng, area, shares, irregularity_pct.clamp(0.0, 100.0) / 100.0, &start, Some(MapSplit { placed_first: &first, margin }), &stage)
+}
+
+/// What a mixed map's split does differently from the town districts.
+struct MapSplit<'a> {
+    /// Regions grown before the rest (the nested ones).
+    placed_first: &'a [bool],
+    /// How far a nested region keeps off the map edge, in cells.
+    margin: u32,
+}
+
+/// The region growth behind both: `shares` (one per region, any sum),
+/// `start` decides each region's start (called in placement order, with
+/// the region's index).
+fn split(
+    rng: &mut ChaCha8Rng,
+    town: &CellMask,
+    mut shares: Vec<f32>,
+    irregularity: f32,
+    start: &dyn Fn(&mut ChaCha8Rng, usize) -> Start,
+    map: Option<MapSplit>,
+    stage: &Stage,
+) -> Option<RegionSplit> {
+    let placed_first = map.as_ref().map(|m| m.placed_first);
+    let nested_margin = map.as_ref().map_or(1, |m| m.margin);
+    let total = town.count_true() as u32;
+    if total == 0 || shares.is_empty() {
+        return None;
+    }
+    let (w, h) = (town.width, town.height);
+    shares.truncate(255);
+    let count = shares.len();
+    // Normalized shares (the UI keeps them near 100; hand-edited config files
+    // may not — the generator self-heals either way).
     let sum: f32 = shares.iter().sum();
     if sum <= 0.0 {
         for s in &mut shares {
@@ -79,15 +140,13 @@ pub(crate) fn build_with_progress(
         .map(|s| ((s / 100.0) * total as f32).round() as u32)
         .collect();
     let mut order: Vec<usize> = (0..count).collect();
-    order.sort_by_key(|&i| (targets[i], i));
+    order.sort_by_key(|&i| (!placed_first.is_some_and(|f| f.get(i) == Some(&true)), targets[i], i));
 
     // Shape character: one noise field for all regions (each reads its own
     // offset patch of it), contrast and stretch scaled by irregularity.
     let noise = NoiseField::new(rng.random());
-    let irregularity = config.regions.irregularity_pct.clamp(0.0, 100.0) / 100.0;
 
     let depth = wall_depth(town);
-    let nesting = config.regions.nesting_pct.clamp(0.0, 100.0) / 100.0;
 
     let mut ids = vec![0u8; w * h];
     let mut claimed: u32 = 0;
@@ -106,15 +165,18 @@ pub(crate) fn build_with_progress(
         let id = (i + 1) as u8;
         // Nested: start deep enough that a round blob of this size fits
         // without touching the wall, so later regions can close around it.
-        let nested = rng.random::<f32>() < nesting;
+        let how = start(rng, i);
+        let nested = how == Start::Nested;
         let radius = (target as f32 / std::f32::consts::PI).sqrt() as u32 + 1;
-        let start = SeedPlan {
+        let plan = SeedPlan {
             first: place_no == 0,
-            nested,
+            start: how,
             depth: &depth,
             radius,
+            margin: nested_margin,
+            edge_anywhere: placed_first.is_some(),
         };
-        let seed = pick_seed(rng, town, &ids, &start);
+        let seed = pick_seed(rng, town, &ids, &plan);
         // Every region gets its own direction, stretch and noise patch; the
         // noise features are sized to the region so it gets a few big lobes.
         let angle = rng.random::<f32>() * std::f32::consts::PI;
@@ -131,6 +193,7 @@ pub(crate) fn build_with_progress(
             // A nested region stays off the wall so later regions can close
             // around it (falls back to the wall only if it runs out of room).
             avoid_wall: nested.then_some(depth.as_slice()),
+            wall_margin: nested_margin,
         };
         claimed += grow(town, &mut ids, &growth, seed, id, target);
     }
@@ -218,11 +281,17 @@ struct SeedPlan<'a> {
     /// The first placement (anywhere in town); later ones start beside the
     /// already-claimed cells.
     first: bool,
-    /// Start deep inside the town instead of against the wall.
-    nested: bool,
+    /// Where to start: against the wall, deep inside, or anywhere.
+    start: Start,
     depth: &'a [u32],
     /// Rough radius of the region, in cells.
     radius: u32,
+    /// How far from the edge a nested region keeps (1 = off the edge
+    /// cells); its start is at least radius + margin deep.
+    margin: u32,
+    /// An edge region may start on an edge cell away from the regions
+    /// placed so far (mixed maps).
+    edge_anywhere: bool,
 }
 
 /// Choose where a region starts. Candidates: anywhere in town for the first
@@ -249,9 +318,11 @@ fn pick_seed(rng: &mut ChaCha8Rng, town: &CellMask, ids: &[u8], plan: &SeedPlan)
         .copied()
         .filter(|&i| !splits_free(town, ids, i))
         .collect();
-    let preferred: Vec<usize> = if plan.nested {
+    let preferred: Vec<usize> = if plan.start == Start::Anywhere {
+        safe.clone()
+    } else if plan.start == Start::Nested {
         let deepest = safe.iter().map(|&i| plan.depth[i]).max().unwrap_or(0);
-        let need = (plan.radius + 1).min(deepest);
+        let need = (plan.radius + plan.margin).min(deepest);
         safe.iter()
             .copied()
             .filter(|&i| need > 1 && plan.depth[i] >= need)
@@ -261,6 +332,13 @@ fn pick_seed(rng: &mut ChaCha8Rng, town: &CellMask, ids: &[u8], plan: &SeedPlan)
             .copied()
             .filter(|&i| plan.depth[i] == 1)
             .collect()
+    };
+    // Mixed maps: an edge region with no edge cell beside the regions
+    // placed so far starts on any free edge cell instead.
+    let preferred = if preferred.is_empty() && plan.start == Start::Edge && plan.edge_anywhere {
+        free.iter().copied().filter(|&i| plan.depth[i] == 1 && !splits_free(town, ids, i)).collect()
+    } else {
+        preferred
     };
     let candidates = [preferred, safe, beside, free]
         .into_iter()
@@ -310,6 +388,17 @@ fn grow(
         // Fixed point keeps the heap ordering exact and platform-independent.
         ((length * factor * 1024.0) as u32).max(1)
     };
+    // Held back off the edge: the edge cells only (town), or a margin that
+    // wanders with the noise (mixed maps), so a region pressed against it
+    // gets a natural border, not a straight cut.
+    let held = |depth: &[u32], n: usize| {
+        if growth.wall_margin <= 1 {
+            return depth[n] <= 1;
+        }
+        let (x, y) = ((n % w) as f32, (n / w) as f32);
+        let v = growth.noise.fbm(x / growth.scale + 37.0, y / growth.scale + 11.0, 3);
+        depth[n] as f32 <= growth.wall_margin as f32 * (0.3 + 1.4 * v)
+    };
     let mut held_back: Vec<Reverse<(u32, usize)>> = Vec::new();
     let mut search = PocketSearch::new(w * h);
     let mut best = vec![u32::MAX; w * h];
@@ -358,7 +447,7 @@ fn grow(
             let c = cost + step_cost(cell, n);
             if c < best[n] {
                 best[n] = c;
-                if avoid_wall.is_some_and(|depth| depth[n] == 1) {
+                if avoid_wall.is_some_and(|depth| held(depth, n)) {
                     held_back.push(Reverse((c, n)));
                 } else {
                     heap.push(Reverse((c, n)));
@@ -384,6 +473,9 @@ struct Growth<'a> {
     keep_free_connected: bool,
     /// Wall depth map; when set, town-edge cells are held back.
     avoid_wall: Option<&'a [u32]>,
+    /// With `avoid_wall`: cells this deep or less (1 = the edge itself) are
+    /// held back.
+    wall_margin: u32,
 }
 
 /// Connectivity-preserving claims: decides whether claiming a cell would cut

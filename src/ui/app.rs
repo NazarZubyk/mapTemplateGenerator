@@ -45,6 +45,8 @@ pub struct MapGenApp {
     pub last_sync_check: Instant,
     /// A reload arrived while a generation was running: generate again after.
     pub regen_pending: bool,
+    /// Mixed maps: the map region whose own nodes the panel shows (index).
+    pub mixed_selected: usize,
 }
 
 /// How often live sync looks at the config file.
@@ -87,6 +89,7 @@ impl Default for MapGenApp {
             config_mtime: None,
             last_sync_check: Instant::now() - SYNC_EVERY,
             regen_pending: false,
+            mixed_selected: 0,
         }
     }
 }
@@ -134,6 +137,10 @@ impl MapGenApp {
             return;
         }
         let Some(level) = self.generated.as_ref() else { return };
+        // Mixed maps: the regions' mobs come with the region chains (M4–M8).
+        if level.mixed.is_some() {
+            return;
+        }
         let mut level = level.clone();
         level.config.mobs = self.config.mobs.clone();
         crate::generator::place_mobs(&mut level, &|_, _| {});

@@ -24,6 +24,7 @@ pub mod shape;
 pub mod swamp;
 pub mod cave;
 pub mod forest;
+pub mod mixed;
 pub mod walls;
 
 /// Progress callback: (stage label, overall fraction 0..1). Called from the
@@ -69,6 +70,10 @@ pub fn generate_with_progress(
     // Forests too (docs/forest-plan.md).
     if config.kind == crate::model::MapKind::Forest {
         return forest::generate_with_progress(config, seed, progress);
+    }
+    // Mixed maps: map regions of several kinds (docs/mixed-plan.md).
+    if config.kind == crate::model::MapKind::Mixed {
+        return mixed::generate_with_progress(config, seed, progress);
     }
     town_chain(config, seed, progress)
 }
@@ -290,6 +295,7 @@ pub(crate) fn town_chain(config: &LevelConfig, seed: u64, progress: Progress) ->
         swamp: None,
         cave: None,
         forest: None,
+        mixed: None,
         noise_preview: Some(built.noise_preview),
         notes,
     };
