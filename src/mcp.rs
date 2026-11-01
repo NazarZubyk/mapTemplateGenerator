@@ -749,6 +749,12 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
             "into_swamps": w.streams.iter().filter(|s| s.mouth == crate::level::StreamMouth::Sink).count(),
             "ponds": w.ponds.len(),
         })),
+        "mixed_connections": level.mixed.as_ref().and_then(|m| m.connections.as_ref()).map(|c| json!({
+            "portals": c.portals.iter().map(|p| json!({"regions": p.regions, "over_water": p.over_water})).collect::<Vec<_>>(),
+            "sealed": c.links.iter().filter(|l| !l.linked).map(|l| l.regions).collect::<Vec<_>>(),
+            "gates": c.gates.iter().map(|g| json!({"id": g.id, "region": g.region, "kind": g.kind.slug()})).collect::<Vec<_>>(),
+            "crossings": c.crossings.iter().map(|x| json!({"region": x.region, "look": x.look})).collect::<Vec<_>>(),
+        })),
         "roads": level.roads.as_ref().map(|r| r.links.len()),
         "houses": level.houses.as_ref().map(|h| h.street_houses + h.yard_houses),
         "props": level.props.as_ref().map(|p| p.near_houses + p.roadside + p.scattered + p.near_trees + p.shore + p.in_water + p.path_edge + p.near_walls + p.in_tunnels + p.pool_edge)

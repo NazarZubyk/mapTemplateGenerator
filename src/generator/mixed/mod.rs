@@ -12,6 +12,11 @@
 //! 4. **Water** (M2) — the forest's drainage over the whole map: rivers
 //!    rise at springs (at the foot of a massif, never in it), gather
 //!    brooks and leave at the map edge or end in a swamp; ponds in hollows.
+//! 5. **Connections** (M3) — which regions link (a tree + loops), one
+//!    portal on each linked border, the map gates' regions, and bridges /
+//!    fords where a river cuts a region apart (`connections.rs`).
+
+pub mod connections;
 
 use rand::Rng;
 use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
@@ -54,12 +59,18 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
 
     progress("Splitting the map into regions", 0.0);
     let mut mixed = split(config, &mut rng, &mut notes);
+    let mut objects = Vec::new();
     if let Some(m) = mixed.as_mut() {
         progress("Shaping the land", 0.5);
         let land_layout = land(config, &mut rng, m);
         progress("Letting the water flow", 0.75);
         let built = rivers(config, &mut rng, m, &land_layout);
         notes.extend(built.notes);
+        progress("Linking the regions", 0.9);
+        let linked = connections::build(config, &mut rng, m, &land_layout, &built.layout);
+        notes.extend(linked.notes);
+        objects = linked.objects;
+        m.connections = Some(linked.layout);
         m.water = Some(built.layout);
         m.land = Some(land_layout);
     }
@@ -68,7 +79,7 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
     GeneratedLevel {
         config: config.clone(),
         seed,
-        objects: Vec::new(),
+        objects,
         shape: None,
         walls: None,
         regions: None,
@@ -135,7 +146,7 @@ fn split(config: &LevelConfig, rng: &mut ChaCha8Rng, notes: &mut Vec<String>) ->
             }
         })
         .collect();
-    Some(MixedLayout { map: split.map, regions, land: None, water: None })
+    Some(MixedLayout { map: split.map, regions, land: None, water: None, connections: None })
 }
 
 /// How high a kind's ground lies (0 low … 1 high) and how hilly it is.

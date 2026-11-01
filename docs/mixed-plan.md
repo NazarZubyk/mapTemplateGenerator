@@ -224,7 +224,7 @@ connections) cannot disagree; and a single-kind map does not change at all
       picker in the UI with each region's own nodes, spec.json `mixed`.
 - [x] **M2 — Land and water**: the height field from the kinds; global
       rivers, lakes, sinks; drawn on the region map.
-- [ ] **M3 — Connections**: adjacency graph, labyrinth slider, portals,
+- [x] **M3 — Connections**: adjacency graph, labyrinth slider, portals,
       map gates per region, river crossings.
 - [ ] **M4 — Region chains: Forest** (domain, fixed gates, global water,
       domain edge band). Forest first: it already uses the same water.
@@ -298,3 +298,47 @@ connections) cannot disagree; and a single-kind map does not change at all
 - Open for later: rivers into a swamp end at its edge for now (M6 carries
   them into the swamp water); a river crossing a town gets bridges in M3 /
   M5.
+
+## Step M3 notes — connections
+
+`generator/mixed/connections.rs`, node **5 · Connections** (settings
+`mixed.connections`; the map gates are the config's `gates`, now global on
+a mixed map — the MCP `set_gates` tool already edits them).
+
+- **Links**: every touching region pair (4-neighbour border cells,
+  `BTreeMap` so the order is fixed). Kruskal with random weights gives the
+  tree; each other pair is linked with `loops_pct` (one roll per pair,
+  drawn for all pairs in order, so the slider never reshuffles the tree).
+  A nested region touches only its surrounding region, so it gets exactly
+  one link. Unlinked borders stay sealed.
+- **Portals**: one per link, tree links first. Up to 600 border spots per
+  link are scored (lower wins): +300 per side if the point 6 m in is not
+  that region's ground (no thin necks); +20 per meter of height difference
+  across; deep water within the opening +1000 (and +20 per wet cell),
+  shallow +2 per cell; +200 within two widths of the map edge; +20 per
+  meter closer than 24 m to another portal of either region; jitter 0–10.
+  The direction across is the local balance of the two regions' cells in
+  a 4 m window (smooth, not the 4-neighbour step). `over_water` marks a
+  portal that found no dry spot (note; it will need a bridge).
+- **Map gates**: `edge_hit` from the map center as on the other kinds; a
+  gate on deep water slides up to 40 m along the edge. The region there
+  owns it (`MixedGate.region`); its marker is a level object (remapped by
+  `remap_objects` like every other gate list).
+- **River crossings**: per region, the ground minus deep water split into
+  pieces (≥ 40 m²); from each piece a BFS over the region's water (and
+  its tiny pieces) finds the nearest bank of every other piece; Kruskal on
+  those lengths joins them. Town: always a bridge; elsewhere a ford up to
+  `ford_max_m`, else a bridge. A river that rises inside a region does not
+  cut it (it is joined round the spring) — no crossing needed.
+- **Map**: a portal is drawn as its opening (a short strip of open
+  ground across the border, `render::PORTAL`); a crossing paints only the
+  water cells under it (bridge color / shallow for a ford); gates are the
+  usual markers. Links and the tree stay data only.
+- In a map region, the town's own Gates node shows a note (set by the
+  mixed map). The forest's Passages and the swamp's Gate anchors still
+  show their gate lists — M4 / M6 take them over.
+- spec.json `mixed_connections` (links, portals, gates, crossings); MCP
+  `generate` reports portals, sealed borders, gates and crossings.
+- Tested: the portals join every region; each portal sits on its border
+  on dry ground; every gate lies in its region; loops 0 % = a tree,
+  100 % = every pair; with the crossings, no region stays cut by water.

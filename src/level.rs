@@ -1524,6 +1524,103 @@ pub struct MixedLayout {
     /// the map edge or in a swamp region; none run in a cave region.
     #[serde(default)]
     pub water: Option<WaterLayout>,
+    /// Which regions link, the portals between them, the map gates and the
+    /// river crossings (node 5).
+    #[serde(default)]
+    pub connections: Option<MixedConnections>,
+}
+
+/// Two map regions that touch.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct MixedLink {
+    /// Region ids, the smaller first.
+    pub regions: [u8; 2],
+    /// Length of the shared border, meters.
+    pub border_m: f32,
+    /// Linked (a portal opens the border) or sealed.
+    pub linked: bool,
+    /// Part of the tree that keeps every region reachable (else a loop).
+    pub tree: bool,
+    /// The portal's id when linked.
+    pub portal: Option<u32>,
+}
+
+/// The opening between two linked map regions: a gate for both of them at
+/// one point (docs/mixed-plan.md, problem 3–5).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct MixedPortal {
+    pub id: u32,
+    /// Region ids (the link's order) and their kinds.
+    pub regions: [u8; 2],
+    pub kinds: [crate::model::MapKind; 2],
+    /// The point on the shared border, meters.
+    pub point_m: [f32; 2],
+    /// Unit direction across the border, from `regions[0]` into
+    /// `regions[1]`.
+    pub normal: [f32; 2],
+    pub width_m: f32,
+    /// No dry spot was found on the border: the portal crosses water and
+    /// needs a bridge.
+    pub over_water: bool,
+}
+
+/// A map gate on a mixed map: where it meets the map edge and which region
+/// it leads into.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct MixedGate {
+    /// 1-based, the gate list order.
+    pub id: u32,
+    pub direction_deg: f32,
+    pub point_m: [f32; 2],
+    /// Unit direction into the map.
+    pub inward: [f32; 2],
+    /// The region it leads into and its kind.
+    pub region: u8,
+    pub kind: crate::model::MapKind,
+    /// Index of the gate marker in [`GeneratedLevel::objects`].
+    pub object: usize,
+}
+
+/// How a river cutting a region apart is crossed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MixedCrossingLook {
+    /// Walkable over the deep water.
+    Bridge,
+    /// Wading through: the deep water there is made shallow.
+    Ford,
+}
+
+/// A fixed river crossing inside a region (docs/mixed-plan.md, problem
+/// 8): the region's chain routes through it.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct MixedCrossing {
+    pub id: u32,
+    pub region: u8,
+    pub look: MixedCrossingLook,
+    /// The two banks, meters: the crossing runs between them.
+    pub from_m: [f32; 2],
+    pub to_m: [f32; 2],
+    pub width_m: f32,
+}
+
+/// The mixed map's connections node output (M3).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MixedConnections {
+    /// Every touching region pair.
+    pub links: Vec<MixedLink>,
+    pub portals: Vec<MixedPortal>,
+    pub gates: Vec<MixedGate>,
+    pub crossings: Vec<MixedCrossing>,
+    /// Links beyond the tree (other ways round).
+    pub loops: u32,
+}
+
+impl MixedConnections {
+    /// The portals of region `id`.
+    pub fn portals_of(&self, id: u8) -> impl Iterator<Item = &MixedPortal> {
+        self.portals.iter().filter(move |p| p.regions.contains(&id))
+    }
 }
 
 impl MixedLayout {

@@ -432,6 +432,11 @@ fn remap_objects(level: &mut GeneratedLevel, f: impl Fn(usize) -> usize) {
             g.object = f(g.object);
         }
     }
+    if let Some(c) = level.mixed.as_mut().and_then(|m| m.connections.as_mut()) {
+        for g in &mut c.gates {
+            g.object = f(g.object);
+        }
+    }
     if let Some(forest) = level.forest.as_mut() {
         if let Some(p) = forest.passages.as_mut() {
             for g in &mut p.gates {

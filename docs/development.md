@@ -158,12 +158,16 @@ cave massif high, swamp basin low, town flat terrace, forest rolling;
 blurred into slopes, hills and a tilt on top) → 4 **Water** (the forest
 drainage on the whole land, `forest::water::build_drainage` with swamp
 regions as sinks and cave regions dry: rivers end at the map edge or in a
-swamp, springs at the foot of a massif) → next: connections (portals),
+swamp, springs at the foot of a massif) → 5 **Connections**
+(`mixed/connections.rs`: touching pairs linked by a random tree + loops
+slider, one portal per link scored for both sides, map gates owned by the
+region at the edge, bridges / fords where a river cuts a region) → next:
 each region's own chain in its ground, seams. The map is shaded by the
 land (light from the north-west). In the app, the picked
 region's nodes are the kind's normal nodes: its config is swapped into
-`app.config` while they draw. spec.json `mixed_regions`, `mixed_water`, `mixed_relief_m`; MCP `generate`
-reports `mixed_regions` and `mixed_water`.
+`app.config` while they draw. spec.json `mixed_regions`, `mixed_water`, `mixed_relief_m`,
+`mixed_connections`; MCP `generate` reports `mixed_regions`, `mixed_water`
+and `mixed_connections`.
 
 **Cave** has its own chain (complete, see [cave-plan.md](cave-plan.md)):
 1 Template → 2 **Style** (natural % + mixing → natural / hand-made zones;

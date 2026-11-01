@@ -58,7 +58,11 @@ fn town_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     flow_arrow(ui, "regions + roads");
     node_region_walls(ui, app);
     flow_arrow(ui, "walled regions + roads");
-    node_gates(ui, app);
+    if app.in_map_region {
+        set_by_mixed_map(ui, "7 · Gates", "the mixed map's 5 · Connections node (map gates and the portals to the other regions)");
+    } else {
+        node_gates(ui, app);
+    }
     if app.config.kind == MapKind::Town {
         flow_arrow(ui, "free ground between roads and walls");
         node_houses(ui, app);
@@ -136,7 +140,7 @@ fn forest_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
         flow_arrow(ui, "hidden height field + rock ridges");
         node_forest_water(ui, app);
     }
-    flow_arrow(ui, "streams (spring → map edge) and ponds");
+    flow_arrow(ui, "streams (spring to map edge) and ponds");
     node_forest_thickets(ui, app);
     flow_arrow(ui, "open ground / forest floor / thicket");
     node_forest_passages(ui, app);
@@ -181,7 +185,9 @@ fn mixed_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_mixed_land(ui, app);
     flow_arrow(ui, "one height field: massifs, basins, terraces");
     node_mixed_water(ui, app);
-    flow_arrow(ui, "rivers (spring → map edge or swamp), brooks, ponds");
+    flow_arrow(ui, "rivers (spring to map edge or swamp), brooks, ponds");
+    node_mixed_connections(ui, app);
+    flow_arrow(ui, "portals between regions, gates, river crossings");
     let n = app.config.mixed.regions.len();
     if n == 0 {
         ui.weak("Add a map region to configure it.");
@@ -202,9 +208,9 @@ fn mixed_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     });
     let i = app.mixed_selected;
     ui.weak(
-        "Step M1: only the split into map regions is generated yet. These settings are kept \
-         and used once the region chains are built (docs/mixed-plan.md, M4–M7). Gates will move \
-         to the mixed map (M3).",
+        "So far the regions, land, water and connections are generated (M1–M3). A region's own \
+         settings below are kept and used once the region chains are built (docs/mixed-plan.md, \
+         M4–M7).",
     );
     // The region's own nodes are the kind's normal nodes: its config takes
     // the app config's place while they draw.
@@ -283,6 +289,68 @@ fn node_mixed_water(ui: &mut egui::Ui, app: &mut MapGenApp) {
         water_controls(ui, &mut app.config.mixed.water, "mixed");
         if let Some(wl) = app.generated.as_ref().and_then(|l| l.mixed.as_ref()).and_then(|m| m.water.as_ref()) {
             water_stats(ui, wl);
+        }
+    });
+}
+
+/// Mixed node 5: which regions link, the portals, the map gates and the
+/// river crossings (step M3 in docs/mixed-plan.md).
+fn node_mixed_connections(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_LOOPS: &str = "Labyrinth slider, %. Every region is reachable through a tree \
+of links; every other pair of touching regions is linked too with this chance — other ways \
+round. 0%: exactly one way between any two regions (a maze of regions). 100%: every touching \
+pair is linked. Unlinked borders stay sealed (each region's own edge band).";
+    const TIP_PORTAL: &str = "Width of the opening between two linked regions, meters. It \
+sits where it suits both sides: dry, flat, real ground of both regions a few meters in, off \
+the map edge and away from the regions' other openings. Each region's own nodes make it look \
+like theirs (a town gate, a cave mouth, a trail, a gate island).";
+    const TIP_CROSSING: &str = "Width of a bridge or ford where a river cuts a region apart, \
+meters. The crossings are fixed here so the region's own nodes route through them.";
+    const TIP_FORD: &str = "Rivers up to this wide are forded (waded through) outside towns; \
+wider ones get a bridge. A town always builds a bridge.";
+    const TIP_DIRECTION: &str = "Direction from the map center, degrees: 0 = east (right), \
+90 = north (up), 180 = west, 270 = south. The gate stands where that ray meets the map edge, \
+in whichever region is there (on deep water it slides along the edge to dry ground).";
+    const TIP_COLOR: &str = "Gate marker color on the map image, the preview and the legend.";
+    node(ui, "5 · Connections", |ui| {
+        ui.weak("input: regions, land, water · output: links, portals, map gates, river crossings");
+        let s = &mut app.config.mixed.connections;
+        let g = &mut app.config.gates;
+        let mut remove = None;
+        egui::Grid::new("mixed_connections_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Loops", TIP_LOOPS, |ui| ui.add(egui::Slider::new(&mut s.loops_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Opening", TIP_PORTAL, |ui| ui.add(meters(&mut s.portal_width_m, 20.0)));
+            param_row(ui, "Crossing", TIP_CROSSING, |ui| ui.add(meters(&mut s.crossing_width_m, 12.0)));
+            param_row(ui, "Ford up to", TIP_FORD, |ui| ui.add(meters(&mut s.ford_max_m, 30.0)));
+            remove = gate_list_rows(ui, &mut g.gates, TIP_DIRECTION, true);
+            param_row(ui, "Gate color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut g.color));
+        });
+        if let Some(i) = remove {
+            g.gates.remove(i);
+        }
+        ui.horizontal(|ui| {
+            gate_list_buttons(ui, &mut g.gates);
+            if ui.button("🎲 Random params").on_hover_text("Rolls the loops and the widths independently inside their reasonable ranges (the gates stay). Set values only; press Generate.").clicked() {
+                let mut rng = rand::rng();
+                s.loops_pct = rng.random_range(0.0..=100.0);
+                s.portal_width_m = rng.random_range(2.5..=8.0);
+                s.crossing_width_m = rng.random_range(2.0..=5.0);
+                s.ford_max_m = rng.random_range(2.0..=10.0);
+            }
+        });
+        ui.weak("Changes apply on ⚙ Generate");
+        if let Some(cn) = app.generated.as_ref().and_then(|l| l.mixed.as_ref()).and_then(|m| m.connections.as_ref()) {
+            let sealed = cn.links.iter().filter(|l| !l.linked).count();
+            let gates: Vec<String> = cn.gates.iter().map(|g| format!("#{} in region {}", g.id, g.region)).collect();
+            let bridges = cn.crossings.iter().filter(|x| x.look == crate::level::MixedCrossingLook::Bridge).count();
+            ui.weak(format!(
+                "generated: {} openings ({} loops), {sealed} sealed borders · gates {} · {} bridges, {} fords",
+                cn.portals.len(),
+                cn.loops,
+                if gates.is_empty() { "none".to_owned() } else { gates.join(", ") },
+                bridges,
+                cn.crossings.len() - bridges
+            ));
         }
     });
 }
@@ -598,7 +666,7 @@ fn water_stats(ui: &mut egui::Ui, wl: &crate::level::WaterLayout) {
 /// Forest node 4: streams and ponds (step F3 in docs/forest-plan.md).
 fn node_forest_water(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node(ui, "4 · Water", |ui| {
-        ui.weak("input: terrain · output: streams (spring → map edge), brooks, ponds (forest)");
+        ui.weak("input: terrain · output: streams (spring to map edge), brooks, ponds (forest)");
         water_controls(ui, &mut app.config.forest.water, "forest");
         if let Some(wl) = app.generated.as_ref().and_then(|l| l.forest.as_ref()).and_then(|f| f.water.as_ref()) {
             water_stats(ui, wl);
@@ -1169,7 +1237,7 @@ zone at the edge. Where it leads is up to the game.";
     // generated one.
     let last_junctions = app.generated.as_ref().and_then(|l| l.cave.as_ref()).and_then(|c| c.tunnels.as_ref()).map(|t| t.junctions.len() as u32);
     node(ui, "4 · Tunnels", |ui| {
-        ui.weak("input: chambers · output: tunnels (chain → maze), junctions, gate tunnels — one floor (cave)");
+        ui.weak("input: chambers · output: tunnels (chain to maze), junctions, gate tunnels — one floor (cave)");
         let s = &mut app.config.cave.tunnels;
         egui::Grid::new("tunnels_node_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
             param_row(ui, "Labyrinth", TIP_LAB, |ui| ui.add(egui::Slider::new(&mut s.labyrinth_pct, 0.0..=100.0).suffix("%")));

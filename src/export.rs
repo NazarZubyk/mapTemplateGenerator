@@ -181,6 +181,12 @@ pub struct ExportSpec {
     /// land, meters.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mixed_relief_m: Option<f32>,
+    /// Mixed maps: every touching region pair (linked or sealed, tree or
+    /// loop), the portals (point, direction across, width, the two kinds),
+    /// the map gates (point, inward direction, region, marker index in
+    /// `objects`) and the river crossings (bridge / ford, the two banks).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mixed_connections: Option<crate::level::MixedConnections>,
     /// Cave chambers: id, kind (hall / grotto), style, zone, center, size,
     /// long-axis angle, area.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -582,6 +588,7 @@ impl ExportSpec {
             mixed_regions: level.mixed.as_ref().map(|m| m.regions.clone()),
             mixed_water: level.mixed.as_ref().and_then(|m| m.water.as_ref()).map(|l| ExportForestWater { streams: l.streams.clone(), ponds: l.ponds.clone() }),
             mixed_relief_m: level.mixed.as_ref().and_then(|m| m.land.as_ref()).map(|l| l.relief_m),
+            mixed_connections: level.mixed.as_ref().and_then(|m| m.connections.clone()),
             chambers: level.cave.as_ref().and_then(|c| c.chambers.as_ref()).map(|l| l.chambers.clone()),
             tunnels: level.cave.as_ref().and_then(|c| c.tunnels.as_ref()).map(|l| l.tunnels.clone()),
             junctions: level.cave.as_ref().and_then(|c| c.tunnels.as_ref()).map(|l| l.junctions.clone()),

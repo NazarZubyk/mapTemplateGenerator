@@ -242,6 +242,32 @@ pub struct MixedSettings {
     /// Rivers, brooks and ponds across the regions (node 4): the forest's
     /// water settings, for the whole map.
     pub water: ForestWaterSettings,
+    /// Which regions link and where (node 5). The map gates are the
+    /// config's `gates`.
+    pub connections: MixedConnectionSettings,
+}
+
+/// Settings of the mixed map's connections node (docs/mixed-plan.md, M3).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MixedConnectionSettings {
+    /// Labyrinth slider, %: every region is reachable through a tree of
+    /// links; each other touching pair gets a link too with this chance
+    /// (loops, other ways round). 0 = one way between any two regions.
+    pub loops_pct: f32,
+    /// Width of the opening between two linked regions, meters.
+    pub portal_width_m: f32,
+    /// Width of a bridge or ford where a river cuts a region apart, meters.
+    pub crossing_width_m: f32,
+    /// Rivers up to this wide are crossed by a ford in a forest (wading);
+    /// wider ones, and every crossing in a town, get a bridge. Meters.
+    pub ford_max_m: f32,
+}
+
+impl Default for MixedConnectionSettings {
+    fn default() -> Self {
+        Self { loops_pct: 25.0, portal_width_m: 4.0, crossing_width_m: 3.0, ford_max_m: 6.0 }
+    }
 }
 
 /// Settings of the mixed map's land node: one height field for the whole
@@ -292,6 +318,7 @@ impl Default for MixedSettings {
             irregularity_pct: 50.0,
             land: MixedLandSettings::default(),
             water: ForestWaterSettings { streams: 2, ..ForestWaterSettings::default() },
+            connections: MixedConnectionSettings::default(),
         }
     }
 }

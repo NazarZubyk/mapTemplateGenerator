@@ -291,9 +291,40 @@ pub fn mixed_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[u
             let lit = ((gx + gy) * 0.707 * 0.8).clamp(-0.2, 0.2);
             base.map(|v| (v as f32 * (1.0 + lit)).round().clamp(0.0, 255.0) as u8)
         })
-        .collect();
+        .collect::<Vec<_>>();
+    let mut colors = colors;
+    if let Some(cn) = &m.connections {
+        use crate::generator::mixed::connections::capsule_cells;
+        // A portal: the opening across the border.
+        for p in &cn.portals {
+            let l = PORTAL_REACH_M.max(p.width_m);
+            let (a, b) = ([p.point_m[0] - p.normal[0] * l, p.point_m[1] - p.normal[1] * l], [p.point_m[0] + p.normal[0] * l, p.point_m[1] + p.normal[1] * l]);
+            for c in capsule_cells(w, h, cell, a, b, p.width_m / 2.0) {
+                colors[c] = PORTAL;
+            }
+        }
+        // A crossing: a bridge or a ford over the water only.
+        if let Some(wl) = water {
+            for x in &cn.crossings {
+                let color = match x.look {
+                    crate::level::MixedCrossingLook::Bridge => G::Bridge.color(),
+                    crate::level::MixedCrossingLook::Ford => G::Shallow.color(),
+                };
+                for c in capsule_cells(w, h, cell, x.from_m, x.to_m, x.width_m / 2.0) {
+                    if wl.deep.cells[c] || wl.shallow.cells[c] {
+                        colors[c] = color;
+                    }
+                }
+            }
+        }
+    }
     Some((w, h, cell, colors))
 }
+
+/// A portal between two map regions on the map: the opening's ground.
+pub const PORTAL: [u8; 3] = [214, 196, 150];
+/// How far a portal's opening reaches into each region on the map, meters.
+const PORTAL_REACH_M: f32 = 3.0;
 
 /// Mixed map legend entries: one per map region, then the water.
 pub fn mixed_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
@@ -306,6 +337,14 @@ pub fn mixed_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
         }
         if wl.deep.count_true() > 0 {
             out.push((G::Deep.color(), "deep water (blocked)".to_owned()));
+        }
+    }
+    if let Some(cn) = &m.connections {
+        if !cn.portals.is_empty() {
+            out.push((PORTAL, "opening between regions (walkable)".to_owned()));
+        }
+        if cn.crossings.iter().any(|x| x.look == crate::level::MixedCrossingLook::Bridge) {
+            out.push((G::Bridge.color(), "bridge (walkable)".to_owned()));
         }
     }
     out
