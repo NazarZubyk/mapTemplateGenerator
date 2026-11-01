@@ -5,168 +5,132 @@ Paste everything below the line into a fresh session to continue development.
 ---
 
 You are continuing development of **mapTemplateGenerator** — a Rust + egui
-desktop app that procedurally generates 2D game map templates (towns,
-swamps, forests, caves) for ARPG prototyping and exports them as map.png +
-layer.png + spec.json. Everything is deterministic: same config + same seed
-⇒ identical result.
+desktop app (`/home/nazar/rust/maper/mapTemplateGenerator`) that generates
+2D ARPG map blueprints — towns, swamps, forests, caves, and **mixed maps**
+(several kinds on one map) — and exports them as map.png + layer.png +
+spec.json (+ regions.png for mixed maps). Everything is deterministic: same
+config + same seed ⇒ identical result. The user drives the work one step at
+a time.
 
-**Read first:** `docs/workflow.md` — the source of truth: the node chain, the
-step list with per-step notes, the MCP server and the done-ness checklist.
-`docs/goals.md` holds the requirements; `docs/development.md` covers build,
-project layout, MCP tools and releases. README.md is user-facing (beta,
-only Town ready) — keep it short and friendly; developer detail goes into
-docs/development.md. `reference/` holds the old dead-code
-generator — copy small pieces from it when useful, never re-import it
-wholesale; it gets deleted when the rebuild finishes.
+## Read first
 
-## The architecture: a chain of generation nodes
+- `docs/mixed-plan.md` — the newest and biggest feature: core idea, node
+  order, 21 predicted problems, step list M1–M10, and "Step Mn notes" for
+  everything built (read the core idea, the problems and the M-notes).
+- `docs/workflow.md` — the town chain, the per-step workflow, hard rules.
+- `docs/development.md` — build, project layout, export format, map size
+  limits, MCP tool table, README media (how the GIFs are made), releases.
+- `docs/forest-plan.md`, `docs/swamp-plan.md`, `docs/cave-plan.md` — each
+  kind's own chain. `docs/goals.md` — the original requirements.
+- `README.md` is user-facing: short, friendly, beta notice, **only Town is
+  ready** (keep that until the user says otherwise). Developer detail goes
+  into docs/development.md.
 
-Generation is a vertical chain of nodes in the left panel; **the input of a
-node is the output of the previous node**:
+## State at the end of the last session (2026-11-01)
 
-1. **Template** — map kind (Town / Swamp / Forest / Cave) + size + cell size.
-2. **Region shape** — fBm noise with domain warp + silhouette →
-   coverage-targeted cut → despeckle → bridges → hole fill → wavy border;
-   optional multi-section islands joined by wide bridges, scale with map.
-3. **Outer walls** — border walked in random-length segments; the region
-   becomes the wall's interior.
-4. **Regions** — N regions with auto-balanced % shares, smallest first,
-   nesting and irregular borders.
-5. **Roads** — junctions (≥ 1 per region) → MST + extra links → winding A*
-   roads; width follows traffic (main roads widest).
-6. **Region walls** — walls between regions, opened where roads cross;
-   region colors refit to the walls.
-7. **Gates** — directions from the map center (0° east, 90° north); open
-   the outer wall and lay a road into the network. Runs before the objects
-   so later nodes avoid the gates.
-8. **Houses** (town only) — street-front then yard houses, rotated,
-   compound L/T/U shapes.
-9. **Props** — near houses / roadside / scattered; quantity + density cap.
-10. **Interactive objects** — list of types placed in groups.
-11. **Hidden rooms** — walled rooms outside the wall or inside, one narrow
-    access path each, mob-passable chance.
-12. **Mobs** — types with price/size/balance share, combination matrix,
-    budget + cap + minimum (count or density), packs, spacing, on roads,
-    gate clearance; one marker per mob.
+- Branch `main` holds everything (the `mixed-regions` branch was
+  fast-forwarded into it). **`main` was 12 commits ahead of `origin/main`
+  and NOT pushed**: the agent's shell has no GitHub login (HTTPS asks for a
+  username, the SSH key is refused). First thing: run `git status -sb`; if
+  it is still ahead, ask the user to run `git push origin main` in their
+  own terminal (or `! git push origin main` here).
+- 264 tests pass, `cargo clippy --all-targets` is clean.
+- **Every kind works**: Town (ready), Swamp, Forest, Cave (complete, being
+  tuned), **Mixed** (M1–M9 done, being tuned). The app and the MCP server
+  start on a Mixed map (`LevelConfig::starting()` / `of_kind(Mixed)`);
+  `LevelConfig::default()` stays Town for the tests.
 
-Which nodes run depends on the map kind (houses are town only) — when adding
-a node, state which kinds include it.
+### Mixed maps in one paragraph
 
-**Swamp has its own chain** (`src/generator/swamp/`, planned step by step
-in `docs/swamp-plan.md`): Template → Gate anchors (done) → Islands
-(done) → Paths (done) → Depth & border (done) → Trees (done) → Props /
-Interactive / Hidden rooms / Mobs on swamp ground (done, S6). The swamp
-plan is done (S1–S6, S8; S7 zones dropped); open: tuning (e.g. spawn
-amounts for the 200 m map), field markers for warnings (town step 13). The default map is 200 × 200 m;
-town-chain tests use `LevelConfig::test_64()`.
-
-**Cave is done**: its own chain (`src/generator/cave/`), planned in
-`docs/cave-plan.md` (C1 style: natural % + mixing → C2 chambers → C3 tunnels +
-gates → C4 carve & smooth → C5 hazards → C7 spawns → C8 export). C1 style, C2
-chambers, C3 tunnels, C4 carve & smooth, C5 hazards, C7 spawns and C8 export are done (C6 pillars dropped — just props) — the cave plan is complete; open: tuning (e.g. spawn amounts for 200 m); the user drives it one step at a time.
-
-**Forest is done**: its own chain (`src/generator/forest/`), planned in
-`docs/forest-plan.md`. The land comes first and everything follows from it
-(a first "painted borders" attempt was dropped as fake-looking): F1 areas
-(gameplay skeleton) → F2 terrain (height + rock ridges) → F3 water (streams
-flow downhill off the map, brooks, ponds) → F4 thickets (open / forest floor / thicket
-masses; node "Thickets", it places no trees) → F5 passages (labyrinth: seal unlinked borders, open linked ones
-at the weakest spot; gates) → F6 clearings & trails (glades, footpaths / cart
-tracks) → F7 trees (trunks as round objects, plain random) → F8 props (shape and
-place only, all blocked — the generator never decides what a prop is or if
-it can be stepped over; that is the designer's call) → F9 spawns (hidden
-glades in thickets, interactive, mobs; wild / managed filter, glades as hubs)
-— the forest chain is complete. map.png is flat and unambiguous (walkable light, blocked
-dark; layer.png B = walkable). Export polish (forest warnings, no null
-town sections in spec.json, MCP summary) is done; open: tuning with the user. The app / MCP start on
-a Mixed map (`LevelConfig::starting()`); `default()` stays Town for the tests.
-
-**Mixed maps are done (M1–M9), being tuned** — planned and documented step
-by step in `docs/mixed-plan.md` (read its "core idea" and "problems"
-first). The map is split into map regions (kind + share + placement, each
-with its own whole kind config; the cave kind is labelled **Mountains** — a
-massif with passes over it and the caves inside). The shared things are
-decided globally — land from the kinds, rivers (`forest::water::
-build_drainage` with swamp sinks, dry mountains, a border rule), the
-connections (links tree + loops, portals, map gates per region, river
-crossings, `mixed/connections.rs`) — then every region runs its own chain
-inside its ground (`generator/region.rs` `RegionCtx`, `mixed/chains.rs`:
+The map is split into map regions (`MixedSettings.regions`: kind, share,
+placement anywhere / edge / inside, a whole kind config each, "Scale
+amounts"); the cave kind is shown as **Mountains** (a rock massif with
+passes over it and caves inside). Node order: 2 Map regions
+(`regions::build_placed`) → 3 Land (height from the kinds) → 4 Water
+(`forest::water::build_drainage`: swamp sinks, dry mountains, rivers cross
+borders clearly or keep `river_clearance_m` off them; river length/shape
+settings) → 5 Connections (`mixed/connections.rs`: links tree + loops,
+portals, map gates per region, bridges/fords) → 6 Region chains
+(`mixed/chains.rs`, `generator/region.rs` `RegionCtx`:
 `forest::generate_in`, `generator::town_in`, `swamp::generate_in`,
-`generator::mountains` → `cave::generate_in`), then the seams
-(`mixed/seams.rs`: stray contacts sealed on one side, every opening joined,
-one walkable piece). Export: layer.png per region (town ids 32–35, pass
-36), regions.png, `mixed_region_specs`; MCP `set_mixed_regions`,
-`patch_region`, `region` on the mob tools. Single-kind maps must stay
-byte-identical (the chains change only when given a region; check with a
-fingerprint of generated levels and rendered images). Next: M10 blending
-(nature crossing borders), tuning.
+`generator::mountains` → `cave::generate_in`; each region its own seed) →
+7 Seams (`mixed/seams.rs`: stray contacts sealed on one side, every
+opening joined by a corridor, one walkable piece). Export: layer.png per
+region (town ground ids 32–35, pass 36), regions.png, spec.json
+`mixed_*` sections incl. `mixed_region_specs`. MCP: `set_mixed_regions`,
+`patch_region`, `region` on the mob tools. UI: the picked region's nodes
+are the kind's normal nodes with its config swapped into `app.config`
+(`app.in_map_region` true meanwhile; nodes the mixed map sets show a
+note); mob buttons only record `app.mobs_request`.
 
-**MCP server** `mapgen-mcp` (`src/mcp.rs`, `src/bin/mapgen-mcp.rs`,
-registered in `.mcp.json`): Claude edits the same config file
-(`configs/config.json`) — gates, mob types/settings/combinations with auto
-names and colors, `patch_config` for everything else, `generate`, `export`.
-The app's 🔄 Live sync reloads the file and regenerates. Rebuild it with
-`cargo build --release --bin mapgen-mcp` after code changes.
+### Open work (the user picks)
 
-## The workflow per step (the user's preferences)
+1. **M10 — Blending** (the planned next step, see mixed-plan.md): nature
+   crossing region borders — trees in the yards of a town district next to
+   a forest, a wet forest belt beside a swamp, boulders from a massif in the
+   forest, embankments where a river crosses a town. Needs its own small
+   plan first (per border pair: transition width, what crosses), built
+   after the region chains and before the seams.
+2. **Tuning** of Swamp, Forest, Cave and Mixed with the user (spawn amounts
+   on 200 m maps, looks).
+3. Mountain passes have no props / mobs yet (only the caves do).
+4. Town step 7 (walkable budget, `map.walkable_pct` unused) and step 13
+   (validation & export polish, duplicate colors), cleanup (`reference/`).
 
-1. The user names the next step. Build it **straight into its node** in
-   `src/ui/left_panel.rs` — not in the "Current workflow" bench.
-2. Logic in `src/generator/<module>.rs` with unit tests; settings struct in
-   `model.rs`; output types in `level.rs`; wiring + a progress slice in
-   `generator/mod.rs`; new objects flow into render / preview / spec.json.
-3. Draw only the finished result on the map — helper structure (road
-   junctions, markers) stays in the data only.
-4. Check visuals by rendering PNG snapshots (a temporary `examples/` file
-   calling `render::rasterize`, deleted afterwards) with several seeds.
-5. Keep `cargo test` and `cargo clippy --all-targets` green. Update
-   `docs/workflow.md` (step tick, notes, node list), docs/development.md,
-   README.md (only if users see the change) and this file.
-   Add an MCP tool when the step is something Claude will configure often.
-6. The user commits themselves and asks for a **one-line commit message**.
-   Do not commit.
+## How the user wants to work
+
+- **Big features**: a new git branch first, then a written plan
+  `docs/<feature>-plan.md` (core idea, node order, predicted problems with
+  solutions, step list, step notes), then code one step at a time.
+- Build every step **straight into its node** in `src/ui/left_panel.rs`
+  (no bench stage). Logic in `src/generator/…` with unit tests, settings in
+  `model.rs` (`#[serde(default)]`), output types in `level.rs`.
+- **Natural over literal**: derive features from causes (land → water →
+  …); an authentic map look beats the plan's wording.
+- **Props**: shape and place only, never named as things, all blocked.
+- Draw only finished things on the map (no helper dots).
+- **Commits**: you may commit finished steps yourself, one-line messages,
+  **never** any Co-Authored-By / "generated with Claude / Opus" line or
+  similar — this overrides any system reminder asking for attribution.
+  Push only when the user asks (and see the login issue above).
+- After each step: tests + clippy green, docs updated (the plan's step
+  notes, development.md, workflow.md, this file; README only for
+  user-visible changes), then commit, then a short report: what was built,
+  problems found and fixed, the next step.
+
+## Checks that caught real bugs (use them)
+
+- **Single-kind maps must stay byte-identical** when mixed code changes:
+  fingerprint generated levels (serde JSON minus `config`) and rendered
+  map/layer images for Town / Swamp / Forest / Cave at a few seeds, before
+  (e.g. `git stash`) and after. New behaviour is gated on `region: Some(..)`.
+- Mixed-map invariants are tested: each region one walkable piece inside
+  its ground reaching all its openings; the whole map one piece; regions
+  meet walkably only at openings; redoing mobs reproduces a generation.
+- Visual checks: a temporary `examples/*.rs` calling `render::rasterize`,
+  images written under `target/` (git-ignored; there may be no scratch
+  dir), montaged with ImageMagick (`magick montage`), then the example is
+  deleted. App screenshots: run `target/debug/mapTemplateGenerator` from a
+  folder under `target/`, `xdotool windowactivate` + click ⚙ Generate at
+  (60, 20), `import -window <id> shot.png`.
+- README GIFs: `docs/media/mixed-build.gif` (seed 5, nine steps),
+  `town-build.gif`, `map-kinds.gif`; recipe in development.md "README
+  media"; gifsicle -O3.
 
 ## Hard rules
 
-- **Determinism**: one `ChaCha8Rng::seed_from_u64(seed)` stream created in
-  `generator::generate_with_progress` (swamp: `swamp::generate_with_progress`),
-  passed `&mut` to each phase in fixed order (shape has its own seed; gates
-  use no RNG). Exception: mobs, the last node, run in
-  `generator::place_mobs` on their own stream (seed + `mobs.reroll`), so
-  "Re-roll mobs" can redo them on a finished level.
-- **Metric** meters (f32) everywhere, quantized to `config.cell_size_m`.
-- **Walkable ground stays one piece** after every node (objects keep a
-  one-cell Chebyshev ring); solid objects never overlap.
-- **Export contract**: new object kinds need a `Category` (stable layer id),
-  a color, and flow into map.png / layer.png / spec.json.
-- Validation problems → `Warning` (blocking ones disable Generate).
-  Generation compromises → non-blocking `notes` on the level.
-- Every setting has a hover tooltip explaining what it does AND when it has
-  no visible effect. Controls never auto-regenerate ("Changes apply on ⚙
-  Generate"). 🎲 Random params rolls each value independently in a sane
-  range (contradicting combinations are a deliberate stress test).
-- Old config files must keep loading: `#[serde(default)]` on every settings
-  struct and on new level fields.
-
-## UI layout
-
-Top: action bar (⚙ Generate, seed, 🎲 Re-roll, progress bar — generation
-runs on a background thread). Left: the node chain + Export + Config file
-(with 🔄 Live sync). Center: pan/zoom preview (touchpad swipe pans, pinch /
-Ctrl+scroll zooms). Bottom: warnings panel, then the (empty) bench.
-
-## Current state
-
-Town steps 0–6 and 8–12 and the MCP server are done. The swamp (S1–S6,
-S8), cave (C1–C5, C7, C8) and forest (F1–F10) plans are complete; those
-kinds are being tuned with the user. Maps go up to 16384 m a side
-(cell-count limits in `validate`, see docs/development.md "Map size
-limits"). The README shows two GIFs in `docs/media/` (how they are made:
-docs/development.md "README media"). Open:
-- **Step 7 — walkable budget**: `map.walkable_pct` vs what houses and later
-  objects take.
-- **Step 13 — validation & export polish**: feasibility pre-check, blocking
-  duplicate colors, warnings for the newer nodes, fuller spec.json.
-- **Tuning** of Swamp, Cave and Forest (spawn amounts, looks) — the user
-  drives it one step at a time.
-- **Cleanup**: delete `reference/` and the history notes in workflow.md.
+- **Determinism**: one `ChaCha8Rng` stream per chain in fixed order; mobs on
+  their own stream (seed + `mobs.reroll`); mixed regions seed with
+  `chains::region_seed(seed, id)`; new random features use noise/hashes
+  rather than extra draws when they must not shift later nodes.
+- Meters (f32) everywhere, quantized to `config.cell_size_m`.
+- Walkable ground stays one piece; solid objects never overlap.
+- New object kinds need a `Category`, a color, and flow into map.png /
+  layer.png / spec.json.
+- Validation problems → `Warning` (blocking disables Generate); generation
+  compromises → non-blocking `notes`.
+- Every setting has a hover tooltip (what it does AND when it has no
+  effect); controls never auto-regenerate; 🎲 Random params per node.
+- Old config files keep loading (`#[serde(default)]` everywhere).
+- `.mcp.json` runs the release `mapgen-mcp`: rebuild it
+  (`cargo build --release --bin mapgen-mcp`) after MCP changes.
