@@ -211,9 +211,15 @@ fn mixed_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     });
     let i = app.mixed_selected;
     ui.weak(
-        "So far the regions, land, water and connections are generated (M1–M3). A region's own \
-         settings below are kept and used once the region chains are built (docs/mixed-plan.md, \
-         M4–M7).",
+        "Forest regions are built with the settings below (inside their own ground; whole-map \
+         counts scaled to the region's size when \"Scale amounts\" is on). Town, swamp and \
+         mountain regions keep their settings until their step (docs/mixed-plan.md, M5–M7).",
+    );
+    ui.checkbox(&mut app.config.mixed.regions[i].scale_amounts, "Scale amounts").on_hover_text(
+        "Counts set for a whole map — forest areas, interactive objects, hidden rooms, the mob \
+         budget and caps — shrink with this region's share of the map, so a small region is not \
+         crowded (the values below stay as typed). Densities (trees, props per hectare) need no \
+         scaling. Off: the counts are used as they are.",
     );
     // The region's own nodes are the kind's normal nodes: its config takes
     // the app config's place while they draw.
@@ -786,14 +792,18 @@ first gate is where the area graph starts (and, with Managed at gate, the manage
             param_row(ui, "Bridges", TIP_BRIDGE, |ui| ui.add(egui::Slider::new(&mut s.bridge_pct, 0.0..=100.0).suffix("%")));
             param_row(ui, "Seal width", TIP_SEAL, |ui| ui.add(meters(&mut s.seal_width_m, 20.0)));
         });
-        let mut remove = None;
-        egui::Grid::new("forest_gates_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
-            remove = gate_list_rows(ui, &mut app.config.gates.gates, TIP_GATES, false);
-        });
-        if let Some(i) = remove {
-            app.config.gates.gates.remove(i);
+        if app.in_map_region {
+            ui.weak("Gates: this region's openings to its neighbours and the map gates that land in it — set by the mixed map's 5 · Connections node.");
+        } else {
+            let mut remove = None;
+            egui::Grid::new("forest_gates_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+                remove = gate_list_rows(ui, &mut app.config.gates.gates, TIP_GATES, false);
+            });
+            if let Some(i) = remove {
+                app.config.gates.gates.remove(i);
+            }
+            ui.horizontal(|ui| gate_list_buttons(ui, &mut app.config.gates.gates));
         }
-        ui.horizontal(|ui| gate_list_buttons(ui, &mut app.config.gates.gates));
         let s = &mut app.config.forest.passages;
         ui.horizontal(|ui| {
             if ui.button("🎲 Random params").on_hover_text("Rolls every passage setting independently inside its reasonable range (gates stay). Set values only; press Generate.").clicked() {

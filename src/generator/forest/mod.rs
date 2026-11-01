@@ -29,6 +29,7 @@ use std::collections::BinaryHeap;
 
 use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 
+use crate::generator::region::RegionCtx;
 use crate::generator::Progress;
 use crate::level::{ForestLayout, GeneratedLevel};
 use crate::model::LevelConfig;
@@ -45,29 +46,50 @@ pub mod trees;
 
 /// Generate a forest level: one RNG stream, nodes in fixed order.
 pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progress) -> GeneratedLevel {
+    generate_in(config, seed, None, progress)
+}
+
+/// Generate a forest — a whole map, or with `region` one map region of a
+/// mixed map (docs/mixed-plan.md, M4): built only inside the region's
+/// ground, its edge as the map edge, its portals and map gates as fixed
+/// gates, on the mixed map's land and water (its own rock ridges stay).
+pub fn generate_in(config: &LevelConfig, seed: u64, region: Option<&RegionCtx>, progress: Progress) -> GeneratedLevel {
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     let mut notes = Vec::new();
 
     progress("Splitting the forest into areas", 0.0);
-    let areas = areas::build(config, &mut rng);
+    let areas = areas::build(config, &mut rng, region);
     notes.extend(areas.notes);
 
     progress("Shaping the land", 0.2);
-    let terrain = terrain::build(config, &mut rng, &areas.layout);
+    let mut terrain = terrain::build(config, &mut rng, &areas.layout);
+    if let Some(r) = region {
+        // The mixed map's land; the forest's own rock ridges, in its ground.
+        terrain.height_m.clone_from(&r.land.height_m);
+        terrain.relief_m = r.land.relief_m;
+        for (c, rock) in terrain.rock.cells.iter_mut().enumerate() {
+            *rock &= r.inside(c) && !r.water.deep.cells[c] && !r.water.shallow.cells[c];
+        }
+        let inside = r.domain.count_true().max(1);
+        terrain.rock_pct = terrain.rock.count_true() as f32 / inside as f32 * 100.0;
+    }
 
     progress("Letting the water flow", 0.35);
-    let water = water::build(config, &mut rng, &terrain);
+    let water = match region {
+        Some(r) => water::WaterBuild { layout: r.water.clone(), notes: Vec::new() },
+        None => water::build(config, &mut rng, &terrain),
+    };
     notes.extend(water.notes);
 
     progress("Growing the thickets", 0.5);
-    let thickets = thickets::build(config, &mut rng, &areas.layout, &terrain, &water.layout);
+    let thickets = thickets::build(config, &mut rng, &areas.layout, &terrain, &water.layout, region);
 
     progress("Opening the passages", 0.65);
-    let passages = passages::build(config, &mut rng, &areas.layout, &thickets);
+    let passages = passages::build(config, &mut rng, &areas.layout, &thickets, region);
     notes.extend(passages.notes);
 
     progress("Clearing glades and trails", 0.8);
-    let clearings = clearings::build(config, &mut rng, &areas.layout, &passages.layout);
+    let clearings = clearings::build(config, &mut rng, &areas.layout, &passages.layout, region);
 
     progress("Planting the trees", 0.9);
     let mut trees = trees::build(config, &mut rng, &areas.layout, &thickets, &passages.layout, &clearings);
@@ -135,7 +157,8 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
     objects.extend(inter.objects);
     let offset = objects.len();
     if let Some(p) = forest.passages.as_mut() {
-        for g in &mut p.gates {
+        // (A map region's gates have no marker of their own.)
+        for g in p.gates.iter_mut().filter(|g| g.object != usize::MAX) {
             g.object += offset;
         }
     }

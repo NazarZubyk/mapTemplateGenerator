@@ -602,7 +602,7 @@ mod tests {
         c.cell_size_m = 1.0;
         edit(&mut c);
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let a = areas::build(&c, &mut rng).layout;
+        let a = areas::build(&c, &mut rng, None).layout;
         let t = terrain::build(&c, &mut rng, &a);
         build(&c, &mut rng, &t).layout
     }

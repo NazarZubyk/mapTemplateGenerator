@@ -32,6 +32,7 @@ use crate::generator::forest::water::neighbors8;
 use crate::generator::gates::{GATE_NAME, MARKER_M};
 use crate::generator::grid;
 use crate::generator::noise::NoiseField;
+use crate::generator::region::RegionCtx;
 use crate::generator::swamp::gate_anchors::edge_hit;
 use crate::level::{AreaLayout, AreaLink, Category, CellMask, CrossingKind, ForestGate, ForestGround, PassageLayout, PlacedObject, ThicketLayout};
 use crate::model::{LabyrinthParams, LevelConfig};
@@ -53,7 +54,7 @@ const COST_DENSE: u32 = 70;
 const COST_DEEP: u32 = 120;
 const COST_ROCK: u32 = 350;
 
-pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, thickets: &ThicketLayout) -> PassageBuild {
+pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, thickets: &ThicketLayout, region: Option<&RegionCtx>) -> PassageBuild {
     let s = &config.forest.passages;
     let (w, h, cell) = (areas.width, areas.height, areas.cell_size_m);
     let n = w * h;
@@ -66,18 +67,41 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, thi
     let seal_noise = NoiseField::new(rng.random::<u64>());
     let trail_w = s.trail_width_m.max(cell);
 
-    // Gate points on the map edge (inward normal).
+    // Gate points on the map edge (inward normal, direction) — or, in a map
+    // region, its fixed gates: the portals and the map gates landing in it.
     let inset = cell / 2.0;
-    let gate_points: Vec<((f32, f32), (f32, f32))> = config
-        .gates
-        .gates
-        .iter()
-        .map(|g| {
-            let (p, nrm) = edge_hit((wm / 2.0, hm / 2.0), g.direction_deg.rem_euclid(360.0), wm, hm);
-            ((p.0.clamp(inset, wm - inset), p.1.clamp(inset, hm - inset)), nrm)
-        })
-        .collect();
+    let inside = |c: usize| region.is_none_or(|r| r.inside(c));
+    let gate_points: Vec<GatePoint> = match region {
+        Some(r) => r
+            .gates
+            .iter()
+            .map(|g| {
+                let p = (g.point_m[0] + g.inward[0] * inset, g.point_m[1] + g.inward[1] * inset);
+                ((p.0.clamp(inset, wm - inset), p.1.clamp(inset, hm - inset)), (g.inward[0], g.inward[1]), g.direction_deg())
+            })
+            .collect(),
+        None => config
+            .gates
+            .gates
+            .iter()
+            .map(|g| {
+                let (p, nrm) = edge_hit((wm / 2.0, hm / 2.0), g.direction_deg.rem_euclid(360.0), wm, hm);
+                ((p.0.clamp(inset, wm - inset), p.1.clamp(inset, hm - inset)), nrm, g.direction_deg)
+            })
+            .collect(),
+    };
+    // How the notes name each gate.
+    let gate_name = |i: usize| match region.and_then(|r| r.gates.get(i)).map(|g| g.kind) {
+        Some(crate::generator::region::FixedGateKind::Portal { to, .. }) => format!("The opening to region {to}"),
+        Some(crate::generator::region::FixedGateKind::MapGate { gate }) => format!("Gate #{gate}"),
+        None => format!("Gate #{}", i + 1),
+    };
     let cell_at = |p: (f32, f32)| ((p.1 / cell) as usize).min(h - 1) * w + ((p.0 / cell) as usize).min(w - 1);
+    // Off the edge: the map edge, or the region's own edge.
+    let off_edge = |c: usize, cells: usize| match region {
+        Some(r) => r.edge_dist[c] >= cells as f32 * cell,
+        None => !is_edge_cell(c, w, h, cells),
+    };
 
     // 1. Area graph.
     let lab = LabyrinthParams::from_pct(s.labyrinth_pct);
@@ -90,7 +114,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, thi
     let short = |e: usize| edges[e].length_m < MIN_LINK * trail_w;
     let mut linked = vec![false; edges.len()];
     let mut extra = vec![false; edges.len()];
-    let start = gate_points.first().map(|&(p, _)| ids[cell_at(p)]).unwrap_or(1);
+    let start = gate_points.first().map(|&(p, _, _)| ids[cell_at(p)]).unwrap_or(1);
     if k > 0 {
         let mut in_tree = vec![false; k + 1];
         in_tree[start as usize] = true;
@@ -136,6 +160,13 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, thi
     let seal_half = s.seal_width_m.max(cell) / 2.0;
     let (to_seal, _) = distance_field(w, h, cell, seal_src, seal_half * 1.4 + cell);
     let mut locked = vec![false; n];
+    // Outside the map region: closed for good (another region's ground).
+    for (c, l) in locked.iter_mut().enumerate() {
+        if !inside(c) {
+            *l = true;
+            ground[c] = blocked(ground[c]);
+        }
+    }
     for c in 0..n {
         let (x, y) = ((c % w) as f32 * cell, (c / w) as f32 * cell);
         let wob = 0.7 + 0.6 * seal_noise.fbm(x / 10.0, y / 10.0, 2);
@@ -216,7 +247,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, thi
         let mut link = AreaLink { a: b.a, b: b.b, linked: linked[e], extra: extra[e], crossing: None, point_m: None };
         if linked[e] {
             let src: Vec<usize> = (0..n).filter(|&c| ids[c] == b.a && ground[c].walkable()).collect();
-            let inside = |c: usize| ids[c] == b.a || ids[c] == b.b;
+            let inside = |c: usize| (ids[c] == b.a || ids[c] == b.b) && inside(c);
             let target = |c: usize| ids[c] == b.b && ground[c].walkable();
             // Off the sealed strips first; if they close the whole border
             // (a short border between two sealed ones), through them. That
@@ -247,11 +278,16 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, thi
     // 5. Gates.
     let mut gates = Vec::new();
     let mut objects = Vec::new();
-    for (i, (&(p0, nrm), spec)) in gate_points.iter().zip(&config.gates.gates).enumerate() {
+    for (i, &(p0, nrm, direction_deg)) in gate_points.iter().enumerate() {
         let id = i as u32 + 1;
         let along = (-nrm.1, nrm.0);
         let ok = |c: usize| !locked[c] && !matches!(ground[c], ForestGround::Deep | ForestGround::Rock);
-        let max_slide = (wm.max(hm) / cell) as i32;
+        // A region's fixed gate sits on its edge: step in to its ground.
+        let p0 = match region {
+            Some(_) => (0..12).map(|k| (p0.0 + nrm.0 * k as f32 * cell, p0.1 + nrm.1 * k as f32 * cell)).find(|&q| inside(cell_at(q))).unwrap_or(p0),
+            None => p0,
+        };
+        let max_slide = if region.is_some() { (16.0 / cell) as i32 } else { (wm.max(hm) / cell) as i32 };
         let Some(gc) = (0..max_slide)
             .flat_map(|k| [k, -k])
             .map(|k| (p0.0 + along.0 * k as f32 * cell, p0.1 + along.1 * k as f32 * cell))
@@ -259,11 +295,11 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, thi
             .map(cell_at)
             .find(|&c| ok(c))
         else {
-            notes.push(format!("Gate #{id}: no open spot on the map edge"));
+            notes.push(format!("{}: no open spot on the {}", gate_name(i), if region.is_some() { "region's edge" } else { "map edge" }));
             continue;
         };
         let area = ids[gc];
-        let path = cheapest(w, h, &[gc], |c| ids[c] == area && ground[c].walkable() && !is_edge_cell(c, w, h, 3), |c| {
+        let path = cheapest(w, h, &[gc], |c| ids[c] == area && ground[c].walkable() && off_edge(c, 3), |c| {
             (ids[c] == area && !locked[c]).then(|| step_cost(ground[c], c))
         });
         if let Some(path) = path {
@@ -274,6 +310,11 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, thi
             ground[gc] = ForestGround::Trail;
         }
         let pm = (((gc % w) as f32 + 0.5) * cell, ((gc / w) as f32 + 0.5) * cell);
+        if region.is_some() {
+            // The mixed map draws its own gate markers; a portal has none.
+            gates.push(ForestGate { id, direction_deg, point_m: [pm.0, pm.1], area, object: usize::MAX });
+            continue;
+        }
         objects.push(PlacedObject {
             category: Category::Gate,
             type_name: GATE_NAME.to_owned(),
@@ -286,7 +327,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, thi
             parts: Vec::new(),
             round: false,
         });
-        gates.push(ForestGate { id, direction_deg: spec.direction_deg, point_m: [pm.0, pm.1], area, object: objects.len() - 1 });
+        gates.push(ForestGate { id, direction_deg, point_m: [pm.0, pm.1], area, object: objects.len() - 1 });
     }
 
     // 6. Cleanup: keep what the first gate (or the biggest piece) reaches.
@@ -343,6 +384,9 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, thi
         notes,
     }
 }
+
+/// A gate's point, inward direction and direction from the map center.
+type GatePoint = ((f32, f32), (f32, f32), f32);
 
 /// The blocked ground a walkable cell turns into when it must close: water
 /// deepens (so a brook stays one line of water), land grows dense.
@@ -492,11 +536,11 @@ mod tests {
 
     fn run(c: &LevelConfig, seed: u64) -> (AreaLayout, PassageBuild) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let a = areas::build(c, &mut rng).layout;
+        let a = areas::build(c, &mut rng, None).layout;
         let t = terrain::build(c, &mut rng, &a);
         let wa = water::build(c, &mut rng, &t).layout;
-        let wo = thickets::build(c, &mut rng, &a, &t, &wa);
-        let p = build(c, &mut rng, &a, &wo);
+        let wo = thickets::build(c, &mut rng, &a, &t, &wa, None);
+        let p = build(c, &mut rng, &a, &wo, None);
         (a, p)
     }
 

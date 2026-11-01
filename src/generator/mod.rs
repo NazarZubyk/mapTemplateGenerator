@@ -18,6 +18,7 @@ pub mod noise;
 pub mod placement;
 pub mod props;
 pub mod region_walls;
+pub mod region;
 pub mod regions;
 pub mod roads;
 pub mod shape;
@@ -439,7 +440,7 @@ fn remap_objects(level: &mut GeneratedLevel, f: impl Fn(usize) -> usize) {
     }
     if let Some(forest) = level.forest.as_mut() {
         if let Some(p) = forest.passages.as_mut() {
-            for g in &mut p.gates {
+            for g in p.gates.iter_mut().filter(|g| g.object != usize::MAX) {
                 g.object = f(g.object);
             }
         }

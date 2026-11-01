@@ -24,6 +24,7 @@ use crate::generator::forest::distance_field;
 use crate::generator::grid;
 use crate::generator::noise::NoiseField;
 use crate::level::{AreaLayout, CellMask, ForestCharacter, ForestGround, ForestStyle, TerrainLayout, WaterLayout, ThicketLayout};
+use crate::generator::region::RegionCtx;
 use crate::model::LevelConfig;
 
 /// Density cut: thicket at and above, open ground below `OPEN_BELOW`.
@@ -49,7 +50,7 @@ pub fn base_density(c: ForestCharacter) -> f32 {
     }
 }
 
-pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, terrain: &TerrainLayout, water: &WaterLayout) -> ThicketLayout {
+pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, terrain: &TerrainLayout, water: &WaterLayout, region: Option<&RegionCtx>) -> ThicketLayout {
     let s = &config.forest.thickets;
     let (w, h, cell) = (areas.width, areas.height, areas.cell_size_m);
     let n = w * h;
@@ -75,7 +76,12 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, ter
         let wobble = (edge_warp.fbm(x / EDGE_WARP_SCALE_M, y / EDGE_WARP_SCALE_M, 3) - 0.5) * 2.0 * 0.75
             + (edge_warp.fbm(x / FRINGE_SCALE_M + 31.7, y / FRINGE_SCALE_M, 2) - 0.5) * 2.0 * 0.35;
         let belt = border * fade((to_border[c] + wobble * bw * 1.3) / bw);
-        let edge_d = (x.min(y).min(w as f32 * cell - x).min(h as f32 * cell - y)).max(0.0);
+        // The map edge — or, in a map region, its own edge (the border to
+        // the neighbouring regions counts as the map edge).
+        let edge_d = match region {
+            Some(r) => r.edge_dist[c].min(1e4),
+            None => (x.min(y).min(w as f32 * cell - x).min(h as f32 * cell - y)).max(0.0),
+        };
         let edge = if ew > 0.0 { 0.9 * fade((edge_d + wobble * ew * 0.5) / ew) } else { 0.0 };
         let amp = if managed { 0.5 } else { 1.0 } * patchy * 0.5;
         let inner = amp * (patch.fbm(x / PATCH_SCALE_M, y / PATCH_SCALE_M, 4) - 0.5) * 2.0 + 0.08 * (fine.fbm(x / FINE_SCALE_M, y / FINE_SCALE_M, 2) - 0.5) * 2.0;
@@ -101,7 +107,12 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, ter
     let mut counts = [0usize; 3];
     let ground: Vec<u8> = (0..n)
         .map(|c| {
-            let g = if water.deep.cells[c] {
+            let g = if region.is_some_and(|r| !r.inside(c)) {
+                // Outside the region: closed (another region's ground).
+                ForestGround::Thicket
+            } else if region.is_some_and(|r| r.bridges.cells[c]) && water.deep.cells[c] {
+                ForestGround::Bridge
+            } else if water.deep.cells[c] {
                 ForestGround::Deep
             } else if water.shallow.cells[c] {
                 ForestGround::Shallow

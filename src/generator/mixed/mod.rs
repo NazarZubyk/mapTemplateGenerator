@@ -15,7 +15,10 @@
 //! 5. **Connections** (M3) — which regions link (a tree + loops), one
 //!    portal on each linked border, the map gates' regions, and bridges /
 //!    fords where a river cuts a region apart (`connections.rs`).
+//! 6. **Region chains** (M4–) — every region runs its own kind's chain in
+//!    its own ground (`chains.rs`); so far forests.
 
+pub mod chains;
 pub mod connections;
 
 use rand::Rng;
@@ -62,16 +65,34 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
     let mut mixed = split(config, &mut rng, &mut notes);
     let mut objects = Vec::new();
     if let Some(m) = mixed.as_mut() {
-        progress("Shaping the land", 0.5);
+        progress("Shaping the land", 0.1);
         let land_layout = land(config, &mut rng, m);
-        progress("Letting the water flow", 0.75);
+        progress("Letting the water flow", 0.3);
         let built = rivers(config, &mut rng, m, &land_layout);
         notes.extend(built.notes);
-        progress("Linking the regions", 0.9);
+        progress("Linking the regions", 0.5);
         let linked = connections::build(config, &mut rng, m, &land_layout, &built.layout);
         notes.extend(linked.notes);
-        objects = linked.objects;
+        let gate_markers = linked.objects;
         m.connections = Some(linked.layout);
+        let (levels, region_notes) = chains::build(config, seed, m, &land_layout, &built.layout, progress, (0.55, 0.99));
+        notes.extend(region_notes);
+        // The regions' objects, then the gate markers (drawn on top).
+        for level in &levels {
+            let start = objects.len();
+            if let Some(l) = level {
+                objects.extend(l.objects.iter().cloned());
+            }
+            m.object_ranges.push([start, objects.len() - start]);
+        }
+        if let Some(cn) = m.connections.as_mut() {
+            let base = objects.len();
+            for g in &mut cn.gates {
+                g.object += base;
+            }
+        }
+        objects.extend(gate_markers);
+        m.levels = levels;
         m.water = Some(built.layout);
         m.land = Some(land_layout);
     }
@@ -147,7 +168,7 @@ fn split(config: &LevelConfig, rng: &mut ChaCha8Rng, notes: &mut Vec<String>) ->
             }
         })
         .collect();
-    Some(MixedLayout { map: split.map, regions, land: None, water: None, connections: None })
+    Some(MixedLayout { map: split.map, regions, land: None, water: None, connections: None, levels: Vec::new(), object_ranges: Vec::new() })
 }
 
 /// How high a kind's ground lies (0 low … 1 high) and how hilly it is.

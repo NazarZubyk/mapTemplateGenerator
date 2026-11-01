@@ -744,6 +744,14 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
         "mixed_regions": level.mixed.as_ref().map(|m| m.regions.iter().map(|r| json!({
             "id": r.id, "name": r.name, "kind": r.kind.slug(), "label": r.kind.region_label(), "placement": r.placement, "target_pct": r.target_pct, "actual_pct": r.actual_pct,
         })).collect::<Vec<_>>()),
+        "mixed_built": level.mixed.as_ref().map(|m| m.regions.iter().zip(&m.levels).filter_map(|(r, l)| l.as_ref().map(|l| json!({
+            "region": r.id,
+            "kind": r.kind.slug(),
+            "objects": l.objects.len(),
+            "mobs": l.mobs.as_ref().map(|x| x.spawns.len()),
+            "hidden_rooms": l.hidden_rooms.as_ref().map(|x| x.rooms.len()),
+            "notes": l.notes.len(),
+        }))).collect::<Vec<_>>()),
         "mixed_water": level.mixed.as_ref().and_then(|m| m.water.as_ref()).map(|w| json!({
             "streams": w.streams.len(),
             "into_swamps": w.streams.iter().filter(|s| s.mouth == crate::level::StreamMouth::Sink).count(),

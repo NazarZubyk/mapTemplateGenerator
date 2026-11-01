@@ -200,6 +200,10 @@ pub struct MixedRegion {
     pub share_pct: f32,
     /// Where the region starts growing.
     pub placement: RegionPlacement,
+    /// Counts set for a whole map (areas, interactive objects, hidden
+    /// rooms, the mob budget and caps) shrink with the region's share of
+    /// the map, so a small region is not crowded.
+    pub scale_amounts: bool,
     /// The region's own settings: every node of its kind. The map size,
     /// cell size, gates and seed come from the mixed map.
     pub config: LevelConfig,
@@ -214,6 +218,7 @@ impl MixedRegion {
             kind,
             share_pct,
             placement: RegionPlacement::Anywhere,
+            scale_amounts: true,
             config: LevelConfig { kind, shape: ShapeSettings::for_kind(kind), ..LevelConfig::default() },
         }
     }
@@ -228,6 +233,26 @@ impl MixedRegion {
         c.seed = mixed.seed;
         // A region never nests a mixed map of its own.
         c.mixed = MixedSettings::default();
+        c
+    }
+
+    /// [`Self::resolved`] with the whole-map counts scaled to the region's
+    /// `share` of the map (0..1) when `scale_amounts` is on.
+    pub fn for_share(&self, mixed: &LevelConfig, share: f32) -> LevelConfig {
+        let mut c = self.resolved(mixed);
+        if !self.scale_amounts {
+            return c;
+        }
+        let f = share.clamp(0.0, 1.0);
+        let scale = |v: u32| ((v as f32 * f).round() as u32).max(u32::from(v > 0));
+        c.forest.areas.count = scale(c.forest.areas.count);
+        for t in &mut c.interactive {
+            t.quantity = scale(t.quantity);
+        }
+        c.hidden_rooms.count = scale(c.hidden_rooms.count);
+        c.mobs.budget *= f;
+        c.mobs.max_entities = scale(c.mobs.max_entities);
+        c.mobs.min_entities = (c.mobs.min_entities as f32 * f).round() as u32;
         c
     }
 }

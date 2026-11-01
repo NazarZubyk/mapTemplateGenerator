@@ -26,6 +26,7 @@ use rand::Rng;
 use rand_chacha::ChaCha8Rng;
 
 use crate::generator::noise::NoiseField;
+use crate::generator::region::RegionCtx;
 use crate::generator::swamp::gate_anchors::edge_hit;
 use crate::level::{AreaBorder, AreaLayout, ForestArea, ForestCharacter, ForestStyle};
 use crate::model::LevelConfig;
@@ -42,13 +43,16 @@ const WARP: f32 = 0.6;
 const WEIGHT_SWING: f32 = 0.45;
 /// Cleanup passes (each moves every stray fragment once).
 const CLEANUP_PASSES: usize = 6;
+/// Area id of the cells outside a map region while the areas are cleaned
+/// up (never an area of a whole forest).
+const OUTSIDE: u16 = u16::MAX;
 
 pub struct AreaBuild {
     pub layout: AreaLayout,
     pub notes: Vec<String>,
 }
 
-pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng) -> AreaBuild {
+pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, region: Option<&RegionCtx>) -> AreaBuild {
     let s = &config.forest.areas;
     let cell = config.cell_size_m;
     let w = ((config.map.width_m / cell).round() as usize).max(1);
@@ -56,6 +60,10 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng) -> AreaBuild {
     let (wm, hm) = (w as f32 * cell, h as f32 * cell);
     let n = w * h;
     let mut notes = Vec::new();
+    // A map region: seeds, centers and stats in its own ground only (the
+    // cells outside still get an area, never used).
+    let inside = |c: usize| region.is_none_or(|r| r.inside(c));
+    let cell_at = |p: (f32, f32)| ((p.1 / cell) as usize).min(h - 1) * w + ((p.0 / cell) as usize).min(w - 1);
     let count = s.count.clamp(1, 64) as usize;
 
     // RNG: seeds and weights, the two warp seeds, the style direction and
@@ -65,7 +73,16 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng) -> AreaBuild {
         let mut best = (0.0, 0.0);
         let mut best_d = -1.0f32;
         for _ in 0..SEED_TRIES {
-            let p = (rng.random_range(0.0..wm), rng.random_range(0.0..hm));
+            let mut p = (rng.random_range(0.0..wm), rng.random_range(0.0..hm));
+            if region.is_some() {
+                // Inside the region (a few more tries; the last one stands).
+                for _ in 0..64 {
+                    if inside(cell_at(p)) {
+                        break;
+                    }
+                    p = (rng.random_range(0.0..wm), rng.random_range(0.0..hm));
+                }
+            }
             let d = seeds.iter().map(|q| (p.0 - q.0).powi(2) + (p.1 - q.1).powi(2)).fold(f32::INFINITY, f32::min);
             if d > best_d {
                 best_d = d;
@@ -78,6 +95,9 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng) -> AreaBuild {
         let mut sums = vec![(0.0f32, 0.0f32, 0u32); count];
         for y in (0..h).step_by(LLOYD_STRIDE) {
             for x in (0..w).step_by(LLOYD_STRIDE) {
+                if !inside(y * w + x) {
+                    continue;
+                }
                 let p = ((x as f32 + 0.5) * cell, (y as f32 + 0.5) * cell);
                 let near = (0..count)
                     .min_by(|&a, &b| {
@@ -121,10 +141,26 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng) -> AreaBuild {
         *id = best.1 as u16 + 1;
     }
 
-    // 3. Cleanup, then renumber the areas that kept cells.
+    // 3. Cleanup, then renumber the areas that kept cells. In a map region
+    // each area must be one piece *inside the region* (two lobes joined
+    // only outside would leave one lobe cut off): the outside is left out
+    // of the merging, then handed to some area (never used).
+    if region.is_some() {
+        for (c, id) in ids.iter_mut().enumerate() {
+            if !inside(c) {
+                *id = OUTSIDE;
+            }
+        }
+    }
     for _ in 0..CLEANUP_PASSES {
         if !merge_fragments(&mut ids, w, h) {
             break;
+        }
+    }
+    if region.is_some() {
+        let any = ids.iter().copied().find(|&i| i != OUTSIDE).unwrap_or(1);
+        for id in ids.iter_mut().filter(|i| **i == OUTSIDE) {
+            *id = any;
         }
     }
     let mut remap = vec![0u16; count + 1];
@@ -149,13 +185,16 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng) -> AreaBuild {
     let mut sums = vec![(0u32, 0.0f32, 0.0f32); kept];
     let mut edges: HashMap<(u16, u16), u32> = HashMap::new();
     for c in 0..n {
+        if !inside(c) {
+            continue;
+        }
         let id = ids[c];
         let e = &mut sums[id as usize - 1];
         e.0 += 1;
         e.1 += ((c % w) as f32 + 0.5) * cell;
         e.2 += ((c / w) as f32 + 0.5) * cell;
         for nb in [(c % w + 1 < w).then(|| c + 1), (c / w + 1 < h).then(|| c + w)].into_iter().flatten() {
-            if ids[nb] != id {
+            if ids[nb] != id && inside(nb) {
                 *edges.entry((id.min(ids[nb]), id.max(ids[nb]))).or_default() += 1;
             }
         }
@@ -169,7 +208,10 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng) -> AreaBuild {
     let m = (s.mixing_pct / 100.0).clamp(0.0, 1.0);
     let dir: f32 = rng.random_range(0.0..360.0f32).to_radians();
     let rolls: Vec<f32> = (0..kept).map(|_| rng.random_range(-1.0..1.0f32)).collect();
-    let gate = config.gates.gates.first().filter(|_| s.managed_near_gate).map(|g| edge_hit((wm / 2.0, hm / 2.0), g.direction_deg.rem_euclid(360.0), wm, hm).0);
+    let gate = match region {
+        Some(r) => r.gates.first().filter(|_| s.managed_near_gate).map(|g| (g.point_m[0], g.point_m[1])),
+        None => config.gates.gates.first().filter(|_| s.managed_near_gate).map(|g| edge_hit((wm / 2.0, hm / 2.0), g.direction_deg.rem_euclid(360.0), wm, hm).0),
+    };
     let diag = (wm * wm + hm * hm).sqrt();
     let gradient = |p: [f32; 2]| match gate {
         // 0 at the gate, about 1 at the far corner.
@@ -275,13 +317,13 @@ fn merge_fragments(ids: &mut [u16], w: usize, h: usize) -> bool {
     }
     let mut moved = false;
     for (i, (id, cells)) in pieces.iter().enumerate() {
-        if largest[id] == i {
+        if largest[id] == i || *id == OUTSIDE {
             continue;
         }
         let mut touch: HashMap<u16, u32> = HashMap::new();
         for &c in cells {
             for nb in neighbors4(c, w, h) {
-                if ids[nb] != *id {
+                if ids[nb] != *id && ids[nb] != OUTSIDE {
                     *touch.entry(ids[nb]).or_default() += 1;
                 }
             }
@@ -326,7 +368,7 @@ mod tests {
     }
 
     fn run(c: &LevelConfig, seed: u64) -> AreaLayout {
-        build(c, &mut ChaCha8Rng::seed_from_u64(seed)).layout
+        build(c, &mut ChaCha8Rng::seed_from_u64(seed), None).layout
     }
 
     #[test]

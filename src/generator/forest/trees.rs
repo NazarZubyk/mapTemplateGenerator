@@ -360,12 +360,12 @@ mod tests {
         c.cell_size_m = 0.5;
         edit(&mut c);
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let a = areas::build(&c, &mut rng).layout;
+        let a = areas::build(&c, &mut rng, None).layout;
         let t = terrain::build(&c, &mut rng, &a);
         let wa = water::build(&c, &mut rng, &t).layout;
-        let th = thickets::build(&c, &mut rng, &a, &t, &wa);
-        let p = passages::build(&c, &mut rng, &a, &th).layout;
-        let cl = clearings::build(&c, &mut rng, &a, &p);
+        let th = thickets::build(&c, &mut rng, &a, &t, &wa, None);
+        let p = passages::build(&c, &mut rng, &a, &th, None).layout;
+        let cl = clearings::build(&c, &mut rng, &a, &p, None);
         let tr = build(&c, &mut rng, &a, &th, &p, &cl);
         (cl, tr, p.width)
     }

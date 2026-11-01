@@ -32,6 +32,7 @@ use crate::generator::noise::NoiseField;
 use crate::level::{
     AreaLayout, ClearingLayout, ForestCharacter, ForestGlade, ForestGround, ForestStyle, ForestTrail, PassageLayout, TrailKind,
 };
+use crate::generator::region::RegionCtx;
 use crate::model::LevelConfig;
 
 /// Spots tried per glade.
@@ -52,7 +53,7 @@ const WIGGLE_SCALE_M: f32 = 16.0;
 /// Trail ends closer than this, meters, need no trail of their own.
 const SAME_END_M: f32 = 4.0;
 
-pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, passages: &PassageLayout) -> ClearingLayout {
+pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, passages: &PassageLayout, region: Option<&RegionCtx>) -> ClearingLayout {
     let s = &config.forest.clearings;
     let (w, h, cell) = (passages.width, passages.height, passages.cell_size_m);
     let n = w * h;
@@ -62,14 +63,19 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, pas
     let shape_noise = NoiseField::new(rng.random::<u64>());
     let wiggle_noise = NoiseField::new(rng.random::<u64>());
     let xy_m = |c: usize| [((c % w) as f32 + 0.5) * cell, ((c / w) as f32 + 0.5) * cell];
-    // Distance to the nearest other area or the map edge.
+    // Distance to the nearest other area or the map edge (or the map
+    // region's edge).
     let (to_border, _) = distance_field(
         w,
         h,
         cell,
         |c| {
             let (x, y) = (c % w, c / w);
-            x == 0 || y == 0 || x + 1 == w || y + 1 == h || crate::generator::forest::neighbors4(c, w, h).any(|nb| ids[nb] != ids[c])
+            x == 0
+                || y == 0
+                || x + 1 == w
+                || y + 1 == h
+                || crate::generator::forest::neighbors4(c, w, h).any(|nb| ids[nb] != ids[c] || region.is_some_and(|r| !r.inside(nb)))
         },
         (s.glade_max_m.max(s.glade_min_m) * CAMP_SCALE + BORDER_GAP_M * 2.0).max(10.0),
     );
@@ -325,12 +331,12 @@ mod tests {
         c.map.height_m = 160.0;
         c.cell_size_m = 1.0;
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let a = areas::build(&c, &mut rng).layout;
+        let a = areas::build(&c, &mut rng, None).layout;
         let t = terrain::build(&c, &mut rng, &a);
         let wa = water::build(&c, &mut rng, &t).layout;
-        let wo = thickets::build(&c, &mut rng, &a, &t, &wa);
-        let p = passages::build(&c, &mut rng, &a, &wo).layout;
-        let cl = build(&c, &mut rng, &a, &p);
+        let wo = thickets::build(&c, &mut rng, &a, &t, &wa, None);
+        let p = passages::build(&c, &mut rng, &a, &wo, None).layout;
+        let cl = build(&c, &mut rng, &a, &p, None);
         (a, p, cl)
     }
 

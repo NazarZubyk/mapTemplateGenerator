@@ -267,8 +267,18 @@ pub fn mixed_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[u
     let (w, h, cell) = (m.map.width, m.map.height, m.map.cell_size_m);
     let land = m.land.as_ref().filter(|l| l.height_m.len() == w * h);
     let water = m.water.as_ref().filter(|wl| wl.deep.cells.len() == w * h);
+    // A region whose chain ran shows its own ground (water included).
+    let built: Vec<Option<Vec<[u8; 3]>>> =
+        m.levels.iter().map(|l| l.as_ref().and_then(ground_colors).filter(|g| g.3.len() == w * h).map(|g| g.3)).collect();
+    let own = |c: usize| -> Option<[u8; 3]> {
+        let id = *m.map.ids.get(c)? as usize;
+        built.get(id.checked_sub(1)?)?.as_ref().map(|g| g[c])
+    };
     let colors = (0..w * h)
         .map(|c| {
+            if let Some(g) = own(c) {
+                return g;
+            }
             if let Some(wl) = water {
                 if wl.deep.cells[c] {
                     return G::Deep.color();
@@ -311,7 +321,7 @@ pub fn mixed_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[u
                     crate::level::MixedCrossingLook::Ford => G::Shallow.color(),
                 };
                 for c in capsule_cells(w, h, cell, x.from_m, x.to_m, x.width_m / 2.0) {
-                    if wl.deep.cells[c] || wl.shallow.cells[c] {
+                    if (wl.deep.cells[c] || wl.shallow.cells[c]) && own(c).is_none() {
                         colors[c] = color;
                     }
                 }
@@ -330,7 +340,20 @@ const PORTAL_REACH_M: f32 = 3.0;
 pub fn mixed_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
     use crate::level::ForestGround as G;
     let Some(m) = level.mixed.as_ref() else { return Vec::new() };
-    let mut out: Vec<_> = m.regions.iter().map(|r| (r.color, format!("{} · {} ({})", r.id, r.name, r.kind.region_label()))).collect();
+    let mut out: Vec<_> = m
+        .regions
+        .iter()
+        .filter(|r| m.levels.get(r.id as usize - 1).is_none_or(|l| l.is_none()))
+        .map(|r| (r.color, format!("{} · {} ({})", r.id, r.name, r.kind.region_label())))
+        .collect();
+    // The ground kinds of the regions whose chain ran.
+    for l in m.levels.iter().flatten() {
+        for e in ground_legend(l) {
+            if !out.iter().any(|o| o.1 == e.1) {
+                out.push(e);
+            }
+        }
+    }
     if let Some(wl) = &m.water {
         if wl.shallow.count_true() > 0 {
             out.push((G::Shallow.color(), "shallow water (walkable)".to_owned()));

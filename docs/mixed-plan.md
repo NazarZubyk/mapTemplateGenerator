@@ -226,7 +226,7 @@ connections) cannot disagree; and a single-kind map does not change at all
       rivers, lakes, sinks; drawn on the region map.
 - [x] **M3 — Connections**: adjacency graph, labyrinth slider, portals,
       map gates per region, river crossings.
-- [ ] **M4 — Region chains: Forest** (domain, fixed gates, global water,
+- [x] **M4 — Region chains: Forest** (domain, fixed gates, global water,
       domain edge band). Forest first: it already uses the same water.
 - [ ] **M5 — Region chains: Town** (shape = domain, wall around it, gates
       at portals, river input: bridges, water gates).
@@ -391,3 +391,49 @@ Two user requests:
   `"cave"`, the cave nodes); on a mixed map it is labelled Mountains
   (`MapKind::region_label`) and drawn in stone gray. MCP reports
   `"label": "Mountains"`. M7 builds it.
+
+## Step M4 notes — forest regions
+
+- **Region context** (`generator/region.rs`, shared by the next kinds):
+  `RegionCtx` = the domain mask, `edge_dist` (meters to the nearest cell
+  outside the domain or the map edge), the fixed gates (`FixedGate`:
+  point, inward direction, width, portal or map gate), the mixed map's
+  land, its water with this region's fords made shallow, and its bridges.
+- **Node 6 · Region chains** (`mixed/chains.rs`): for every region whose
+  kind is built (`chains::builds`, so far Forest) a context is made and the
+  chain runs with its own config (`MixedRegion::for_share`: forest areas,
+  interactive quantities, hidden rooms, mob budget / caps scaled by the
+  region's share when **Scale amounts** is on — a checkbox under the
+  region picker) and its own seed (`seed ^ id · golden`). Changing one
+  region never changes another (tested). Notes are prefixed "Region n
+  (name):".
+- **The forest in a region** (`forest::generate_in`; `generate_with_progress`
+  = no region, unchanged — single-kind maps fingerprinted identical):
+  - areas: seeds (rejection) and Lloyd centers in the domain only; stats
+    and borders from domain cells; the outside is kept out of the fragment
+    merge (`OUTSIDE` id), so each area is one piece *inside the region* —
+    an area whose two lobes met only outside left one lobe cut off and
+    sealed (a 4633 m² dead patch on one test map);
+  - terrain: the mixed map's height; the forest's own rock ridges, inside
+    the domain and off the water;
+  - water: the mixed map's (no own drainage);
+  - thickets: the edge belt follows `edge_dist` (the region's border is
+    its map edge); outside cells are thicket; bridges over deep water;
+  - passages: the gates are the fixed gates (stepped in from the border,
+    sliding up to 16 m along it); outside cells locked, so no trail ever
+    leaves the region; a region's gates get no marker of their own
+    (`object = usize::MAX`, skipped by the remaps) — the mixed map draws
+    the map gates; notes name "the opening to region n" / "Gate #k";
+  - clearings: glades keep off the region's edge as off the map edge.
+- **Composition**: the mixed level's objects = each region's objects
+  (`MixedLayout.object_ranges`) then the gate markers; map.png / preview
+  take a built region's own ground colors (flat forest colors) and keep
+  the shaded region color elsewhere; the legend lists the forest ground
+  kinds. The region's Terrain / Water / gate list show "set by the mixed
+  map". MCP `generate`: `mixed_built` (objects, mobs, hidden rooms per
+  built region).
+- Tested: a forest region's walkable ground lies only in its domain, is
+  one piece and reaches every portal and map gate; its objects lie in its
+  domain; another region's settings never change it; counts scale.
+- Open for M8: the portal corridors are drawn as the mixed map's opening
+  strip; the seams pass will join the two sides for real.

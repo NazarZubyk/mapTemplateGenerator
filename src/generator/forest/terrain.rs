@@ -106,14 +106,14 @@ mod tests {
         c.map.height_m = 120.0;
         c.cell_size_m = 1.0;
         let mut rng = ChaCha8Rng::seed_from_u64(3);
-        let a = areas::build(&c, &mut rng).layout;
+        let a = areas::build(&c, &mut rng, None).layout;
         let t = build(&c, &mut rng, &a);
         assert!(t.rock_pct > 0.5 && t.rock_pct < 6.0, "{}", t.rock_pct);
         let max = t.height_m.iter().copied().fold(0.0, f32::max);
         assert!((max - 1.0).abs() < 1e-4);
         c.forest.terrain.rock_pct = 0.0;
         let mut rng = ChaCha8Rng::seed_from_u64(3);
-        let a = areas::build(&c, &mut rng).layout;
+        let a = areas::build(&c, &mut rng, None).layout;
         assert_eq!(build(&c, &mut rng, &a).rock.count_true(), 0);
     }
 }

@@ -167,8 +167,12 @@ length, prefer long, bend size, width variation, braids, oxbow lakes —
 shared with the forest, neutral there by default) → 5 **Connections**
 (`mixed/connections.rs`: touching pairs linked by a random tree + loops
 slider, one portal per link scored for both sides, map gates owned by the
-region at the edge, bridges / fords where a river cuts a region) → next:
-each region's own chain in its ground, seams. The map is shaded by the
+region at the edge, bridges / fords where a river cuts a region) → 6
+**Region chains** (`mixed/chains.rs` + `generator/region.rs`: each built
+region runs its own chain inside its ground — `RegionCtx` with the domain,
+edge distance, fixed gates, shared land and water; own seed; counts scaled
+by **Scale amounts**; so far forests via `forest::generate_in`) → next:
+town, swamp, mountain regions, then the seams. The map is shaded by the
 land (light from the north-west). In the app, the picked
 region's nodes are the kind's normal nodes: its config is swapped into
 `app.config` while they draw. spec.json `mixed_regions`, `mixed_water`, `mixed_relief_m`,

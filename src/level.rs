@@ -1528,6 +1528,14 @@ pub struct MixedLayout {
     /// river crossings (node 5).
     #[serde(default)]
     pub connections: Option<MixedConnections>,
+    /// Each region's own level (node 6), in id order; `None` for the kinds
+    /// whose chain does not run in a region yet.
+    #[serde(default)]
+    pub levels: Vec<Option<GeneratedLevel>>,
+    /// Where each region's objects sit in the mixed level's `objects`
+    /// (start, count), in id order.
+    #[serde(default)]
+    pub object_ranges: Vec<[usize; 2]>,
 }
 
 /// Two map regions that touch.
