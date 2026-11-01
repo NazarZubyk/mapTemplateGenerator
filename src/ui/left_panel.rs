@@ -220,9 +220,9 @@ fn mixed_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     });
     let i = app.mixed_selected;
     ui.weak(
-        "Forest and town regions are built with the settings below (inside their own ground; \
-         whole-map counts scaled to the region's size when \"Scale amounts\" is on). Swamp and \
-         mountain regions keep their settings until their step (docs/mixed-plan.md, M6–M7).",
+        "Forest, town and swamp regions are built with the settings below (inside their own \
+         ground; whole-map counts scaled to the region's size when \"Scale amounts\" is on). \
+         Mountain regions keep their settings until their step (docs/mixed-plan.md, M7).",
     );
     ui.checkbox(&mut app.config.mixed.regions[i].scale_amounts, "Scale amounts").on_hover_text(
         "Counts set for a whole map — forest areas, interactive objects, hidden rooms, the mob \
@@ -2342,22 +2342,32 @@ shorter map side. NO EFFECT when no gate has the Bridge style.";
     const TIP_COLOR: &str = "Gate marker color on the map image, the preview and the legend.";
     node(ui, "2 · Gate anchors", |ui| {
         ui.weak("input: empty field · output: gate points on the border + where their islands go (swamp)");
+        let in_region = app.in_map_region;
+        if in_region {
+            ui.weak("Gates: this region's openings to its neighbours (gate islands at the shore) and the map gates that land in it (their own shore / bridge style) — set by the mixed map's 5 · Connections node. The island and bridge sizes below apply.");
+        }
         let g = &mut app.config.gates;
         let a = &mut app.config.swamp.gate_anchors;
         let mut remove = None;
         egui::Grid::new("gate_anchors_node_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
-            remove = gate_list_rows(ui, &mut g.gates, TIP_DIRECTION, true);
-            param_row(ui, "Corner snap", TIP_SNAP, |ui| {
-                ui.add(egui::DragValue::new(&mut a.corner_snap_deg).range(0.0..=45.0).speed(0.2).suffix("°"))
-            });
+            if !in_region {
+                remove = gate_list_rows(ui, &mut g.gates, TIP_DIRECTION, true);
+                param_row(ui, "Corner snap", TIP_SNAP, |ui| {
+                    ui.add(egui::DragValue::new(&mut a.corner_snap_deg).range(0.0..=45.0).speed(0.2).suffix("°"))
+                });
+            }
             param_row(ui, "Island size", TIP_ISLAND, |ui| range_m(ui, &mut a.island_min_m, &mut a.island_max_m, 1.0..=100.0));
             param_row(ui, "Bridge length", TIP_BRIDGE, |ui| range_m(ui, &mut a.bridge_min_m, &mut a.bridge_max_m, 0.0..=100.0));
-            param_row(ui, "Color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut g.color));
+            if !in_region {
+                param_row(ui, "Color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut g.color));
+            }
         });
         if let Some(i) = remove {
             g.gates.remove(i);
         }
-        ui.horizontal(|ui| gate_list_buttons(ui, &mut g.gates));
+        if !in_region {
+            ui.horizontal(|ui| gate_list_buttons(ui, &mut g.gates));
+        }
         ui.horizontal(|ui| {
             if ui
                 .button("🎲 Random params")

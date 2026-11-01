@@ -13,8 +13,8 @@
 //!   to its size) and its own random stream (the seed mixed with its id, so
 //!   changing one region never reshuffles another).
 //!
-//! Built so far: Forest (M4), Town (M5). Other kinds keep their region-map
-//! color until their step.
+//! Built so far: Forest (M4), Town (M5), Swamp (M6). Mountains keep their
+//! region-map color until their step.
 
 use crate::generator::mixed::connections::capsule_cells;
 use crate::generator::region::{edge_distance, FixedGate, FixedGateKind, RegionCtx};
@@ -29,7 +29,7 @@ const MAP_GATE_WIDTH_M: f32 = 3.0;
 
 /// The kinds whose chain runs inside a map region so far.
 pub fn builds(kind: MapKind) -> bool {
-    matches!(kind, MapKind::Forest | MapKind::Town)
+    matches!(kind, MapKind::Forest | MapKind::Town | MapKind::Swamp)
 }
 
 /// A region's own random stream: the map seed mixed with its id.
@@ -39,7 +39,7 @@ pub fn region_seed(seed: u64, id: u8) -> u64 {
 
 /// The context for region `id`. `bridge_m`: the least width of a bridge
 /// in this region (a town's are as wide as its roads).
-pub fn context(m: &MixedLayout, id: u8, land: &TerrainLayout, water: &WaterLayout, bridge_m: f32) -> RegionCtx {
+pub fn context(m: &MixedLayout, id: u8, land: &TerrainLayout, water: &WaterLayout, bridge_m: f32, gate_styles: &[crate::model::GateStyle]) -> RegionCtx {
     let (w, h, cell) = (m.map.width, m.map.height, m.map.cell_size_m);
     let domain = CellMask { width: w, height: h, cell_size_m: cell, cells: m.map.ids.iter().map(|&i| i == id).collect() };
     let edge_dist = edge_distance(&domain, EDGE_LIMIT_M);
@@ -51,10 +51,22 @@ pub fn context(m: &MixedLayout, id: u8, land: &TerrainLayout, water: &WaterLayou
             let to = if p.regions[0] == id { p.regions[1] } else { p.regions[0] };
             // The normal points from regions[0] into regions[1].
             let s = if p.regions[1] == id { 1.0 } else { -1.0 };
-            gates.push(FixedGate { point_m: p.point_m, inward: [p.normal[0] * s, p.normal[1] * s], width_m: p.width_m, kind: FixedGateKind::Portal { portal: p.id, to } });
+            gates.push(FixedGate {
+                point_m: p.point_m,
+                inward: [p.normal[0] * s, p.normal[1] * s],
+                width_m: p.width_m,
+                kind: FixedGateKind::Portal { portal: p.id, to },
+                style: crate::model::GateStyle::Shore,
+            });
         }
         for g in cn.gates.iter().filter(|g| g.region == id) {
-            gates.push(FixedGate { point_m: g.point_m, inward: g.inward, width_m: MAP_GATE_WIDTH_M, kind: FixedGateKind::MapGate { gate: g.id } });
+            gates.push(FixedGate {
+                point_m: g.point_m,
+                inward: g.inward,
+                width_m: MAP_GATE_WIDTH_M,
+                kind: FixedGateKind::MapGate { gate: g.id },
+                style: gate_styles.get(g.id as usize - 1).copied().unwrap_or_default(),
+            });
         }
         let town = m.regions.get(id as usize - 1).is_some_and(|r| r.kind == MapKind::Town);
         for x in cn.crossings.iter().filter(|x| x.region == id) {
@@ -92,7 +104,8 @@ pub fn build(config: &LevelConfig, seed: u64, m: &MixedLayout, land: &TerrainLay
         };
         let mut cfg = row.for_share(config, 0.0);
         let bridge_m = if r.kind == MapKind::Town { cfg.roads.width_m + 1.0 } else { 0.0 };
-        let ctx = context(m, r.id, land, water, bridge_m);
+        let styles: Vec<crate::model::GateStyle> = config.gates.gates.iter().map(|g| g.style).collect();
+        let ctx = context(m, r.id, land, water, bridge_m, &styles);
         cfg = row.for_share(config, ctx.share());
         if r.kind == MapKind::Town {
             // Outside the wall is another region: hidden rooms inside only.
@@ -103,6 +116,7 @@ pub fn build(config: &LevelConfig, seed: u64, m: &MixedLayout, land: &TerrainLay
         let level = match r.kind {
             MapKind::Forest => crate::generator::forest::generate_in(&cfg, region_seed(seed, r.id), Some(&ctx), &local),
             MapKind::Town => crate::generator::town_in(&cfg, region_seed(seed, r.id), Some(&ctx), &local),
+            MapKind::Swamp => crate::generator::swamp::generate_in(&cfg, region_seed(seed, r.id), Some(&ctx), &local),
             _ => unreachable!("only built kinds get here"),
         };
         notes.extend(level.notes.iter().map(|n| format!("Region {} ({}): {n}", r.id, r.name)));
@@ -195,6 +209,39 @@ mod tests {
             }
         }
         assert!(bridged > 0, "no town was ever bridged");
+    }
+
+    #[test]
+    fn a_swamp_region_is_one_walkable_piece_reaching_its_gates() {
+        let mut swamps = 0;
+        for seed in 1..=6 {
+            let lvl = crate::generator::generate(&config(), seed);
+            let m = lvl.mixed.as_ref().unwrap();
+            let (w, h, cell) = (m.map.width, m.map.height, m.map.cell_size_m);
+            for (r, level) in m.regions.iter().zip(&m.levels) {
+                let Some(level) = level.as_ref().filter(|_| r.kind == MapKind::Swamp) else { continue };
+                swamps += 1;
+                let sw = level.swamp.as_ref().unwrap();
+                let d = sw.depth.as_ref().unwrap();
+                let walk: Vec<bool> = (0..w * h).map(|c| !d.deep.cells[c] && !d.thicket.cells[c]).collect();
+                assert!((0..w * h).all(|c| !walk[c] || m.map.ids[c] == r.id), "seed {seed}: walkable swamp outside its region");
+                let (labels, pieces) = crate::generator::grid::components(&CellMask { width: w, height: h, cell_size_m: cell, cells: walk });
+                assert_eq!(pieces, 1, "seed {seed}: swamp in {pieces} pieces; notes {:?}", lvl.notes);
+                let cn = m.connections.as_ref().unwrap();
+                let want = cn.portals_of(r.id).count() + cn.gates.iter().filter(|g| g.region == r.id).count();
+                assert_eq!(sw.gate_anchors.len(), want, "seed {seed}: swamp gates");
+                // Walkable ground (the gate island) at every gate.
+                for a in &sw.gate_anchors {
+                    let near = (0..w * h).any(|c| labels[c] == 1 && (((c % w) as f32 + 0.5) * cell - a.point_m[0]).hypot(((c / w) as f32 + 0.5) * cell - a.point_m[1]) < 3.0);
+                    assert!(near, "seed {seed}: no swamp ground at gate {}", a.id);
+                }
+                for o in &level.objects {
+                    let c = ((o.y_m + o.h_m / 2.0) / cell) as usize * w + ((o.x_m + o.w_m / 2.0) / cell) as usize;
+                    assert_eq!(m.map.ids[c], r.id, "seed {seed}: a {} outside the swamp region", o.type_name);
+                }
+            }
+        }
+        assert!(swamps > 0);
     }
 
     #[test]

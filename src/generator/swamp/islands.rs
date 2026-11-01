@@ -29,6 +29,7 @@ use rand_chacha::ChaCha8Rng;
 use crate::generator::grid;
 use crate::generator::noise::NoiseField;
 use crate::level::{CellMask, GateAnchor, Island, IslandKind, IslandLayout};
+use crate::generator::region::RegionCtx;
 use crate::model::{LevelConfig, NodeAmount};
 
 /// Island ids are 16-bit: no more than this many islands (hummocks too).
@@ -56,7 +57,7 @@ struct Seed {
     inland: bool,
 }
 
-pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, anchors: &[GateAnchor]) -> IslandBuild {
+pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, anchors: &[GateAnchor], region: Option<&RegionCtx>) -> IslandBuild {
     let s = &config.swamp.islands;
     let cell = config.cell_size_m.max(0.05);
     let (w, h) = (
@@ -83,9 +84,18 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, anchors: &[GateAnchor])
             inland: false,
         });
     }
+    // A map region: its own ground, and its edge as the map edge.
+    let area_m2 = region.map_or(wm * hm, |r| r.domain.count_true() as f32 * cell * cell);
+    let room = |p: (f32, f32)| match region {
+        Some(r) => {
+            let (x, y) = ((p.0 / cell).floor(), (p.1 / cell).floor());
+            if x < 0.0 || y < 0.0 || x >= w as f32 || y >= h as f32 { 0.0 } else { r.edge_dist[y as usize * w + x as usize] }
+        }
+        None => f32::INFINITY,
+    };
     let small = match s.small_amount {
         NodeAmount::Count => s.small_count,
-        NodeAmount::Density => (s.small_per_1000m2.max(0.0) * wm * hm / 1000.0).round() as u32,
+        NodeAmount::Density => (s.small_per_1000m2.max(0.0) * area_m2 / 1000.0).round() as u32,
     }
     .min(MAX_SMALL);
     let wanted = (0..s.hub_count)
@@ -108,7 +118,8 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, anchors: &[GateAnchor])
                     let clear = seeds
                         .iter()
                         .map(|o| (p.0 - o.center.0).hypot(p.1 - o.center.1) - r - o.r - s.gap_m)
-                        .fold(f32::INFINITY, f32::min);
+                        .fold(f32::INFINITY, f32::min)
+                        .min(room(p) - margin);
                     (p, clear)
                 })
                 .max_by(|a, b| a.1.total_cmp(&b.1));
@@ -150,7 +161,11 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, anchors: &[GateAnchor])
         let mut cells: Vec<(f32, usize)> = Vec::new();
         for y in y0..y1 {
             for x in x0..x1 {
-                if seed.inland && (x < border || y < border || x + border >= w || y + border >= h) {
+                let inland_out = match region {
+                    Some(rg) => !rg.inside(y * w + x) || (seed.inland && rg.edge_dist[y * w + x] < s.border_m.max(0.0)),
+                    None => seed.inland && (x < border || y < border || x + border >= w || y + border >= h),
+                };
+                if inland_out {
                     continue;
                 }
                 let (px, py) = ((x as f32 + 0.5) * cell, (y as f32 + 0.5) * cell);
@@ -326,8 +341,8 @@ mod tests {
 
     fn islands(c: &LevelConfig, seed: u64) -> IslandBuild {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let anchors = gate_anchors::build(c, &mut rng).anchors;
-        build(c, &mut rng, &anchors)
+        let anchors = gate_anchors::build(c, &mut rng, None).anchors;
+        build(c, &mut rng, &anchors, None)
     }
 
     fn cell_xy(l: &IslandLayout, c: usize) -> (i64, i64) {

@@ -230,7 +230,7 @@ connections) cannot disagree; and a single-kind map does not change at all
       domain edge band). Forest first: it already uses the same water.
 - [x] **M5 — Region chains: Town** (shape = domain, wall around it, gates
       at portals, river input: bridges, water gates).
-- [ ] **M6 — Region chains: Swamp** (islands in the domain, gate anchors at
+- [x] **M6 — Region chains: Swamp** (islands in the domain, gate anchors at
       portals, river mouths).
 - [ ] **M7 — Region chains: Mountains** (the cave kind on a mixed map: a
       rock massif whose walkable inside is the cave chain — chambers in
@@ -470,3 +470,34 @@ Two user requests:
   inside its region, it reaches every portal and map gate with a gate
   road, it never stands on water off a bridge (and towns do get bridged),
   its objects lie in its region.
+
+## Step M6 notes — swamp regions
+
+`swamp::generate_in` (`generate_with_progress` = no region, unchanged —
+fingerprinted).
+
+- **Gate anchors** (`gate_anchors::fixed`): one per fixed gate. A portal
+  is a *shore* gate (its island half a radius in from the border); a map
+  gate keeps the style of its gate spec (`FixedGate.style`); a bridge whose
+  island would leave the region becomes a shore (note). No markers.
+- **Islands**: centers only where the region's edge distance leaves room
+  for the radius + border margin; island cells only inside the region
+  (and inland ones off its edge band); the small-island density counts
+  the region's own area. Hub and small counts scale with **Scale amounts**.
+- **Paths**: outside the region is closed (infinite cost; `astar` skips
+  it and, when the target is not reachable in its search box, retries on
+  the whole map). A straight boardwalk that would cross another region
+  follows its routed way instead (at least a cell each side, so its
+  diagonal steps stay joined — a one-cell winding boardwalk fell apart).
+- **Depth**: the border band follows the region's edge; outside is deep;
+  thicket stretches come from a slow noise along the edge (the region is
+  no rectangle), never within 6 m of where a river comes in — the river
+  flows on into the swamp's open water. Specks of walkable water the band
+  cut off (≤ 16 m²) turn deep.
+- **Hidden islets** only inside the region (`SwampGround.inside`).
+- **Map**: `render::swamp_colors` (the swamp's own map without objects,
+  one pixel per cell); `render::chain_legend` lists a built town's or
+  swamp's ground in the mixed legend. The Gate anchors node in a region
+  shows its gates as set by the mixed map (island / bridge sizes stay).
+- Tested: a swamp region's walkable ground lies in its region, is one
+  piece, has ground at every gate, and its objects lie in its region.

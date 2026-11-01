@@ -271,7 +271,12 @@ pub fn mixed_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[u
     let built: Vec<Option<Vec<[u8; 3]>>> = m
         .levels
         .iter()
-        .map(|l| l.as_ref().and_then(|l| ground_colors(l).or_else(|| town_colors(l, water))).filter(|g| g.3.len() == w * h).map(|g| g.3))
+        .map(|l| {
+            l.as_ref()
+                .and_then(|l| ground_colors(l).or_else(|| town_colors(l, water)).or_else(|| swamp_colors(l)))
+                .filter(|g| g.3.len() == w * h)
+                .map(|g| g.3)
+        })
         .collect();
     let own = |c: usize| -> Option<[u8; 3]> {
         let id = *m.map.ids.get(c)? as usize;
@@ -371,6 +376,67 @@ pub fn town_colors(level: &GeneratedLevel, water: Option<&crate::level::WaterLay
     Some((w, h, cell, colors))
 }
 
+/// Legend entries of a town's or a swamp's own ground (the kinds that paint
+/// their ground in [`rasterize`]): for a mixed map's built regions.
+pub fn chain_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
+    let mut out = Vec::new();
+    if let Some(sw) = &level.swamp {
+        let c = &level.config.swamp;
+        if let Some(d) = &sw.depth {
+            for (mask, color, name) in [
+                (&d.shallow, c.depth.shallow_color, "shallow water (walkable)"),
+                (&d.mud, c.depth.mud_color, "deep mud (walkable, slow)"),
+                (&d.deep, c.depth.deep_color, "swamp deep water (blocked)"),
+                (&d.thicket, c.depth.thicket_color, "swamp thicket (blocked)"),
+            ] {
+                if mask.count_true() > 0 {
+                    out.push((color, name.to_owned()));
+                }
+            }
+        }
+        if sw.islands.as_ref().is_some_and(|i| !i.islands.is_empty()) {
+            out.push((c.islands.color, "island (walkable)".to_owned()));
+        }
+        if let Some(p) = &sw.paths {
+            for (mask, color, name) in [(&p.mud, c.paths.mud_color, "mud path"), (&p.boardwalk, c.paths.boardwalk_color, "boardwalk")] {
+                if mask.count_true() > 0 {
+                    out.push((color, name.to_owned()));
+                }
+            }
+        }
+    }
+    if let Some(split) = &level.regions {
+        if split.stats.iter().any(|s| s.cells > 0) {
+            out.push((region_color(1), "town district (walkable)".to_owned()));
+        }
+        if level.roads.as_ref().is_some_and(|r| !r.nodes.is_empty()) {
+            out.push((ROAD, "road".to_owned()));
+        }
+        if level.walls.as_ref().is_some_and(|w| w.stats.wall_cells > 0) {
+            out.push((WALL, "town wall (blocked)".to_owned()));
+        }
+        if level.region_walls.as_ref().is_some_and(|w| w.mask.count_true() > 0) {
+            out.push((REGION_WALL, "district wall (blocked)".to_owned()));
+        }
+    }
+    out
+}
+
+/// A swamp region's ground per cell (mixed maps): the swamp's own map —
+/// water bands, islands, paths, boardwalks — without its objects.
+pub fn swamp_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[u8; 3]>)> {
+    let isl = level.swamp.as_ref()?.islands.as_ref()?;
+    let (w, h, cell) = (isl.width, isl.height, isl.cell_size_m);
+    let mut bare = level.clone();
+    bare.objects.clear();
+    bare.mixed = None;
+    let img = rasterize(&bare, 1.0 / cell).map;
+    if img.width() as usize != w || img.height() as usize != h {
+        return None;
+    }
+    Some((w, h, cell, (0..w * h).map(|c| img.get_pixel((c % w) as u32, (c / w) as u32).0).collect()))
+}
+
 /// A portal between two map regions on the map: the opening's ground.
 pub const PORTAL: [u8; 3] = [214, 196, 150];
 /// How far a portal's opening reaches into each region on the map, meters.
@@ -388,7 +454,7 @@ pub fn mixed_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
         .collect();
     // The ground kinds of the regions whose chain ran.
     for l in m.levels.iter().flatten() {
-        for e in ground_legend(l) {
+        for e in ground_legend(l).into_iter().chain(chain_legend(l)) {
             if !out.iter().any(|o| o.1 == e.1) {
                 out.push(e);
             }

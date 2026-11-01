@@ -246,6 +246,8 @@ impl MixedRegion {
         let f = share.clamp(0.0, 1.0);
         let scale = |v: u32| ((v as f32 * f).round() as u32).max(u32::from(v > 0));
         c.forest.areas.count = scale(c.forest.areas.count);
+        c.swamp.islands.hub_count = scale(c.swamp.islands.hub_count);
+        c.swamp.islands.small_count = scale(c.swamp.islands.small_count);
         for t in &mut c.interactive {
             t.quantity = scale(t.quantity);
         }

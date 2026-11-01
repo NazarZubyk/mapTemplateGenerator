@@ -227,10 +227,10 @@ mod tests {
 
     fn build_all(c: &LevelConfig, seed: u64) -> All {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let anchors = gate_anchors::build(c, &mut rng).anchors;
-        let mut isl = islands::build(c, &mut rng, &anchors).layout;
-        let mut p = paths::build(c, &mut rng, &anchors, &isl).layout;
-        let d = depth::build(c, &mut rng, &mut isl, &mut p).layout;
+        let anchors = gate_anchors::build(c, &mut rng, None).anchors;
+        let mut isl = islands::build(c, &mut rng, &anchors, None).layout;
+        let mut p = paths::build(c, &mut rng, &anchors, &isl, None).layout;
+        let d = depth::build(c, &mut rng, &mut isl, &mut p, None).layout;
         let trees = build(c, &mut rng, &anchors, &isl, &d);
         All { anchors, islands: isl, paths: p, depth: d, trees }
     }

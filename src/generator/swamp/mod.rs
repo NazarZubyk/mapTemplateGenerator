@@ -17,6 +17,7 @@
 
 use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 
+use crate::generator::region::RegionCtx;
 use crate::generator::Progress;
 use crate::level::{GeneratedLevel, SwampLayout};
 use crate::model::LevelConfig;
@@ -30,23 +31,32 @@ pub mod trees;
 
 /// Generate a swamp level: one RNG stream, nodes in fixed order.
 pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progress) -> GeneratedLevel {
+    generate_in(config, seed, None, progress)
+}
+
+/// Generate a swamp — a whole map, or with `region` one map region of a
+/// mixed map (docs/mixed-plan.md, M6): islands and paths only inside the
+/// region, gate islands at its portals and map gates, its deep water /
+/// thicket band along the region's edge (open water where a river comes
+/// in), hidden islets inside it.
+pub fn generate_in(config: &LevelConfig, seed: u64, region: Option<&RegionCtx>, progress: Progress) -> GeneratedLevel {
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     let mut notes = Vec::new();
 
     progress("Placing gate anchors", 0.0);
-    let anchors = gate_anchors::build(config, &mut rng);
+    let anchors = gate_anchors::build(config, &mut rng, region);
     notes.extend(anchors.notes);
 
     progress("Raising islands", 0.05);
-    let mut islands = islands::build(config, &mut rng, &anchors.anchors);
+    let mut islands = islands::build(config, &mut rng, &anchors.anchors, region);
     notes.extend(islands.notes);
 
     progress("Laying paths", 0.3);
-    let mut paths = paths::build(config, &mut rng, &anchors.anchors, &islands.layout);
+    let mut paths = paths::build(config, &mut rng, &anchors.anchors, &islands.layout, region);
     notes.extend(paths.notes);
 
     progress("Filling the water", 0.7);
-    let depth = depth::build(config, &mut rng, &mut islands.layout, &mut paths.layout);
+    let depth = depth::build(config, &mut rng, &mut islands.layout, &mut paths.layout, region);
     notes.extend(depth.notes);
 
     progress("Planting trees", 0.85);
@@ -55,7 +65,9 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
 
     let mut objects = trees.objects;
     let stage = |from, to| crate::generator::Stage { progress, from, to };
-    let ground = spawns::SwampGround::new(config, &anchors.anchors, &islands.layout, &paths.layout, &depth.layout, &trees.layout);
+    let mut ground = spawns::SwampGround::new(config, &anchors.anchors, &islands.layout, &paths.layout, &depth.layout, &trees.layout);
+    // A map region: hidden islets only inside it.
+    ground.inside = region.map(|r| r.domain.cells.clone());
 
     progress("Placing props", 0.9);
     let props = spawns::props(config, &mut rng, &ground);
@@ -86,8 +98,9 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
 
     // Gate markers last, so they draw on top.
     let mut gate_anchors = anchors.anchors;
-    for a in &mut gate_anchors {
-        a.object += objects.len();
+    let base = objects.len();
+    for a in gate_anchors.iter_mut().filter(|a| a.object != usize::MAX) {
+        a.object += base;
     }
     objects.extend(anchors.objects);
 

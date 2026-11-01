@@ -23,6 +23,7 @@ use rand_chacha::ChaCha8Rng;
 
 use crate::generator::gates::{GATE_NAME, MARKER_M};
 use crate::level::{Category, GateAnchor, PlacedObject};
+use crate::generator::region::RegionCtx;
 use crate::model::{GateStyle, LevelConfig};
 
 pub struct AnchorBuild {
@@ -36,7 +37,10 @@ pub struct AnchorBuild {
 const MAX_ISLAND_SHARE: f32 = 0.4;
 const MAX_REACH_SHARE: f32 = 0.4;
 
-pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng) -> AnchorBuild {
+pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, region: Option<&RegionCtx>) -> AnchorBuild {
+    if let Some(r) = region {
+        return fixed(config, rng, r);
+    }
     let s = &config.swamp.gate_anchors;
     let (w, h) = (config.map.width_m.max(1.0), config.map.height_m.max(1.0));
     // The marker stays wholly on the map.
@@ -131,6 +135,59 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng) -> AnchorBuild {
     AnchorBuild { anchors, objects, notes }
 }
 
+/// A swamp map region's anchors: its fixed gates (the portals and the map
+/// gates landing in it) on its edge. A gate island stands at each, half a
+/// radius in (shore), or a bridge length in with a boardwalk out (bridge) —
+/// a shore when the bridge's island would leave the region. No markers:
+/// the mixed map draws its own.
+fn fixed(config: &LevelConfig, rng: &mut ChaCha8Rng, r: &RegionCtx) -> AnchorBuild {
+    let s = &config.swamp.gate_anchors;
+    let (w, h, cell) = (r.domain.width, r.domain.height, r.domain.cell_size_m);
+    let room = |p: (f32, f32)| {
+        let (x, y) = ((p.0 / cell).floor(), (p.1 / cell).floor());
+        if x < 0.0 || y < 0.0 || x >= w as f32 || y >= h as f32 {
+            return 0.0;
+        }
+        r.edge_dist[y as usize * w + x as usize]
+    };
+    let mut anchors = Vec::new();
+    let mut notes = Vec::new();
+    for (i, g) in r.gates.iter().enumerate() {
+        let id = i as u32 + 1;
+        let point = (g.point_m[0], g.point_m[1]);
+        let inward = (g.inward[0], g.inward[1]);
+        let island = roll(rng, s.island_min_m, s.island_max_m).max(1.0);
+        let rad = island / 2.0;
+        let bridge = match g.style {
+            GateStyle::Shore => 0.0,
+            GateStyle::Bridge => roll(rng, s.bridge_min_m, s.bridge_max_m).max(0.0),
+        };
+        let mut style = g.style;
+        let mut land = match style {
+            GateStyle::Shore => (point.0 + inward.0 * rad / 2.0, point.1 + inward.1 * rad / 2.0),
+            GateStyle::Bridge => (point.0 + inward.0 * (bridge + rad), point.1 + inward.1 * (bridge + rad)),
+        };
+        if style == GateStyle::Bridge && room(land) < rad {
+            style = GateStyle::Shore;
+            land = (point.0 + inward.0 * rad / 2.0, point.1 + inward.1 * rad / 2.0);
+            notes.push(format!("Gate {id}: no room for its bridge inside the region — a shore gate island instead"));
+        }
+        anchors.push(GateAnchor {
+            id,
+            direction_deg: g.direction_deg(),
+            actual_deg: g.direction_deg(),
+            style,
+            corner: false,
+            point_m: [point.0, point.1],
+            land_m: [land.0, land.1],
+            island_m: island,
+            bridge_m: if style == GateStyle::Bridge { bridge } else { 0.0 },
+            object: usize::MAX,
+        });
+    }
+    AnchorBuild { anchors, objects: Vec::new(), notes }
+}
+
 /// Uniform in `a..=b` (either order); `a` when they are equal.
 fn roll(rng: &mut ChaCha8Rng, a: f32, b: f32) -> f32 {
     let (lo, hi) = (a.min(b), a.max(b));
@@ -189,7 +246,7 @@ mod tests {
     }
 
     fn anchors(config: &LevelConfig) -> AnchorBuild {
-        build(config, &mut ChaCha8Rng::seed_from_u64(5))
+        build(config, &mut ChaCha8Rng::seed_from_u64(5), None)
     }
 
     #[test]

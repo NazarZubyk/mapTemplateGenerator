@@ -172,8 +172,9 @@ region at the edge, bridges / fords where a river cuts a region) → 6
 region runs its own chain inside its ground — `RegionCtx` with the domain,
 edge distance, fixed gates, shared land and water; own seed; counts scaled
 by **Scale amounts**; forests via `forest::generate_in`, towns via
-`generator::town_in` — walled, rivers on bridges) → next: swamp and
-mountain regions, then the seams. The map is shaded by the
+`generator::town_in` — walled, rivers on bridges; swamps via
+`swamp::generate_in` — gate islands at the portals, rivers into open
+water) → next: mountain regions, then the seams. The map is shaded by the
 land (light from the north-west). In the app, the picked
 region's nodes are the kind's normal nodes: its config is swapped into
 `app.config` while they draw. spec.json `mixed_regions`, `mixed_water`, `mixed_relief_m`,

@@ -27,6 +27,10 @@ pub struct FixedGate {
     pub inward: [f32; 2],
     pub width_m: f32,
     pub kind: FixedGateKind,
+    /// How a swamp meets it: its gate island at the edge (shore) or a
+    /// boardwalk out to it (bridge). A portal is a shore; a map gate keeps
+    /// its own style.
+    pub style: crate::model::GateStyle,
 }
 
 impl FixedGate {

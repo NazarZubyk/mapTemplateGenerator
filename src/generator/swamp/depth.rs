@@ -33,6 +33,7 @@ use rand_chacha::ChaCha8Rng;
 use crate::generator::grid;
 use crate::generator::noise::NoiseField;
 use crate::level::{CellMask, DepthLayout, Island, IslandKind, IslandLayout, PathLayout};
+use crate::generator::region::RegionCtx;
 use crate::model::LevelConfig;
 
 pub struct DepthBuild {
@@ -58,7 +59,7 @@ const BORDER_SCALE_M: f32 = 25.0;
 /// Most hummocks one generation adds.
 const MAX_HUMMOCKS: u32 = 500;
 
-pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, islands: &mut IslandLayout, paths: &mut PathLayout) -> DepthBuild {
+pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, islands: &mut IslandLayout, paths: &mut PathLayout, region: Option<&RegionCtx>) -> DepthBuild {
     let s = &config.swamp.depth;
     let (w, h, cell) = (islands.width, islands.height, islands.cell_size_m);
     let noise = NoiseField::new(rng.random::<u64>());
@@ -104,10 +105,16 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, islands: &mut IslandLay
     let mut border = vec![false; w * h];
     for c in 0..w * h {
         let (x, y) = (c % w, c / w);
-        let edge = (x.min(y).min(w - 1 - x).min(h - 1 - y) as f32 + 0.5) * cell;
+        // The map edge — or, in a map region, its own edge; outside it is
+        // deep (another region's ground, never walked from here).
+        let edge = match region {
+            Some(r) if !r.inside(c) => -1.0,
+            Some(r) => r.edge_dist[c],
+            None => (x.min(y).min(w - 1 - x).min(h - 1 - y) as f32 + 0.5) * cell,
+        };
         let swing = noise.fbm(x as f32 * cell / BORDER_SCALE_M + 41.0, y as f32 * cell / BORDER_SCALE_M - 41.0, 3) - 0.5;
         let line = s.border_m.max(0.0) * (1.0 + 2.0 * swing);
-        if edge < line && matches!(t[c], Terrain::Shallow | Terrain::Mud | Terrain::Deep) {
+        if edge < 0.0 || (edge < line && matches!(t[c], Terrain::Shallow | Terrain::Mud | Terrain::Deep)) {
             t[c] = Terrain::Deep;
             border[c] = true;
         }
@@ -191,8 +198,40 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, islands: &mut IslandLay
         along += if hi - lo < 1e-6 { lo } else { rng.random_range(lo..=hi) };
         cuts.push((along, rng.random::<f32>() < s.thicket_pct.clamp(0.0, 100.0) / 100.0));
     }
+    // A map region: stretches of thicket by a slow noise along its edge
+    // (it is no rectangle); never where a river comes in (it flows on into
+    // the swamp's water) and never outside.
+    if let Some(r) = region {
+        let want = (s.thicket_pct / 100.0).clamp(0.0, 1.0);
+        let scale = (lo + hi) / 2.0;
+        let mouth = |c: usize| {
+            let rad = (6.0 / cell).ceil() as i64;
+            let (x, y) = ((c % w) as i64, (c / w) as i64);
+            (-rad..=rad).any(|dy| {
+                (-rad..=rad).any(|dx| {
+                    let (nx, ny) = (x + dx, y + dy);
+                    nx >= 0 && ny >= 0 && nx < w as i64 && ny < h as i64 && {
+                        let q = ny as usize * w + nx as usize;
+                        !r.inside(q) && (r.water.deep.cells[q] || r.water.shallow.cells[q])
+                    }
+                })
+            })
+        };
+        for c in 0..w * h {
+            if !border[c] || t[c] != Terrain::Deep || !r.inside(c) {
+                continue;
+            }
+            let (x, y) = (((c % w) as f32 + 0.5) * cell, ((c / w) as f32 + 0.5) * cell);
+            let v = noise.fbm(x / scale + 91.0, y / scale - 17.0, 2);
+            // fBm sits mostly in 0.3..0.7: stretch it to 0..1.
+            if ((v - 0.3) / 0.4).clamp(0.0, 1.0) < want && !mouth(c) {
+                t[c] = Terrain::Thicket;
+            }
+        }
+        cuts.clear();
+    }
     for c in 0..w * h {
-        if !border[c] || t[c] != Terrain::Deep {
+        if cuts.is_empty() || !border[c] || t[c] != Terrain::Deep {
             continue;
         }
         let (x, y) = (((c % w) as f32 + 0.5) * cell, ((c / w) as f32 + 0.5) * cell);
@@ -211,6 +250,26 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, islands: &mut IslandLay
         let k = cuts.partition_point(|&(end, _)| end <= pos).min(cuts.len() - 1);
         if cuts[k].1 {
             t[c] = Terrain::Thicket;
+        }
+    }
+
+    // A map region: specks of walkable water the border band cut off from
+    // the rest (up to 16 m²) turn deep.
+    if region.is_some() {
+        let walk = CellMask { width: w, height: h, cell_size_m: cell, cells: t.iter().map(|&x| !matches!(x, Terrain::Deep | Terrain::Thicket)).collect() };
+        let (labels, count) = grid::components(&walk);
+        if count > 1 {
+            let mut size = vec![0usize; count as usize + 1];
+            for &l in &labels {
+                size[l as usize] += 1;
+            }
+            let main = (1..=count as usize).max_by_key(|&l| (size[l], std::cmp::Reverse(l))).unwrap_or(1);
+            let speck = (16.0 / (cell * cell)).ceil() as usize;
+            for (c, &l) in labels.iter().enumerate() {
+                if l > 0 && l as usize != main && size[l as usize] <= speck && t[c] != Terrain::Land {
+                    t[c] = Terrain::Deep;
+                }
+            }
         }
     }
 
@@ -314,10 +373,10 @@ mod tests {
 
     fn build_all(c: &LevelConfig, seed: u64) -> All {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let anchors = gate_anchors::build(c, &mut rng).anchors;
-        let mut isl = islands::build(c, &mut rng, &anchors).layout;
-        let mut p = paths::build(c, &mut rng, &anchors, &isl).layout;
-        let depth = build(c, &mut rng, &mut isl, &mut p);
+        let anchors = gate_anchors::build(c, &mut rng, None).anchors;
+        let mut isl = islands::build(c, &mut rng, &anchors, None).layout;
+        let mut p = paths::build(c, &mut rng, &anchors, &isl, None).layout;
+        let depth = build(c, &mut rng, &mut isl, &mut p, None);
         All { islands: isl, paths: p, depth }
     }
 

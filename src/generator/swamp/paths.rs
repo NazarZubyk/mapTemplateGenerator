@@ -38,6 +38,7 @@ use crate::generator::roads::{choose_links, link_traffic, stamp_path, widths_fro
 use crate::level::{
     CellMask, GateAnchor, GateBridge, IslandKind, IslandLayout, PathKind, PathLayout, RoadNode, SwampPath,
 };
+use crate::generator::region::RegionCtx;
 use crate::model::{GateStyle, LevelConfig};
 
 pub struct PathBuild {
@@ -59,7 +60,7 @@ const WIGGLE_CONTRAST: f32 = 7.0;
 /// its length.
 const KINK_OFFSET: f32 = 0.15;
 
-pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, anchors: &[GateAnchor], islands: &IslandLayout) -> PathBuild {
+pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, anchors: &[GateAnchor], islands: &IslandLayout, region: Option<&RegionCtx>) -> PathBuild {
     let s = &config.swamp.paths;
     let (w, h, cell) = (islands.width, islands.height, islands.cell_size_m);
     let ids = &islands.ids;
@@ -128,8 +129,13 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, anchors: &[GateAnchor],
             }
             let n = noise.fbm(x as f32 * cell / WIGGLE_SCALE_M, y as f32 * cell / WIGGLE_SCALE_M, 2);
             let mut f = (wiggle * (n - 0.5) * WIGGLE_CONTRAST).exp();
-            if x < border || y < border || x + border >= w || y + border >= h {
-                f *= BORDER_COST;
+            match region {
+                // Outside the map region: as good as closed.
+                Some(r) if !r.inside(c) => f = f32::INFINITY,
+                Some(r) if r.edge_dist[c] < config.swamp.islands.border_m.max(0.0) => f *= BORDER_COST,
+                Some(_) => {}
+                None if x < border || y < border || x + border >= w || y + border >= h => f *= BORDER_COST,
+                None => {}
             }
             f
         })
@@ -159,8 +165,17 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, anchors: &[GateAnchor],
                 corners.push([p[0] + (q[0] - p[0]) * t + nx * off, p[1] + (q[1] - p[1]) * t + ny * off]);
             }
             corners.push(q);
-            let line = polyline_cells(&corners, w, h, cell);
-            stamp_path(&mut boardwalk, &water, &line, width_m / cell / 2.0);
+            let mut line = polyline_cells(&corners, w, h, cell);
+            let mut radius = width_m / cell / 2.0;
+            // A map region: a straight boardwalk that would cross another
+            // region follows its routed way instead (it winds; at least a
+            // cell each side, so its diagonal steps stay joined).
+            if region.is_some_and(|r| line.iter().any(|&c| !r.inside(c))) {
+                line = route[route.iter().position(|&c| c == start).unwrap_or(0)..=end].to_vec();
+                corners = line.iter().step_by(4).chain(line.last()).map(|&c| center(c, w, cell)).collect();
+                radius = radius.max(1.0);
+            }
+            stamp_path(&mut boardwalk, &water, &line, radius);
             let length_m = corners.windows(2).map(|p| (p[1][0] - p[0][0]).hypot(p[1][1] - p[0][1])).sum();
             paths.push(SwampPath { a: id_a, b: id_b, kind: PathKind::Boardwalk, extra, dead_end, width_m, length_m, path_m: corners });
         } else {
@@ -256,7 +271,21 @@ pub(crate) fn polyline_cells(corners: &[[f32; 2]], w: usize, h: usize, cell: f32
 pub(crate) fn astar(w: usize, h: usize, from: usize, to: usize, cost: impl Fn(usize) -> f32, cheapest: f32) -> Vec<usize> {
     let (fx, fy, tx, ty) = (from % w, from / w, to % w, to / w);
     let span = fx.abs_diff(tx).max(fy.abs_diff(ty));
-    let pad = (span * 3 / 5).max(40);
+    // A search box around the two ends; if the target cannot be reached in
+    // it (closed cells — a mixed map's other regions — in the way), the
+    // whole map.
+    let path = astar_in(w, h, from, to, &cost, cheapest, (span * 3 / 5).max(40));
+    if path.first() == Some(&from) || from == to {
+        return path;
+    }
+    astar_in(w, h, from, to, &cost, cheapest, w.max(h))
+}
+
+/// [`astar`] inside the box `pad` cells around the two ends. Infinite cost
+/// = closed.
+#[allow(clippy::too_many_arguments)]
+fn astar_in(w: usize, h: usize, from: usize, to: usize, cost: &impl Fn(usize) -> f32, cheapest: f32, pad: usize) -> Vec<usize> {
+    let (fx, fy, tx, ty) = (from % w, from / w, to % w, to / w);
     let (x0, x1) = (fx.min(tx).saturating_sub(pad), (fx.max(tx) + pad).min(w - 1));
     let (y0, y1) = (fy.min(ty).saturating_sub(pad), (fy.max(ty) + pad).min(h - 1));
     let heuristic = |c: usize| {
@@ -281,7 +310,11 @@ pub(crate) fn astar(w: usize, h: usize, from: usize, to: usize, cost: impl Fn(us
             }
             let nb = ny as usize * w + nx as usize;
             let length = if dx != 0 && dy != 0 { std::f32::consts::SQRT_2 } else { 1.0 };
-            let ng = g + ((length * cost(nb) * 1024.0) as u64).max(1);
+            let k = cost(nb);
+            if !k.is_finite() {
+                continue;
+            }
+            let ng = g + ((length * k * 1024.0) as u64).max(1);
             if ng < best[nb] {
                 best[nb] = ng;
                 parent[nb] = c;
@@ -321,9 +354,9 @@ mod tests {
 
     fn build_all(c: &LevelConfig, seed: u64) -> (IslandLayout, PathBuild) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let anchors = gate_anchors::build(c, &mut rng).anchors;
-        let isl = islands::build(c, &mut rng, &anchors).layout;
-        let p = build(c, &mut rng, &anchors, &isl);
+        let anchors = gate_anchors::build(c, &mut rng, None).anchors;
+        let isl = islands::build(c, &mut rng, &anchors, None).layout;
+        let p = build(c, &mut rng, &anchors, &isl, None);
         (isl, p)
     }
 

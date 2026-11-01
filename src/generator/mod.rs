@@ -526,7 +526,7 @@ fn remap_objects(level: &mut GeneratedLevel, f: impl Fn(usize) -> usize) {
         }
     }
     if let Some(s) = level.swamp.as_mut() {
-        for a in &mut s.gate_anchors {
+        for a in s.gate_anchors.iter_mut().filter(|a| a.object != usize::MAX) {
             a.object = f(a.object);
         }
     }

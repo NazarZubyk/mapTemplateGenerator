@@ -56,6 +56,8 @@ pub struct SwampGround<'a> {
     pub depth: &'a DepthLayout,
     pub trees: &'a TreeLayout,
     pub gates: Vec<[f32; 2]>,
+    /// A map region's cells (mixed maps): hidden islets stay inside.
+    pub inside: Option<Vec<bool>>,
 }
 
 impl<'a> SwampGround<'a> {
@@ -86,6 +88,7 @@ impl<'a> SwampGround<'a> {
             depth,
             trees,
             gates: anchors.iter().map(|a| a.point_m).collect(),
+            inside: None,
         }
     }
 
@@ -330,7 +333,8 @@ pub(crate) fn hidden_rooms(config: &LevelConfig, rng: &mut ChaCha8Rng, g: &Swamp
     // An islet sits in deep water / thicket a cell clear of anything else.
     let not_void: Vec<bool> = g.walkable.clone();
     let near_open = dilate(&not_void, w, h, 1);
-    let ok = |want: &CellMask| -> Vec<bool> { (0..w * h).map(|c| want.cells[c] && !near_open[c] && !near_gate[c]).collect() };
+    let inside = |c: usize| g.inside.as_ref().is_none_or(|m| m[c]);
+    let ok = |want: &CellMask| -> Vec<bool> { (0..w * h).map(|c| want.cells[c] && !near_open[c] && !near_gate[c] && inside(c)).collect() };
     let s = &config.hidden_rooms;
     let max_m = s.path_max_m.min(config.swamp.depth.wade_limit_m);
     let area = RoomArea {
