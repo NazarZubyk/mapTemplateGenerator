@@ -421,6 +421,26 @@ fn mixed(config: &LevelConfig, warnings: &mut Vec<Warning>) {
         return;
     }
     let max = crate::generator::mixed::MAX_REGIONS;
+    // Every region keeps a whole-grid result: memory grows with them.
+    if config.cell_size_m > 0.0 {
+        let cells = (config.map.width_m / config.cell_size_m).ceil().max(0.0) as f64 * (config.map.height_m / config.cell_size_m).ceil().max(0.0) as f64;
+        let n = rows.len().min(max) as f64;
+        let load = cells * (1.0 + n) / 2.0;
+        let gb = load * BYTES_PER_CELL / 1e9;
+        if load > MAX_CELLS {
+            warnings.push(Warning {
+                field: Some("mixed.regions".to_owned()),
+                message: format!("Mixed map too big: {:.0} million cells × {} regions would need about {gb:.0} GB — use a bigger cell size, a smaller map or fewer regions", cells / 1e6, n),
+                blocking: true,
+            });
+        } else if load > BIG_CELLS && cells <= BIG_CELLS {
+            warnings.push(Warning {
+                field: Some("mixed.regions".to_owned()),
+                message: format!("Big mixed map: each of the {n} regions keeps a whole-map result — about {gb:.1} GB and minutes; a bigger cell size makes it faster"),
+                blocking: false,
+            });
+        }
+    }
     if rows.len() > max {
         warnings.push(Warning { field: Some("mixed.regions".to_owned()), message: format!("{} map regions — only the first {max} are used", rows.len()), blocking: false });
     }

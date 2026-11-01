@@ -240,7 +240,7 @@ connections) cannot disagree; and a single-kind map does not change at all
 - [x] **M8 — Seams and composition**: portal corridors, global flood fill,
       composite preview / map.png / layer.png (+ regions.png), mobs re-roll
       across regions.
-- [ ] **M9 — Export and MCP**: spec.json per-region sections, validation
+- [x] **M9 — Export and MCP**: spec.json per-region sections, validation
       (thin regions, cell budget), MCP region tools.
 - [ ] **M10 — Blending** (the next big step): nature crossing borders —
       trees in the yards of a district next to a forest, a wet forest belt
@@ -583,3 +583,28 @@ asked for passes over the massif as well as the caves.
 - Tested: the whole map is one walkable piece and regions meet walkably
   only at their openings (6 maps); redoing mobs with the same settings
   changes nothing, re-rolling one region moves only its mobs.
+
+## Step M9 notes — export and MCP
+
+- **layer.png** (`render::ground_layer`, one RGB per cell, the same values
+  as before for single maps — layer.png / map.png fingerprinted identical):
+  a mixed map takes each region's own ground; town regions get ground ids
+  32 town_district, 33 road, 34 town_wall, 35 district_wall (G =
+  district, B = walkable), their rivers as the forest water ids; mountain
+  passes 36; mountain rock = cave `rock`; a joined opening takes its
+  region's path id. `layer_categories` lists 37 names.
+- **regions.png** (mixed maps only, `render::regions_image`): R = map
+  region id, G = kind (1 town, 2 swamp, 3 forest, 4 mountains), B = 255
+  walkable (the whole map's, objects not counted).
+- **spec.json**: `mixed_region_specs` — per built region its own full spec
+  (the same builder as a map of its kind) with `object_offset` into the
+  top-level `objects`, and `mountain_passes`; `layer_encoding` describes
+  the mixed ids and regions.png.
+- **Validation**: a mixed map's memory counts its regions (each keeps a
+  whole-grid result): load = cells × (1 + regions) / 2 against the same
+  big / too-big limits.
+- **MCP**: `set_mixed_regions` (kinds town / swamp / forest / mountains,
+  shares, placements, names; a row keeping its kind keeps its settings),
+  `patch_region` (merge patch on one region's config and/or its row),
+  `region` (1-based) on every mob tool; the instructions explain mixed
+  maps. Tested.

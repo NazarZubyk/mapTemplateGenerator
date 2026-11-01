@@ -103,17 +103,34 @@ impl Server {
                 Ok(serde_json::to_string_pretty(&out).unwrap_or_default())
             }
             "set_gates" => self.edit(|c| set_gates(c, args)),
-            "set_mob_settings" => self.edit(|c| set_mob_settings(c, args)),
-            "set_mob_types" => self.edit(|c| set_mob_types(c, args)),
-            "upsert_mob_type" => self.edit(|c| upsert_mob_type(c, args)),
-            "remove_mob_type" => self.edit(|c| {
+            "set_mob_settings" => self.edit(|c| in_target(c, args, |c| set_mob_settings(c, args))),
+            "set_mob_types" => self.edit(|c| in_target(c, args, |c| set_mob_types(c, args))),
+            "upsert_mob_type" => self.edit(|c| in_target(c, args, |c| upsert_mob_type(c, args))),
+            "set_mixed_regions" => self.edit(|c| set_mixed_regions(c, args)),
+            "patch_region" => self.edit(|c| {
+                let i = region_index(c, args)?;
+                let row = &mut c.mixed.regions[i];
+                if let Some(patch) = args.get("row") {
+                    let mut value = serde_json::to_value(&*row).map_err(|e| e.to_string())?;
+                    merge_patch(&mut value, patch);
+                    *row = serde_json::from_value(value).map_err(|e| format!("row patch does not fit: {e}"))?;
+                    row.config.kind = row.kind;
+                }
+                if let Some(patch) = args.get("patch") {
+                    let mut value = serde_json::to_value(&row.config).map_err(|e| e.to_string())?;
+                    merge_patch(&mut value, patch);
+                    row.config = serde_json::from_value(value).map_err(|e| format!("patch does not fit the region's config: {e}"))?;
+                }
+                Ok(format!("map region {} ({}, {}) patched", i + 1, row.name, row.kind.region_label()))
+            }),
+            "remove_mob_type" => self.edit(|c| in_target(c, args, |c| {
                 let name = str_arg(args, "name")?;
                 let i = mob_index(c, name)?;
                 c.mobs.remove_type(i);
                 rebalance_to_100(&mut c.mobs.types);
                 Ok(format!("removed mob type '{name}'"))
-            }),
-            "set_mob_combination" => self.edit(|c| {
+            })),
+            "set_mob_combination" => self.edit(|c| in_target(c, args, |c| {
                 let (a, b) = (mob_index(c, str_arg(args, "a")?)?, mob_index(c, str_arg(args, "b")?)?);
                 let allowed = args.get("allowed").and_then(Value::as_bool).ok_or("'allowed' (bool) is required")?;
                 c.mobs.set_combines(a, b, allowed);
@@ -123,7 +140,7 @@ impl Server {
                     c.mobs.types[b].name,
                     if allowed { "allowed" } else { "forbidden" }
                 ))
-            }),
+            })),
             "patch_config" => self.edit(|c| {
                 let patch = args.get("patch").ok_or("'patch' (object) is required")?;
                 let mut value = serde_json::to_value(&*c).map_err(|e| e.to_string())?;
@@ -151,10 +168,11 @@ impl Server {
                 let level = crate::generator::generate(&config, seed);
                 let r = crate::export::export_bundle(&level, Path::new(dir), px)?;
                 Ok(format!(
-                    "exported {}, {}, {} at {:.2} px/m\n{}",
+                    "exported {}, {}, {}{} at {:.2} px/m\n{}",
                     r.map_path.display(),
                     r.layer_path.display(),
                     r.spec_path.display(),
+                    r.regions_path.as_ref().map(|p| format!(", {}", p.display())).unwrap_or_default(),
                     r.px_per_m,
                     serde_json::to_string_pretty(&summary(&level)).unwrap_or_default()
                 ))
@@ -197,7 +215,80 @@ reloads the config file and regenerates on every change. Gate directions are deg
 center: 0 = east, 90 = north, 180 = west, 270 = south. Mob types are bought from a budget; balance \
 shares are normalized to 100. Leave names/colors out to have them filled in. Use `generate` to \
 check the result (mob counts, gates placed, notes) and `patch_config` for nodes without a \
-dedicated tool (map, shape, regions, roads, houses, props, interactive, hidden_rooms).";
+dedicated tool (map, shape, regions, roads, houses, props, interactive, hidden_rooms). MIXED maps \
+(kind \"mixed\", the default) are split into map regions — town, swamp, forest, mountains (a rock \
+massif with caves inside and passes over it) — each with its own whole config: set them with \
+`set_mixed_regions`, change one region with `patch_region` (or give `region` to the mob tools); \
+the map gates, land, rivers and connections are the mixed map's (`set_gates`, patch_config \
+`mixed.land` / `mixed.water` / `mixed.connections`).";
+
+/// Run `f` on the config the tool means: a map region's own (`region`,
+/// 1-based) on a mixed map, else the whole config.
+fn in_target(c: &mut LevelConfig, args: &Value, f: impl FnOnce(&mut LevelConfig) -> Result<String, String>) -> Result<String, String> {
+    if args.get("region").is_none() {
+        return f(c);
+    }
+    let i = region_index(c, args)?;
+    let out = f(&mut c.mixed.regions[i].config)?;
+    Ok(format!("map region {}: {out}", i + 1))
+}
+
+/// The 0-based index of the `region` argument (1-based).
+fn region_index(c: &LevelConfig, args: &Value) -> Result<usize, String> {
+    let n = args.get("region").and_then(Value::as_u64).ok_or("'region' (1-based map region number) is required")? as usize;
+    if n == 0 || n > c.mixed.regions.len() {
+        return Err(format!("no map region {n} (the map has {})", c.mixed.regions.len()));
+    }
+    Ok(n - 1)
+}
+
+/// `set_mixed_regions`: the map becomes mixed with these regions. A row
+/// that keeps its kind keeps its own settings.
+fn set_mixed_regions(c: &mut LevelConfig, args: &Value) -> Result<String, String> {
+    use crate::model::{MapKind, MixedRegion, RegionPlacement};
+    let rows = args.get("regions").and_then(Value::as_array).ok_or("'regions' (array) is required")?;
+    if rows.is_empty() || rows.len() > crate::generator::mixed::MAX_REGIONS {
+        return Err(format!("1 to {} regions", crate::generator::mixed::MAX_REGIONS));
+    }
+    let mut out = Vec::new();
+    for (i, r) in rows.iter().enumerate() {
+        let kind = match r.get("kind").and_then(Value::as_str).unwrap_or("forest") {
+            "town" => MapKind::Town,
+            "swamp" => MapKind::Swamp,
+            "forest" => MapKind::Forest,
+            "cave" | "mountains" | "mountain" => MapKind::Cave,
+            k => return Err(format!("region {}: unknown kind '{k}' (town, swamp, forest, mountains)", i + 1)),
+        };
+        let mut row = match c.mixed.regions.get(i) {
+            Some(old) if old.kind == kind => old.clone(),
+            _ => MixedRegion::of(kind, 0.0),
+        };
+        row.share_pct = r.get("share_pct").and_then(Value::as_f64).map_or(100.0 / rows.len() as f32, |v| v as f32);
+        if let Some(name) = r.get("name").and_then(Value::as_str) {
+            row.name = name.to_owned();
+        }
+        row.placement = match r.get("placement").and_then(Value::as_str) {
+            Some("edge") => RegionPlacement::Edge,
+            Some("inside") => RegionPlacement::Inside,
+            Some("anywhere") | None => RegionPlacement::Anywhere,
+            Some(p) => return Err(format!("region {}: unknown placement '{p}' (anywhere, edge, inside)", i + 1)),
+        };
+        out.push(row);
+    }
+    let sum: f32 = out.iter().map(|r| r.share_pct.max(0.0)).sum();
+    if sum > 0.0 {
+        for r in &mut out {
+            r.share_pct = r.share_pct.max(0.0) / sum * 100.0;
+        }
+    }
+    if let Some(v) = args.get("irregularity_pct").and_then(Value::as_f64) {
+        c.mixed.irregularity_pct = v as f32;
+    }
+    c.kind = MapKind::Mixed;
+    let line = out.iter().enumerate().map(|(i, r)| format!("{} · {} ({}) {:.0}%", i + 1, r.name, r.kind.region_label(), r.share_pct)).collect::<Vec<_>>().join(", ");
+    c.mixed.regions = out;
+    Ok(format!("mixed map: {line}"))
+}
 
 fn tool_list() -> Value {
     let color = json!({ "type": "array", "items": { "type": "integer", "minimum": 0, "maximum": 255 }, "minItems": 3, "maxItems": 3, "description": "RGB; omit for an automatic distinct color" });
@@ -235,7 +326,7 @@ fn tool_list() -> Value {
         {
             "name": "set_mob_settings",
             "description": "Mob economy and spawning: budget, max_entities (cap), min_entities or min_per_100m2 (minimum — beats budget and spacing), pack_min/pack_max (mobs per spawn), spacing_m (between spawns), on_roads, gate_clearance_m. Only the given fields change.",
-            "inputSchema": { "type": "object", "properties": {
+            "inputSchema": { "type": "object", "properties": { "region": { "type": "integer", "minimum": 1, "description": "mixed maps: the map region (1-based) whose mobs this sets; omit for the whole map" },
                 "budget": { "type": "number" },
                 "max_entities": { "type": "integer" },
                 "min_entities": { "type": "integer", "description": "sets the minimum as a count" },
@@ -253,7 +344,7 @@ fn tool_list() -> Value {
         {
             "name": "set_mob_types",
             "description": "Replace all mob types. Every pair may share a spawn unless listed in `forbid_pairs` (by name). Balance shares are normalized to 100; missing names/colors are filled in.",
-            "inputSchema": { "type": "object", "required": ["types"], "properties": {
+            "inputSchema": { "type": "object", "required": ["types"], "properties": { "region": { "type": "integer", "minimum": 1, "description": "mixed maps: the map region (1-based) whose mobs this sets; omit for the whole map" },
                 "types": { "type": "array", "items": mob_type },
                 "forbid_pairs": { "type": "array", "items": { "type": "array", "items": { "type": "string" }, "minItems": 2, "maxItems": 2 } },
             } }
@@ -261,7 +352,7 @@ fn tool_list() -> Value {
         {
             "name": "upsert_mob_type",
             "description": "Add a mob type, or change the one with this `name` (only the given fields; `rename_to` renames). Shares are re-normalized to 100.",
-            "inputSchema": { "type": "object", "properties": {
+            "inputSchema": { "type": "object", "properties": { "region": { "type": "integer", "minimum": 1, "description": "mixed maps: the map region (1-based) whose mobs this sets; omit for the whole map" },
                 "name": { "type": "string" }, "rename_to": { "type": "string" },
                 "price": { "type": "number" }, "size_m": { "type": "number" },
                 "balance_pct": { "type": "number" }, "color": color,
@@ -271,13 +362,35 @@ fn tool_list() -> Value {
         {
             "name": "remove_mob_type",
             "description": "Remove the mob type with this name.",
-            "inputSchema": { "type": "object", "required": ["name"], "properties": { "name": { "type": "string" } } }
+            "inputSchema": { "type": "object", "required": ["name"], "properties": { "region": { "type": "integer", "minimum": 1, "description": "mixed maps: the map region (1-based) whose mobs this sets; omit for the whole map" }, "name": { "type": "string" } } }
         },
         {
             "name": "set_mob_combination",
             "description": "Allow or forbid two mob types (by name) at the same spawn point.",
-            "inputSchema": { "type": "object", "required": ["a", "b", "allowed"], "properties": {
+            "inputSchema": { "type": "object", "required": ["a", "b", "allowed"], "properties": { "region": { "type": "integer", "minimum": 1, "description": "mixed maps: the map region (1-based) whose mobs this sets; omit for the whole map" },
                 "a": { "type": "string" }, "b": { "type": "string" }, "allowed": { "type": "boolean" },
+            } }
+        },
+        {
+            "name": "set_mixed_regions",
+            "description": "Make the map MIXED with these map regions (in id order). kind: town, swamp, forest or mountains (a rock massif with caves inside and passes over it); share_pct (normalized to 100); placement: anywhere, edge (touching the map edge) or inside (nested, others around it); optional name. A region that keeps its kind keeps its own settings.",
+            "inputSchema": { "type": "object", "required": ["regions"], "properties": {
+                "regions": { "type": "array", "items": { "type": "object", "properties": {
+                    "kind": { "type": "string", "enum": ["town", "swamp", "forest", "mountains"] },
+                    "share_pct": { "type": "number" },
+                    "placement": { "type": "string", "enum": ["anywhere", "edge", "inside"] },
+                    "name": { "type": "string" },
+                } } },
+                "irregularity_pct": { "type": "number", "description": "how irregular the borders between regions are" },
+            } }
+        },
+        {
+            "name": "patch_region",
+            "description": "Change ONE map region of a mixed map: `patch` is a JSON merge patch on that region's own config (same fields as a map of its kind: forest, swamp, cave, houses, roads, props, interactive, hidden_rooms, mobs...), `row` patches the region row itself (name, share_pct, placement, scale_amounts). get_config section `mixed` shows the regions.",
+            "inputSchema": { "type": "object", "required": ["region"], "properties": {
+                "region": { "type": "integer", "minimum": 1 },
+                "patch": { "type": "object" },
+                "row": { "type": "object" },
             } }
         },
         {
@@ -994,5 +1107,31 @@ mod tests {
         assert!(out["props"].as_u64().is_some());
         assert!(out["forest_passages"]["links"].as_u64().unwrap() > 0);
         assert!(out["mobs"]["entities"].as_u64().unwrap() > 0);
+    }
+
+    #[test]
+    fn mixed_regions_and_one_region_s_mobs() {
+        let s = server("mixed");
+        s.call("set_mixed_regions", &json!({"regions": [
+            {"kind": "forest", "share_pct": 60},
+            {"kind": "town", "share_pct": 25, "placement": "inside", "name": "Keep"},
+            {"kind": "mountains", "share_pct": 15, "placement": "edge"},
+        ]})).unwrap();
+        let c = s.load().unwrap();
+        assert_eq!(c.kind, crate::model::MapKind::Mixed);
+        assert_eq!(c.mixed.regions.len(), 3);
+        assert_eq!(c.mixed.regions[1].name, "Keep");
+        assert_eq!(c.mixed.regions[2].kind, crate::model::MapKind::Cave);
+        s.call("patch_region", &json!({"region": 2, "patch": {"houses": {"density_pct": 40.0}}, "row": {"share_pct": 30.0}})).unwrap();
+        s.call("upsert_mob_type", &json!({"region": 3, "name": "Troll", "price": 80})).unwrap();
+        let c = s.load().unwrap();
+        assert_eq!(c.mixed.regions[1].config.houses.density_pct, 40.0);
+        assert_eq!(c.mixed.regions[1].share_pct, 30.0);
+        assert!(c.mixed.regions[2].config.mobs.types.iter().any(|t| t.name == "Troll"));
+        assert!(!c.mobs.types.iter().any(|t| t.name == "Troll"), "the whole map's mobs stay");
+        assert!(s.call("patch_region", &json!({"region": 9, "patch": {}})).is_err());
+        s.call("patch_config", &json!({"patch": {"map": {"width_m": 100.0, "height_m": 100.0}, "cell_size_m": 1.0}})).unwrap();
+        let out = s.call("generate", &json!({"seed": 2})).unwrap();
+        assert!(out.contains("mixed_built") && out.contains("\"mixed_walkable_pieces\": 1"), "{out}");
     }
 }

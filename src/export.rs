@@ -10,6 +10,8 @@ pub struct ExportResult {
     pub map_path: PathBuf,
     pub layer_path: PathBuf,
     pub spec_path: PathBuf,
+    /// Mixed maps: regions.png (map region per pixel).
+    pub regions_path: Option<PathBuf>,
     /// The scale used: the one asked for, or lower when the images would
     /// pass `MAX_IMAGE_SIDE_PX`.
     pub px_per_m: f32,
@@ -48,6 +50,15 @@ pub fn export_bundle(
         .save(&layer_path)
         .map_err(|e| format!("saving layer.png failed: {e}"))?;
 
+    let regions_path = match render::regions_image(level, px_per_m) {
+        Some(img) => {
+            let p = dir.join("regions.png");
+            img.save(&p).map_err(|e| format!("saving regions.png failed: {e}"))?;
+            Some(p)
+        }
+        None => None,
+    };
+
     let spec = ExportSpec::new(level, px_per_m);
     let spec_path = dir.join("spec.json");
     let json = serde_json::to_string_pretty(&spec)
@@ -58,6 +69,7 @@ pub fn export_bundle(
         map_path,
         layer_path,
         spec_path,
+        regions_path,
         px_per_m,
     })
 }
@@ -192,6 +204,12 @@ pub struct ExportSpec {
     /// ground that had to be opened, m².
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mixed_seams: Option<Vec<crate::level::MixedSeam>>,
+    /// Mixed maps: every built region's own spec (its kind's sections, as
+    /// a map of that kind would export them). Its `objects` are its own;
+    /// object `k` of region r is `objects[object_offset + k]` of this spec
+    /// (layer.png instance id = object_offset + k + 1).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mixed_region_specs: Option<Vec<serde_json::Value>>,
     /// Cave chambers: id, kind (hall / grotto), style, zone, center, size,
     /// long-axis angle, area.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -240,7 +258,14 @@ deep_pool; walkable = floors, tunnel, rope_bridge, shallow_pool); G = style zone
 matches `cave_zones[].id`); B = chamber id (low byte, matches `chambers[].id`) on chamber cells, \
 else 0; A = 255. Forest maps, pixels under no object: R = ground id (24-31, see layer_categories \
 and `forest_ground`); G = area id (low byte, matches `forest_areas[].id`); B = 1 walkable, 0 \
-blocked; A = 255",
+blocked; A = 255. Mixed maps: each pixel takes its map region's ground (see regions.png and \
+`mixed_regions`): swamp / cave / forest regions as above (mountains are cave regions; their rock is \
+`rock`); town regions R = 32 town_district, 33 road, 34 town_wall, 35 district_wall, their rivers \
+as the forest water ids (shallow 28, deep 29, bridge 31), G = district id, B = 1 walkable / 0 \
+blocked; mountain passes R = 36; a joined opening (`mixed_seams`) takes its region's path id \
+(forest trail 30, road 33, mud path 9, pass 36). regions.png: R = map region id, G = kind (1 town, \
+2 swamp, 3 forest, 4 mountains), B = 255 walkable / 0 blocked (the whole map's walkable ground, \
+objects not counted), A = 255",
             empty: "R = G = B = A = 0: no object and no ground data (town maps outside the region)",
         }
     }
@@ -595,6 +620,26 @@ impl ExportSpec {
             mixed_relief_m: level.mixed.as_ref().and_then(|m| m.land.as_ref()).map(|l| l.relief_m),
             mixed_connections: level.mixed.as_ref().and_then(|m| m.connections.clone()),
             mixed_seams: level.mixed.as_ref().map(|m| m.seams.clone()),
+            mixed_region_specs: level.mixed.as_ref().map(|m| {
+                m.regions
+                    .iter()
+                    .zip(&m.levels)
+                    .enumerate()
+                    .filter_map(|(i, (r, l))| {
+                        let l = l.as_ref()?;
+                        let offset = m.object_ranges.get(i).map_or(0, |o| o[0]);
+                        Some(serde_json::json!({
+                            "id": r.id,
+                            "name": r.name,
+                            "kind": r.kind.slug(),
+                            "label": r.kind.region_label(),
+                            "object_offset": offset,
+                            "mountain_passes": l.cave.as_ref().and_then(|c| c.passes.as_ref()).map(|p| &p.passes),
+                            "spec": ExportSpec::new(l, px_per_m),
+                        }))
+                    })
+                    .collect()
+            }),
             chambers: level.cave.as_ref().and_then(|c| c.chambers.as_ref()).map(|l| l.chambers.clone()),
             tunnels: level.cave.as_ref().and_then(|c| c.tunnels.as_ref()).map(|l| l.tunnels.clone()),
             junctions: level.cave.as_ref().and_then(|c| c.tunnels.as_ref()).map(|l| l.junctions.clone()),
@@ -708,9 +753,37 @@ mod tests {
         let legend = spec["legend"].as_array().unwrap();
         assert_eq!(legend.len(), 1, "same type+color merges into one legend entry");
         assert_eq!(spec["seed"].as_u64(), Some(42));
-        assert_eq!(spec["layer_categories"].as_array().unwrap().len(), 32);
+        assert_eq!(spec["layer_categories"].as_array().unwrap().len(), 37);
         assert_eq!(spec["format_version"].as_u64(), Some(2));
 
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_mixed_map_exports_regions_ground_and_region_specs() {
+        let mut c = crate::model::LevelConfig::of_kind(crate::model::MapKind::Mixed);
+        c.map.width_m = 100.0;
+        c.map.height_m = 100.0;
+        c.cell_size_m = 1.0;
+        let level = crate::generator::generate(&c, 3);
+        let dir = std::env::temp_dir().join(format!("mapgen-export-mixed-{}", std::process::id()));
+        let r = export_bundle(&level, &dir, 2.0).unwrap();
+        let regions = image::open(r.regions_path.as_ref().expect("regions.png")).unwrap().to_rgba8();
+        let layer = image::open(&r.layer_path).unwrap().to_rgba8();
+        let m = level.mixed.as_ref().unwrap();
+        // Every region's id and kind on regions.png, and ground on layer.png.
+        for reg in &m.regions {
+            let px: Vec<(u32, u32)> = regions.enumerate_pixels().filter(|p| p.2 .0[0] == reg.id).map(|p| (p.0, p.1)).collect();
+            assert!(!px.is_empty(), "region {} missing on regions.png", reg.id);
+            assert!(px.iter().any(|&(x, y)| layer.get_pixel(x, y).0[3] == 255), "region {} has no layer ground", reg.id);
+        }
+        let spec: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&r.spec_path).unwrap()).unwrap();
+        let specs = spec["mixed_region_specs"].as_array().unwrap();
+        assert_eq!(specs.len(), m.regions.len());
+        for (s, range) in specs.iter().zip(&m.object_ranges) {
+            assert_eq!(s["object_offset"].as_u64(), Some(range[0] as u64));
+            assert_eq!(s["spec"]["objects"].as_array().unwrap().len(), range[1]);
+        }
         std::fs::remove_dir_all(&dir).ok();
     }
 }

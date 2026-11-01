@@ -3883,10 +3883,11 @@ fn export_section(ui: &mut egui::Ui, app: &mut MapGenApp) {
                     Ok(r) => ConfigStatus {
                         ok: true,
                         text: format!(
-                            "Exported: {}, {}, {}{}",
+                            "Exported: {}, {}, {}{}{}",
                             r.map_path.display(),
                             r.layer_path.display(),
                             r.spec_path.display(),
+                            r.regions_path.as_ref().map(|p| format!(", {}", p.display())).unwrap_or_default(),
                             if r.px_per_m < app.export_px_per_m - 1e-3 {
                                 format!(" — scale lowered to {:.2} px/m so the images stay within {} px", r.px_per_m, crate::export::MAX_IMAGE_SIDE_PX)
                             } else {

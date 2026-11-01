@@ -630,93 +630,16 @@ pub fn rasterize(level: &GeneratedLevel, px_per_m: f32) -> Rasterized {
         paint_mask(&mut map, &rooms.wall_mask, px_per_m, w, h, WALL);
     }
 
-    // Swamp ground on layer.png, under the objects: terrain id + depth.
-    if let Some(s) = &level.swamp
-        && let (Some(isl), Some(paths), Some(depth)) = (&s.islands, &s.paths, &s.depth)
-    {
-        let cs = isl.cell_size_m * px_per_m;
-        for cy in 0..isl.height {
-            for cx in 0..isl.width {
-                let c = cy * isl.width + cx;
-                let id = if isl.ids[c] > 0 {
-                    8
-                } else if paths.boardwalk.cells[c] {
-                    10
-                } else if paths.mud.cells[c] {
-                    9
-                } else if depth.shallow.cells[c] {
-                    11
-                } else if depth.mud.cells[c] {
-                    12
-                } else if depth.thicket.cells[c] {
-                    14
-                } else {
-                    13
-                };
-                let px = Rgba([id, depth.depth[c], (isl.ids[c] & 0xFF) as u8, 255]);
+    // Ground on layer.png, under the objects (swamp, cave, forest; a mixed
+    // map's regions): one RGB per cell, see `ground_layer`.
+    if let Some((gw, gh, gcell, ground)) = ground_layer(level) {
+        let cs = gcell * px_per_m;
+        for cy in 0..gh {
+            let (y0, y1) = ((cy as f32 * cs).round() as u32, ((cy + 1) as f32 * cs).round() as u32);
+            for cx in 0..gw {
+                let Some(g) = ground[cy * gw + cx] else { continue };
+                let px = Rgba([g[0], g[1], g[2], 255]);
                 let (x0, x1) = ((cx as f32 * cs).round() as u32, ((cx + 1) as f32 * cs).round() as u32);
-                let (y0, y1) = ((cy as f32 * cs).round() as u32, ((cy + 1) as f32 * cs).round() as u32);
-                for py in y0..y1.min(h) {
-                    for qx in x0..x1.min(w) {
-                        layer.put_pixel(qx, py, px);
-                    }
-                }
-            }
-        }
-    }
-
-    // Cave ground on layer.png, under the objects: ground id, zone, chamber.
-    if let Some(cave) = &level.cave
-        && let (Some(style), Some(ch), Some(carve)) = (&cave.style, &cave.chambers, &cave.carve)
-    {
-        let id_of = |name: &str| CAVE_GROUND_IDS.iter().find(|g| g.1 == name).map_or(0, |g| g.0);
-        let cs = style.cell_size_m * px_per_m;
-        for cy in 0..style.height {
-            for cx in 0..style.width {
-                let c = cy * style.width + cx;
-                let hz = cave.hazards.as_ref();
-                let name = if hz.is_some_and(|l| l.bridge.cells[c]) {
-                    "rope_bridge"
-                } else if hz.is_some_and(|l| l.chasm.cells[c]) {
-                    "chasm"
-                } else if hz.is_some_and(|l| l.deep.cells[c]) {
-                    "deep_pool"
-                } else if hz.is_some_and(|l| l.shallow.cells[c]) {
-                    "shallow_pool"
-                } else if carve.floor.cells[c] && ch.ids[c] == 0 {
-                    "tunnel"
-                } else if carve.floor.cells[c] {
-                    if style.style_at(c) == CaveStyle::Natural { "cave_floor_natural" } else { "cave_floor_hand_made" }
-                } else if carve.wall.cells[c] {
-                    "cave_wall"
-                } else {
-                    "rock"
-                };
-                let px = Rgba([id_of(name), (style.ids[c] & 0xFF) as u8, (ch.ids[c] & 0xFF) as u8, 255]);
-                let (x0, x1) = ((cx as f32 * cs).round() as u32, ((cx + 1) as f32 * cs).round() as u32);
-                let (y0, y1) = ((cy as f32 * cs).round() as u32, ((cy + 1) as f32 * cs).round() as u32);
-                for py in y0..y1.min(h) {
-                    for qx in x0..x1.min(w) {
-                        layer.put_pixel(qx, py, px);
-                    }
-                }
-            }
-        }
-    }
-
-    // Forest ground on layer.png, under the objects: ground id, area id,
-    // walkable flag.
-    if let Some(forest) = &level.forest
-        && let (Some(areas), Some(p), Some(ground)) = (&forest.areas, &forest.passages, forest.ground())
-    {
-        let cs = p.cell_size_m * px_per_m;
-        for cy in 0..p.height {
-            for cx in 0..p.width {
-                let c = cy * p.width + cx;
-                let g = crate::level::ForestGround::from_code(ground[c]);
-                let px = Rgba([g.layer_id(), (areas.ids[c] & 0xFF) as u8, g.walkable() as u8, 255]);
-                let (x0, x1) = ((cx as f32 * cs).round() as u32, ((cx + 1) as f32 * cs).round() as u32);
-                let (y0, y1) = ((cy as f32 * cs).round() as u32, ((cy + 1) as f32 * cs).round() as u32);
                 for py in y0..y1.min(h) {
                     for qx in x0..x1.min(w) {
                         layer.put_pixel(qx, py, px);
@@ -780,6 +703,201 @@ pub fn category_name(c: Category) -> &'static str {
     }
 }
 
+/// Mixed maps' regions.png at `px_per_m`: R = map region id, G = kind (1
+/// town, 2 swamp, 3 forest, 4 mountains), B = 255 walkable / 0 blocked,
+/// A = 255. `None` for other maps.
+pub fn regions_image(level: &GeneratedLevel, px_per_m: f32) -> Option<ImageBuffer<Rgba<u8>, Vec<u8>>> {
+    let m = level.mixed.as_ref()?;
+    let px_per_m = px_per_m.max(0.1);
+    let w = ((level.config.map.width_m * px_per_m).round() as u32).max(1);
+    let h = ((level.config.map.height_m * px_per_m).round() as u32).max(1);
+    let cs = m.map.cell_size_m * px_per_m;
+    let mut img = ImageBuffer::from_pixel(w, h, Rgba([0, 0, 0, 255]));
+    for cy in 0..m.map.height {
+        let (y0, y1) = ((cy as f32 * cs).round() as u32, ((cy + 1) as f32 * cs).round() as u32);
+        for cx in 0..m.map.width {
+            let c = cy * m.map.width + cx;
+            let Some(r) = m.region_at(c) else { continue };
+            let kind = match r.kind {
+                crate::model::MapKind::Town => 1,
+                crate::model::MapKind::Swamp => 2,
+                crate::model::MapKind::Forest => 3,
+                _ => 4,
+            };
+            let walk = m.walkable.as_ref().is_some_and(|wk| wk.cells[c]);
+            let px = Rgba([r.id, kind, if walk { 255 } else { 0 }, 255]);
+            let (x0, x1) = ((cx as f32 * cs).round() as u32, ((cx + 1) as f32 * cs).round() as u32);
+            for py in y0..y1.min(h) {
+                for qx in x0..x1.min(w) {
+                    img.put_pixel(qx, py, px);
+                }
+            }
+        }
+    }
+    Some(img)
+}
+
+/// Width, height, cell size and one layer.png ground value per cell.
+pub type GroundCells = (usize, usize, f32, Vec<Option<[u8; 3]>>);
+
+/// Town ground ids on layer.png (R), mixed maps only (a whole town map
+/// keeps its ground empty): after the forest ones.
+pub const TOWN_GROUND_IDS: [(u8, &str); 4] = [(32, "town_district"), (33, "road"), (34, "town_wall"), (35, "district_wall")];
+/// A mountain pass on layer.png (R), mixed maps.
+pub const PASS_GROUND_ID: (u8, &str) = (36, "mountain_pass");
+
+/// The layer.png ground per cell, `[R, G, B]` (A = 255), or `None` where
+/// the ground stays empty:
+/// - swamp: [terrain id 8–14, depth, island id];
+/// - cave: [ground id 15–23, style zone, chamber];
+/// - forest: [ground id 24–31, area, walkable];
+/// - mixed: each region's own (town: [32–35, district, walkable], its
+///   water as the forest water ids; mountains: the cave ids, passes
+///   [36, pass, 1]); a joined opening takes its region's path id.
+pub fn ground_layer(level: &GeneratedLevel) -> Option<GroundCells> {
+    if let Some(m) = &level.mixed {
+        let (w, h, cell) = (m.map.width, m.map.height, m.map.cell_size_m);
+        let water = m.water.as_ref();
+        let subs: Vec<Option<Vec<Option<[u8; 3]>>>> = m
+            .levels
+            .iter()
+            .map(|l| {
+                let l = l.as_ref()?;
+                match ground_layer(l) {
+                    Some(g) if l.cave.is_some() => {
+                        // Mountains: the passes over the cave layer.
+                        let pass = l.cave.as_ref().and_then(|c| c.passes.as_ref());
+                        Some(
+                            g.3.into_iter()
+                                .enumerate()
+                                .map(|(c, v)| if pass.is_some_and(|p| p.mask.cells[c]) { Some([PASS_GROUND_ID.0, 1, 1]) } else { v })
+                                .collect(),
+                        )
+                    }
+                    Some(g) => Some(g.3),
+                    None => town_layer(l, water),
+                }
+            })
+            .collect();
+        let cor = m.corridors.as_ref();
+        let cells = (0..w * h)
+            .map(|c| {
+                let r = m.region_at(c)?;
+                if cor.is_some_and(|k| k.cells[c]) {
+                    let id = match r.kind {
+                        crate::model::MapKind::Forest => crate::level::ForestGround::Trail.layer_id(),
+                        crate::model::MapKind::Town => TOWN_GROUND_IDS[1].0,
+                        crate::model::MapKind::Swamp => 9,
+                        _ => PASS_GROUND_ID.0,
+                    };
+                    return Some([id, 0, 1]);
+                }
+                subs.get(r.id as usize - 1)?.as_ref()?[c]
+            })
+            .collect();
+        return Some((w, h, cell, cells));
+    }
+    if let Some(s) = &level.swamp
+        && let (Some(isl), Some(paths), Some(depth)) = (&s.islands, &s.paths, &s.depth)
+    {
+        let cells = (0..isl.width * isl.height)
+            .map(|c| {
+                let id = if isl.ids[c] > 0 {
+                    8
+                } else if paths.boardwalk.cells[c] {
+                    10
+                } else if paths.mud.cells[c] {
+                    9
+                } else if depth.shallow.cells[c] {
+                    11
+                } else if depth.mud.cells[c] {
+                    12
+                } else if depth.thicket.cells[c] {
+                    14
+                } else {
+                    13
+                };
+                Some([id, depth.depth[c], (isl.ids[c] & 0xFF) as u8])
+            })
+            .collect();
+        return Some((isl.width, isl.height, isl.cell_size_m, cells));
+    }
+    if let Some(cave) = &level.cave
+        && let (Some(style), Some(ch), Some(carve)) = (&cave.style, &cave.chambers, &cave.carve)
+    {
+        let id_of = |name: &str| CAVE_GROUND_IDS.iter().find(|g| g.1 == name).map_or(0, |g| g.0);
+        let hz = cave.hazards.as_ref();
+        let cells = (0..style.width * style.height)
+            .map(|c| {
+                let name = if hz.is_some_and(|l| l.bridge.cells[c]) {
+                    "rope_bridge"
+                } else if hz.is_some_and(|l| l.chasm.cells[c]) {
+                    "chasm"
+                } else if hz.is_some_and(|l| l.deep.cells[c]) {
+                    "deep_pool"
+                } else if hz.is_some_and(|l| l.shallow.cells[c]) {
+                    "shallow_pool"
+                } else if carve.floor.cells[c] && ch.ids[c] == 0 {
+                    "tunnel"
+                } else if carve.floor.cells[c] {
+                    if style.style_at(c) == CaveStyle::Natural { "cave_floor_natural" } else { "cave_floor_hand_made" }
+                } else if carve.wall.cells[c] {
+                    "cave_wall"
+                } else {
+                    "rock"
+                };
+                Some([id_of(name), (style.ids[c] & 0xFF) as u8, (ch.ids[c] & 0xFF) as u8])
+            })
+            .collect();
+        return Some((style.width, style.height, style.cell_size_m, cells));
+    }
+    if let Some(forest) = &level.forest
+        && let (Some(areas), Some(p), Some(ground)) = (&forest.areas, &forest.passages, forest.ground())
+    {
+        let cells = (0..p.width * p.height)
+            .map(|c| {
+                let g = crate::level::ForestGround::from_code(ground[c]);
+                Some([g.layer_id(), (areas.ids[c] & 0xFF) as u8, g.walkable() as u8])
+            })
+            .collect();
+        return Some((p.width, p.height, p.cell_size_m, cells));
+    }
+    None
+}
+
+/// A town region's layer ground (mixed maps): district floor, roads,
+/// walls; the mixed map's water where the town did not build.
+fn town_layer(level: &GeneratedLevel, water: Option<&crate::level::WaterLayout>) -> Option<Vec<Option<[u8; 3]>>> {
+    use crate::level::ForestGround as G;
+    let split = level.regions.as_ref()?;
+    let wall = |c: usize| level.walls.as_ref().is_some_and(|wl| wl.mask.cells[c]);
+    let rwall = |c: usize| level.region_walls.as_ref().is_some_and(|wl| wl.mask.cells[c]);
+    let road = |c: usize| level.roads.as_ref().is_some_and(|r| r.mask.cells[c]);
+    Some(
+        (0..split.map.ids.len())
+            .map(|c| {
+                let wet = water.is_some_and(|wl| wl.deep.cells[c] || wl.shallow.cells[c]);
+                let deep = water.is_some_and(|wl| wl.deep.cells[c]);
+                if wall(c) {
+                    Some([TOWN_GROUND_IDS[2].0, 0, 0])
+                } else if wet && road(c) {
+                    Some([G::Bridge.layer_id(), split.map.ids[c], 1])
+                } else if wet {
+                    Some([if deep { G::Deep.layer_id() } else { G::Shallow.layer_id() }, 0, u8::from(!deep)])
+                } else if rwall(c) {
+                    Some([TOWN_GROUND_IDS[3].0, split.map.ids[c], 0])
+                } else if road(c) {
+                    Some([TOWN_GROUND_IDS[1].0, split.map.ids[c], 1])
+                } else if split.map.ids[c] != 0 {
+                    Some([TOWN_GROUND_IDS[0].0, split.map.ids[c], 1])
+                } else {
+                    None
+                }
+            })
+            .collect(),
+    )
+}
+
 /// Layer names indexed by the layer.png R value (index 0 = empty ground):
 /// the object categories (1–7), then the swamp ground ids (8–14), so
 /// consumers can map R values without knowing this crate.
@@ -796,6 +914,8 @@ pub fn layer_categories() -> Vec<&'static str> {
     names.extend(GROUND_IDS.iter().map(|&(_, n)| n));
     names.extend(CAVE_GROUND_IDS.iter().map(|&(_, n)| n));
     names.extend(crate::level::ForestGround::ALL.iter().map(|g| g.layer_name()));
+    names.extend(TOWN_GROUND_IDS.iter().map(|&(_, n)| n));
+    names.push(PASS_GROUND_ID.1);
     names
 }
 
@@ -1044,7 +1164,10 @@ mod tests {
         let cats = layer_categories();
         assert_eq!(cats[0], "ground");
         assert_eq!(cats[Category::Structure.layer_id() as usize], "structure");
-        assert_eq!(cats.len(), Category::ALL.len() + 1 + GROUND_IDS.len() + CAVE_GROUND_IDS.len() + crate::level::ForestGround::ALL.len());
+        assert_eq!(cats.len(), Category::ALL.len() + 1 + GROUND_IDS.len() + CAVE_GROUND_IDS.len() + crate::level::ForestGround::ALL.len() + TOWN_GROUND_IDS.len() + 1);
+        for (id, name) in TOWN_GROUND_IDS.into_iter().chain([PASS_GROUND_ID]) {
+            assert_eq!(cats[id as usize], name);
+        }
         for (id, name) in GROUND_IDS.into_iter().chain(CAVE_GROUND_IDS) {
             assert_eq!(cats[id as usize], name, "ground ids follow the categories");
         }
