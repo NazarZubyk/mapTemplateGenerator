@@ -50,6 +50,9 @@ pub struct MapGenApp {
     /// True while the panel draws a map region's own nodes (its config is
     /// swapped into `config`): nodes the mixed map sets show a note.
     pub in_map_region: bool,
+    /// "Re-roll mobs" (true) / "Apply mobs only" (false) asked this frame;
+    /// done after the panel, when `config` is the whole map's again.
+    pub mobs_request: Option<bool>,
 }
 
 /// How often live sync looks at the config file.
@@ -94,6 +97,7 @@ impl Default for MapGenApp {
             regen_pending: false,
             mixed_selected: 0,
             in_map_region: false,
+            mobs_request: None,
         }
     }
 }
@@ -134,6 +138,21 @@ impl MapGenApp {
     /// settings; with `reroll`, a new random placement first. Instant (no
     /// background job); the rest of the map stays.
     pub fn redo_mobs(&mut self, ctx: &egui::Context, reroll: bool) {
+        // Mixed maps: the picked region's mobs re-roll (its own reroll
+        // value); every region takes its current mob settings.
+        if self.config.kind == crate::model::MapKind::Mixed {
+            if reroll && let Some(row) = self.config.mixed.regions.get_mut(self.mixed_selected) {
+                row.config.mobs.reroll = rand::random::<u64>();
+            }
+            if self.job.is_some() {
+                return;
+            }
+            let Some(level) = self.generated.as_ref().filter(|l| l.mixed.is_some()) else { return };
+            let mut level = level.clone();
+            crate::generator::mixed::redo_mobs(&mut level, &self.config);
+            self.finish_level(ctx, level);
+            return;
+        }
         if reroll {
             self.config.mobs.reroll = rand::random::<u64>();
         }
@@ -141,10 +160,6 @@ impl MapGenApp {
             return;
         }
         let Some(level) = self.generated.as_ref() else { return };
-        // Mixed maps: the regions' mobs come with the region chains (M4–M8).
-        if level.mixed.is_some() {
-            return;
-        }
         let mut level = level.clone();
         level.config.mobs = self.config.mobs.clone();
         crate::generator::place_mobs(&mut level, &|_, _| {});
@@ -529,6 +544,9 @@ impl MapGenApp {
                     left_panel::show(ui, self);
                 });
             });
+        if let Some(reroll) = self.mobs_request.take() {
+            self.redo_mobs(ctx, reroll);
+        }
     }
 
     fn show_preview_panel(&mut self, ctx: &egui::Context) {

@@ -15,11 +15,14 @@
 //! 5. **Connections** (M3) — which regions link (a tree + loops), one
 //!    portal on each linked border, the map gates' regions, and bridges /
 //!    fords where a river cuts a region apart (`connections.rs`).
-//! 6. **Region chains** (M4–) — every region runs its own kind's chain in
-//!    its own ground (`chains.rs`); so far forests.
+//! 6. **Region chains** (M4–M7) — every region runs its own kind's chain
+//!    in its own ground (`chains.rs`).
+//! 7. **Seams** (M8) — the two sides of every opening joined, the whole map
+//!    checked to be one walkable piece (`seams.rs`).
 
 pub mod chains;
 pub mod connections;
+pub mod seams;
 
 use rand::Rng;
 use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
@@ -93,6 +96,12 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
         }
         objects.extend(gate_markers);
         m.levels = levels;
+        progress("Joining the regions", 0.995);
+        let joined = seams::build(m);
+        notes.extend(joined.notes);
+        m.walkable = Some(joined.walkable);
+        m.corridors = Some(joined.corridors);
+        m.seams = joined.seams;
         m.water = Some(built.layout);
         m.land = Some(land_layout);
     }
@@ -120,6 +129,46 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
         noise_preview: None,
         notes,
     }
+}
+
+/// The mobs again on a finished mixed level ("Re-roll mobs" / "Apply mobs
+/// only"): every built region places its mobs with its current settings
+/// from `config` (scaled to its size like a full generation), on its own
+/// random stream; then the mixed level's objects are put together again.
+pub fn redo_mobs(level: &mut GeneratedLevel, config: &LevelConfig) {
+    let Some(m) = level.mixed.as_mut() else { return };
+    let total = m.map.ids.len().max(1) as f32;
+    for (i, slot) in m.levels.iter_mut().enumerate() {
+        let (Some(sub), Some(row), Some(r)) = (slot.as_mut(), config.mixed.regions.get(i), m.regions.get(i)) else { continue };
+        let cfg = row.for_share(config, r.cells as f32 / total);
+        sub.config.mobs = cfg.mobs;
+        crate::generator::place_mobs(sub, &|_, _| {});
+    }
+    // The regions' objects, then the gate markers (as a generation does).
+    let markers: Vec<_> = m.connections.as_ref().map(|cn| cn.gates.iter().map(|g| level.objects[g.object].clone()).collect()).unwrap_or_default();
+    let mut objects = Vec::new();
+    m.object_ranges.clear();
+    for sub in &m.levels {
+        let start = objects.len();
+        if let Some(l) = sub {
+            objects.extend(l.objects.iter().cloned());
+        }
+        m.object_ranges.push([start, objects.len() - start]);
+    }
+    if let Some(cn) = m.connections.as_mut() {
+        for (k, g) in cn.gates.iter_mut().enumerate() {
+            g.object = objects.len() + k;
+        }
+    }
+    objects.extend(markers);
+    level.notes.retain(|n| !(n.starts_with("Region ") && n.contains(": Mobs:")));
+    for (r, sub) in m.regions.iter().zip(&m.levels) {
+        if let Some(l) = sub {
+            level.notes.extend(l.notes.iter().filter(|n| n.starts_with("Mobs:")).map(|n| format!("Region {} ({}): {n}", r.id, r.name)));
+        }
+    }
+    level.objects = objects;
+    level.config.mixed.regions.clone_from(&config.mixed.regions);
 }
 
 /// Node 2 · Map regions: the whole map split by the regions' shares and
@@ -168,7 +217,18 @@ fn split(config: &LevelConfig, rng: &mut ChaCha8Rng, notes: &mut Vec<String>) ->
             }
         })
         .collect();
-    Some(MixedLayout { map: split.map, regions, land: None, water: None, connections: None, levels: Vec::new(), object_ranges: Vec::new() })
+    Some(MixedLayout {
+        map: split.map,
+        regions,
+        land: None,
+        water: None,
+        connections: None,
+        levels: Vec::new(),
+        object_ranges: Vec::new(),
+        walkable: None,
+        corridors: None,
+        seams: Vec::new(),
+    })
 }
 
 /// How high a kind's ground lies (0 low … 1 high) and how hilly it is.

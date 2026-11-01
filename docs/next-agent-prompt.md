@@ -99,8 +99,10 @@ regions: `generator/region.rs` `RegionCtx`, `mixed/chains.rs`,
 `forest::generate_in`) and M5 (town regions: `generator::town_in`, fixed
 gates in `gates::build`, rivers on bridges) and M6 (swamp regions:
 `swamp::generate_in`) and M7 (mountain regions: `generator::mountains`,
-passes + caves) are done — every kind runs in a region; next M8, the seams
-(portal corridors, one walkable piece over the whole map, mobs re-roll); next M4, the
+passes + caves) and M8 (seams: `mixed/seams.rs` — stray contacts sealed,
+openings joined, one walkable piece; per-region mob re-roll) are done; next
+M9, export and MCP (layer.png / regions.png for mixed maps, per-region spec
+sections, region MCP tools), then M10 blending; next M4, the
 forest region chain inside its own ground (domain, portals and gates as
 fixed gates, the global water). The app and MCP start on Mixed.
 Single-kind maps must stay byte-identical (the chains get the new behaviour

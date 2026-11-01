@@ -187,6 +187,11 @@ pub struct ExportSpec {
     /// `objects`) and the river crossings (bridge / ford, the two banks).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mixed_connections: Option<crate::level::MixedConnections>,
+    /// Mixed maps: every joined opening — the portal or map gate, the
+    /// regions, the length from walkable ground to walkable ground and the
+    /// ground that had to be opened, m².
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mixed_seams: Option<Vec<crate::level::MixedSeam>>,
     /// Cave chambers: id, kind (hall / grotto), style, zone, center, size,
     /// long-axis angle, area.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -589,6 +594,7 @@ impl ExportSpec {
             mixed_water: level.mixed.as_ref().and_then(|m| m.water.as_ref()).map(|l| ExportForestWater { streams: l.streams.clone(), ponds: l.ponds.clone() }),
             mixed_relief_m: level.mixed.as_ref().and_then(|m| m.land.as_ref()).map(|l| l.relief_m),
             mixed_connections: level.mixed.as_ref().and_then(|m| m.connections.clone()),
+            mixed_seams: level.mixed.as_ref().map(|m| m.seams.clone()),
             chambers: level.cave.as_ref().and_then(|c| c.chambers.as_ref()).map(|l| l.chambers.clone()),
             tunnels: level.cave.as_ref().and_then(|c| c.tunnels.as_ref()).map(|l| l.tunnels.clone()),
             junctions: level.cave.as_ref().and_then(|c| c.tunnels.as_ref()).map(|l| l.junctions.clone()),

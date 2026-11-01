@@ -152,6 +152,34 @@ pub fn town_in(config: &LevelConfig, seed: u64, region: Option<&region::RegionCt
                 walls = Some(w.wall);
                 if let Some(r) = region {
                     region_mask = town_ground_in(r, region_mask);
+                    // The wall is closed all along the region's edge: town
+                    // floor that touches it (a gap where a thin wall steps
+                    // diagonally) turns wall; the gates open it later.
+                    if let Some(wall) = walls.as_mut() {
+                        let (mw, mh) = (region_mask.width, region_mask.height);
+                        for c in 0..region_mask.cells.len() {
+                            if !region_mask.cells[c] {
+                                continue;
+                            }
+                            // Side by side only: a corner touch is no way through.
+                            let (x, y) = ((c % mw) as i64, (c / mw) as i64);
+                            let at_edge = [(-1i64, 0i64), (1, 0), (0, -1), (0, 1)].iter().any(|&(dx, dy)| {
+                                let (nx, ny) = (x + dx, y + dy);
+                                nx < 0 || ny < 0 || nx >= mw as i64 || ny >= mh as i64 || !r.inside(ny as usize * mw + nx as usize)
+                            });
+                            if at_edge {
+                                region_mask.cells[c] = false;
+                                wall.mask.cells[c] = true;
+                            }
+                        }
+                        // That can cut a narrow neck: the town keeps its main piece.
+                        let before = region_mask.count_true();
+                        region_mask = town_ground_in(r, region_mask);
+                        let lost = (before - region_mask.count_true()) as f32 * cell_area(&region_mask);
+                        if lost >= 40.0 {
+                            notes.push(format!("Town: {lost:.0} m² beyond a neck the closed wall cut off was left out"));
+                        }
+                    }
                 }
             }
             None => notes.push(
@@ -384,6 +412,10 @@ pub fn town_in(config: &LevelConfig, seed: u64, region: Option<&region::RegionCt
     place_mobs(&mut level, progress);
     progress("Done", 1.0);
     level
+}
+
+fn cell_area(m: &CellMask) -> f32 {
+    m.cell_size_m * m.cell_size_m
 }
 
 /// A town region's ground inside its wall: the mixed map's water is no

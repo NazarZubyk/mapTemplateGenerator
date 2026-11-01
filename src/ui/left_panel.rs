@@ -3801,7 +3801,9 @@ placed (a note says so).";
             }
         });
         if let Some(reroll) = redo {
-            app.redo_mobs(ui.ctx(), reroll);
+            // Done after the panel (a map region's nodes draw with its config
+            // swapped in).
+            app.mobs_request = Some(reroll);
         }
         ui.weak("Other changes apply on ⚙ Generate");
         if let Some(lvl) = app.generated.as_ref()

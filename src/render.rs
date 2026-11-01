@@ -318,12 +318,24 @@ pub fn mixed_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[u
     let mut colors = colors;
     if let Some(cn) = &m.connections {
         use crate::generator::mixed::connections::capsule_cells;
-        // A portal: the opening across the border.
-        for p in &cn.portals {
-            let l = PORTAL_REACH_M.max(p.width_m);
-            let (a, b) = ([p.point_m[0] - p.normal[0] * l, p.point_m[1] - p.normal[1] * l], [p.point_m[0] + p.normal[0] * l, p.point_m[1] + p.normal[1] * l]);
-            for c in capsule_cells(w, h, cell, a, b, p.width_m / 2.0) {
-                colors[c] = PORTAL;
+        match &m.corridors {
+            // The joined openings: each side in its region's path look.
+            Some(cor) => {
+                for (c, color) in colors.iter_mut().enumerate() {
+                    if cor.cells[c] {
+                        *color = m.region_at(c).map_or(PORTAL, |r| corridor_color(m, r.id, r.kind));
+                    }
+                }
+            }
+            // Not joined (yet): the opening across the border.
+            None => {
+                for p in &cn.portals {
+                    let l = PORTAL_REACH_M.max(p.width_m);
+                    let (a, b) = ([p.point_m[0] - p.normal[0] * l, p.point_m[1] - p.normal[1] * l], [p.point_m[0] + p.normal[0] * l, p.point_m[1] + p.normal[1] * l]);
+                    for c in capsule_cells(w, h, cell, a, b, p.width_m / 2.0) {
+                        colors[c] = PORTAL;
+                    }
+                }
             }
         }
         // A crossing: a bridge or a ford over the water only.
@@ -466,6 +478,19 @@ pub fn swamp_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[u
     Some((w, h, cell, (0..w * h).map(|c| img.get_pixel((c % w) as u32, (c / w) as u32).0).collect()))
 }
 
+/// The look of a joined opening's corridor in region `id`: its own paths'.
+fn corridor_color(m: &crate::level::MixedLayout, id: u8, kind: crate::model::MapKind) -> [u8; 3] {
+    use crate::model::MapKind as K;
+    let cfg = m.levels.get(id as usize - 1).and_then(|l| l.as_ref()).map(|l| &l.config);
+    match (kind, cfg) {
+        (K::Forest, _) => crate::level::ForestGround::Trail.color(),
+        (K::Town, _) => ROAD,
+        (K::Swamp, Some(c)) => c.swamp.paths.mud_color,
+        (K::Cave, Some(c)) => c.cave.passes.color,
+        _ => PORTAL,
+    }
+}
+
 /// A portal between two map regions on the map: the opening's ground.
 pub const PORTAL: [u8; 3] = [214, 196, 150];
 /// How far a portal's opening reaches into each region on the map, meters.
@@ -507,7 +532,7 @@ pub fn mixed_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
         }
     }
     if let Some(cn) = &m.connections {
-        if !cn.portals.is_empty() {
+        if !cn.portals.is_empty() && m.corridors.is_none() {
             out.push((PORTAL, "opening between regions (walkable)".to_owned()));
         }
         if cn.crossings.iter().any(|x| x.look == crate::level::MixedCrossingLook::Bridge) {

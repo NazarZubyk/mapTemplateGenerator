@@ -114,6 +114,9 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, islands: &mut IslandLay
         };
         let swing = noise.fbm(x as f32 * cell / BORDER_SCALE_M + 41.0, y as f32 * cell / BORDER_SCALE_M - 41.0, 3) - 0.5;
         let line = s.border_m.max(0.0) * (1.0 + 2.0 * swing);
+        // A map region: never less than two cells (another region's ground
+        // is right behind it).
+        let line = if region.is_some() { line.max(cell * 2.0) } else { line };
         if edge < 0.0 || (edge < line && matches!(t[c], Terrain::Shallow | Terrain::Mud | Terrain::Deep)) {
             t[c] = Terrain::Deep;
             border[c] = true;

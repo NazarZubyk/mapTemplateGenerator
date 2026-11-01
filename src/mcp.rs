@@ -744,6 +744,7 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
         "mixed_regions": level.mixed.as_ref().map(|m| m.regions.iter().map(|r| json!({
             "id": r.id, "name": r.name, "kind": r.kind.slug(), "label": r.kind.region_label(), "placement": r.placement, "target_pct": r.target_pct, "actual_pct": r.actual_pct,
         })).collect::<Vec<_>>()),
+        "mixed_walkable_pieces": level.mixed.as_ref().and_then(|m| m.walkable.as_ref()).map(|w| crate::generator::grid::components(w).1),
         "mixed_built": level.mixed.as_ref().map(|m| m.regions.iter().zip(&m.levels).filter_map(|(r, l)| l.as_ref().map(|l| json!({
             "region": r.id,
             "kind": r.kind.slug(),

@@ -1560,6 +1560,29 @@ pub struct MixedLayout {
     /// (start, count), in id order.
     #[serde(default)]
     pub object_ranges: Vec<[usize; 2]>,
+    /// Walkable ground of the whole map, the joined openings included
+    /// (node 7; objects not counted).
+    #[serde(default)]
+    pub walkable: Option<CellMask>,
+    /// The corridors cut to join the two sides of the openings.
+    #[serde(default)]
+    pub corridors: Option<CellMask>,
+    #[serde(default)]
+    pub seams: Vec<MixedSeam>,
+}
+
+/// One joined opening (node 7): a portal between two regions, or a map
+/// gate on its region's side.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct MixedSeam {
+    pub portal: Option<u32>,
+    pub gate: Option<u32>,
+    /// The regions it joins (twice the same for a map gate).
+    pub regions: [u8; 2],
+    /// From the walkable ground on one side to the other, meters.
+    pub length_m: f32,
+    /// Ground that had to be opened (thicket, rock, wall...), m².
+    pub opened_m2: f32,
 }
 
 /// Two map regions that touch.

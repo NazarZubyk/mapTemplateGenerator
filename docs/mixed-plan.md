@@ -237,7 +237,7 @@ connections) cannot disagree; and a single-kind map does not change at all
       the domain, gate tunnels at the portals = cave mouths in the rock
       face; open question for the user: also surface paths / passes over
       the massif?).
-- [ ] **M8 — Seams and composition**: portal corridors, global flood fill,
+- [x] **M8 — Seams and composition**: portal corridors, global flood fill,
       composite preview / map.png / layer.png (+ regions.png), mobs re-roll
       across regions.
 - [ ] **M9 — Export and MCP**: spec.json per-region sections, validation
@@ -543,3 +543,43 @@ asked for passes over the massif as well as the caves.
   massif had no deep rock beside its climb — both fixed above).
 - Open: mobs / props on the passes (now only in the caves); a pass gate
   in the spec (M9).
+
+## Step M8 notes — seams
+
+`generator/mixed/seams.rs`, node 7 (no settings).
+
+- **Walkable ground** per region from its own result
+  (`seams::region_walkable`): forest ground; town floor minus district
+  and outer walls; swamp minus deep water and thicket; cave floor minus
+  chasms / deep pools, plus the mountain passes. Objects are not counted
+  (each region keeps them off its paths and gates).
+- **Seal** first: where two regions' walkable ground meets side by side
+  away from their openings (opening width + 8 m) — a forest trail along a
+  border next to a swamp gate island, say — the contact cells close on
+  ONE side, in that region's look (forest thicket, town wall, swamp deep
+  water, mountain rock): per cluster of contact cells, the first side
+  whose region stays one walkable piece without them (closing both had cut
+  a forest whose only way between two areas ran along the border). A
+  contact that neither side can lose stays, with a note.
+- **Corridors**: per portal, from the nearest walkable cell of each side
+  (within 25 m) through the portal point to the other, the portal's
+  width; per map gate the same on its one side. Most openings need no
+  cutting — both chains already built their way to the point. On the map
+  a corridor cell takes its region's path look (trail, road, mud path,
+  pass). `MixedLayout.walkable` / `corridors` / `seams`; spec.json
+  `mixed_seams`; MCP `mixed_walkable_pieces`.
+- **Check**: one flood fill; pieces ≥ 40 m² cut off are reported.
+- Two leaks the seal test found at the source, fixed there too: a town
+  region's floor that touches the region's edge side by side (a one-cell
+  wall stepping diagonally leaves gaps) turns wall before the gates open
+  it, and the town keeps its main piece if that cut a neck; a swamp
+  region's border band is never thinner than two cells.
+- **Mobs**: "Re-roll mobs" / "Apply mobs only" work on a mixed map. The
+  buttons in a region's Mobs node only record the request
+  (`app.mobs_request`, done after the panel, when the config is the whole
+  map's again); "Re-roll" changes the picked region's own `mobs.reroll`,
+  so only its mobs move, and a full generation gives the same mobs
+  (`mixed::redo_mobs`; tested).
+- Tested: the whole map is one walkable piece and regions meet walkably
+  only at their openings (6 maps); redoing mobs with the same settings
+  changes nothing, re-rolling one region moves only its mobs.
