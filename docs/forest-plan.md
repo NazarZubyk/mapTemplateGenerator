@@ -89,6 +89,18 @@ raise the height, so water flows around them.
   (`meander_pct`, fading out at both ends); width from `width_min_m` to
   `width_max_m` by √flow; from `deep_from_m` on the middle 60% is deep
   water, narrower brooks are shallow (wadeable).
+- River length and shape (added with the mixed maps, all neutral by
+  default so a forest is unchanged): `spring_m2` (the catchment a stream
+  starts from, was the fixed 500 m²), `min_length_m` (shorter outlets go
+  last and only fill slots nothing long enough could, with a note),
+  `prefer_long_pct` (outlet score = flow^(1−p) · main-stem length^p),
+  `bend_m` (meander wave length, was 14 m; the amplitude cap grows with
+  it), `width_var_pct` (pools and narrows from a noise along the length,
+  faded at the ends), `braid_pct` (wide stretches ≥ 3 m split into two
+  channels around an island, offsets in the smooth pre-meander frame),
+  `oxbow_pct` (a crescent lake outside the apex of a strong bend, at most
+  one per 1.5 bends, recorded as a pond). The new parts use noise and a
+  hash, never the random stream, so nothing after the water changes.
 
 ### Step F4 — Thickets — done
 

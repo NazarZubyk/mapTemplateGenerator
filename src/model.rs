@@ -317,7 +317,7 @@ impl Default for MixedSettings {
             regions: Vec::new(),
             irregularity_pct: 50.0,
             land: MixedLandSettings::default(),
-            water: ForestWaterSettings { streams: 2, ..ForestWaterSettings::default() },
+            water: ForestWaterSettings::mixed(),
             connections: MixedConnectionSettings::default(),
         }
     }
@@ -1023,11 +1023,63 @@ pub struct ForestWaterSettings {
     pub meander_pct: f32,
     /// Hollows at least this big, m², hold a pond (0 = no ponds).
     pub pond_min_m2: f32,
+    /// Catchment a stream starts from, m²: smaller = streams rise higher
+    /// up (longer, and more brooks).
+    pub spring_m2: f32,
+    /// Streams shorter than this, meters, are skipped and the next
+    /// catchment is tried (0 = any length).
+    pub min_length_m: f32,
+    /// How much picking the streams prefers long ones over the biggest
+    /// catchments, %.
+    pub prefer_long_pct: f32,
+    /// Bend size: the length of one meander wave, meters.
+    pub bend_m: f32,
+    /// Width variation along a stream, %: pools and narrows.
+    pub width_var_pct: f32,
+    /// Braids, %: wide stretches split into two channels around islands.
+    pub braid_pct: f32,
+    /// Oxbow lakes, %: the chance a strong bend has a cut-off crescent lake
+    /// beside it.
+    pub oxbow_pct: f32,
 }
 
 impl Default for ForestWaterSettings {
     fn default() -> Self {
-        Self { streams: 1, tributaries_pct: 40.0, width_min_m: 1.5, width_max_m: 7.0, deep_from_m: 4.0, meander_pct: 50.0, pond_min_m2: 120.0 }
+        Self {
+            streams: 1,
+            tributaries_pct: 40.0,
+            width_min_m: 1.5,
+            width_max_m: 7.0,
+            deep_from_m: 4.0,
+            meander_pct: 50.0,
+            pond_min_m2: 120.0,
+            spring_m2: 500.0,
+            min_length_m: 0.0,
+            prefer_long_pct: 0.0,
+            bend_m: 14.0,
+            width_var_pct: 0.0,
+            braid_pct: 0.0,
+            oxbow_pct: 0.0,
+        }
+    }
+}
+
+impl ForestWaterSettings {
+    /// A mixed map's rivers: longer and with more character than a single
+    /// forest's default.
+    pub fn mixed() -> Self {
+        Self {
+            streams: 2,
+            meander_pct: 65.0,
+            spring_m2: 120.0,
+            min_length_m: 60.0,
+            prefer_long_pct: 50.0,
+            bend_m: 22.0,
+            width_var_pct: 35.0,
+            braid_pct: 25.0,
+            oxbow_pct: 40.0,
+            ..Self::default()
+        }
     }
 }
 

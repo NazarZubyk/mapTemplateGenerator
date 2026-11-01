@@ -33,8 +33,6 @@ pub struct WaterBuild {
     pub notes: Vec<String>,
 }
 
-/// Catchment of a spring, m²: smaller inflows are no stream.
-const SPRING_M2: f32 = 500.0;
 /// Rise per cell in a filled hollow (keeps the flow moving).
 const EPS: f32 = 1e-5;
 /// Fill depth (share of the relief) that counts as a pond.
@@ -48,6 +46,7 @@ const DEEP_SHARE: f32 = 0.6;
 /// Shallow rim around a pond, meters.
 const POND_RIM_M: f32 = 1.5;
 /// Meander wave length, meters, and amplitude at 100% (× width, capped).
+/// The bend size the amplitude cap is tuned for (the default `bend_m`).
 const MEANDER_WAVE_M: f32 = 14.0;
 const MEANDER_AMP: f32 = 0.9;
 const MEANDER_MAX_M: f32 = 4.0;
@@ -183,26 +182,7 @@ pub fn build_drainage(s: &crate::model::ForestWaterSettings, rng: &mut ChaCha8Rn
     for c in 0..n {
         kids[start[c]..start[c + 1]].sort_by_key(|&k| (Reverse(flow[k]), k));
     }
-    let spring = (SPRING_M2 / (cell * cell)).ceil() as u32;
-    let mut outlets: Vec<usize> = (0..n).filter(|&c| down[c] == usize::MAX && flow[c] >= spring * 3 && !is_dry(c)).collect();
-    outlets.sort_by_key(|&c| (Reverse(flow[c]), c));
-    let mut chosen: Vec<usize> = Vec::new();
-    for &o in &outlets {
-        if chosen.len() >= s.streams as usize {
-            break;
-        }
-        let far = chosen.iter().all(|&q| {
-            let (dx, dy) = ((o % w) as f32 - (q % w) as f32, (o / w) as f32 - (q / w) as f32);
-            dx.hypot(dy) * cell >= OUTLET_GAP_M
-        });
-        if far {
-            chosen.push(o);
-        }
-    }
-    if (chosen.len() as u32) < s.streams {
-        notes.push(format!("Water: {} of {} streams found a catchment big enough", chosen.len(), s.streams));
-    }
-    let max_flow = chosen.iter().map(|&o| flow[o]).max().unwrap_or(1).max(1) as f32;
+    let spring = (s.spring_m2.max(cell * cell) / (cell * cell)).ceil() as u32;
     let trib = (s.tributaries_pct / 100.0).clamp(0.0, 1.0);
     // (cells spring → mouth, mouth)
     let mut raw: Vec<(Vec<usize>, StreamMouth)> = Vec::new();
@@ -222,6 +202,54 @@ pub fn build_drainage(s: &crate::model::ForestWaterSettings, rng: &mut ChaCha8Rn
         path.reverse();
         path
     };
+    // The outlets: by the biggest catchment, or with Prefer long also by
+    // the length of the main stream; too short ones skipped.
+    let mut outlets: Vec<usize> = (0..n).filter(|&c| down[c] == usize::MAX && flow[c] >= spring * 3 && !is_dry(c)).collect();
+    let prefer = (s.prefer_long_pct / 100.0).clamp(0.0, 1.0);
+    // Outlets from this index on are shorter than Min length.
+    let mut short_from = usize::MAX;
+    let min_cells = (s.min_length_m.max(0.0) / cell).ceil() as usize;
+    if prefer > 0.0 || min_cells > 0 {
+        let len: Vec<usize> = outlets.iter().map(|&o| trace_up(o).len()).collect();
+        let (fmax, lmax) = (outlets.iter().map(|&o| flow[o]).max().unwrap_or(1).max(1) as f32, len.iter().copied().max().unwrap_or(1).max(1) as f32);
+        // Long enough first (by score), then the too short ones, longest
+        // first — they only fill slots nothing long enough could.
+        let mut scored: Vec<(bool, f32, usize)> = outlets
+            .iter()
+            .zip(&len)
+            .map(|(&o, &l)| {
+                let score = (flow[o] as f32 / fmax).powf(1.0 - prefer) * (l as f32 / lmax).powf(prefer);
+                (l < min_cells, if l < min_cells { l as f32 } else { score }, o)
+            })
+            .collect();
+        scored.sort_by(|a, b| a.0.cmp(&b.0).then(b.1.total_cmp(&a.1)).then(a.2.cmp(&b.2)));
+        short_from = scored.iter().position(|x| x.0).unwrap_or(scored.len());
+        outlets = scored.into_iter().map(|(_, _, o)| o).collect();
+    } else {
+        outlets.sort_by_key(|&c| (Reverse(flow[c]), c));
+    }
+    let mut chosen: Vec<usize> = Vec::new();
+    let mut short = 0;
+    for (i, &o) in outlets.iter().enumerate() {
+        if chosen.len() >= s.streams as usize {
+            break;
+        }
+        let far = chosen.iter().all(|&q| {
+            let (dx, dy) = ((o % w) as f32 - (q % w) as f32, (o / w) as f32 - (q / w) as f32);
+            dx.hypot(dy) * cell >= OUTLET_GAP_M
+        });
+        if far {
+            chosen.push(o);
+            short += usize::from(i >= short_from);
+        }
+    }
+    if (chosen.len() as u32) < s.streams {
+        notes.push(format!("Water: {} of {} streams found a catchment big enough", chosen.len(), s.streams));
+    }
+    if short > 0 {
+        notes.push(format!("Water: {short} stream(s) shorter than the {:.0} m Min length — no longer one fits this land", s.min_length_m));
+    }
+    let max_flow = chosen.iter().map(|&o| flow[o]).max().unwrap_or(1).max(1) as f32;
     for &o in &chosen {
         let main = trace_up(o);
         let main_id = raw.len() as u32 + 1;
@@ -258,6 +286,11 @@ pub fn build_drainage(s: &crate::model::ForestWaterSettings, rng: &mut ChaCha8Rn
     let whi = s.width_max_m.max(s.width_min_m).max(cell * 0.5);
     let width_of = |f: u32| wlo + (whi - wlo) * (f as f32 / max_flow).sqrt().min(1.0);
     let meander = (s.meander_pct / 100.0).clamp(0.0, 1.0);
+    let bend = s.bend_m.max(2.0);
+    let amp_cap = MEANDER_MAX_M * (bend / MEANDER_WAVE_M).max(1.0);
+    let width_var = (s.width_var_pct / 100.0).clamp(0.0, 1.0);
+    let braid = (s.braid_pct / 100.0).clamp(0.0, 1.0);
+    let oxbow = (s.oxbow_pct / 100.0).clamp(0.0, 1.0);
     let mut streams = Vec::new();
     for (i, (cells, mouth)) in raw.iter().enumerate() {
         if cells.len() < 2 {
@@ -278,6 +311,8 @@ pub fn build_drainage(s: &crate::model::ForestWaterSettings, rng: &mut ChaCha8Rn
         let total: f32 = pts.windows(2).map(|p| dist(p[0].0, p[1].0)).sum();
         let mut along = 0.0;
         let mut wound = Vec::with_capacity(pts.len());
+        // Per point: distance along, meander offset and its cap, the fade.
+        let mut wave: Vec<(f32, f32, f32, f32)> = Vec::with_capacity(pts.len());
         for k in 0..pts.len() {
             if k > 0 {
                 along += dist(pts[k - 1].0, pts[k].0);
@@ -286,13 +321,94 @@ pub fn build_drainage(s: &crate::model::ForestWaterSettings, rng: &mut ChaCha8Rn
             let (tx, ty) = (next[0] - prev[0], next[1] - prev[1]);
             let tl = tx.hypot(ty).max(1e-6);
             let fade = (along.min(total - along) / 10.0).clamp(0.0, 1.0);
-            let amp = (meander * MEANDER_AMP * pts[k].1 * 2.0).min(MEANDER_MAX_M) * fade;
-            let off = (meander_noise.fbm(along / MEANDER_WAVE_M + id as f32 * 7.3, id as f32 * 3.1, 2) - 0.5) * 4.0 * amp;
-            wound.push(([pts[k].0[0] - ty / tl * off, pts[k].0[1] + tx / tl * off], pts[k].1));
+            let amp = (meander * MEANDER_AMP * pts[k].1 * 2.0).min(amp_cap) * fade;
+            let off = (meander_noise.fbm(along / bend + id as f32 * 7.3, id as f32 * 3.1, 2) - 0.5) * 4.0 * amp;
+            // Pools and narrows (none at the ends).
+            let mut wd = pts[k].1;
+            if width_var > 0.0 {
+                let v = meander_noise.fbm(along / (bend * 1.3) + id as f32 * 5.1, 41.7, 2) - 0.5;
+                wd = (wd * (1.0 + width_var * v * 1.6 * fade)).max(cell * 0.5);
+            }
+            wound.push(([pts[k].0[0] - ty / tl * off, pts[k].0[1] + tx / tl * off], wd));
+            wave.push((along, off, amp, fade));
         }
         let is_deep = wound.iter().any(|p| p.1 >= s.deep_from_m);
-        for seg in wound.windows(2) {
-            draw_segment(&mut shallow, &mut deep, w, h, cell, seg[0], seg[1], s.deep_from_m);
+        // Braids: on wide stretches the stream splits into two channels
+        // around an island and joins again.
+        let split: Vec<f32> = if braid > 0.0 {
+            let t = 0.68 - 0.3 * braid;
+            wound
+                .iter()
+                .zip(&wave)
+                .map(|(p, &(al, _, _, fade))| {
+                    let v = meander_noise.fbm(al / (bend * 2.5) + id as f32 * 9.7, 13.3, 2);
+                    smoothstep(t, t + 0.08, v) * smoothstep(2.0, 3.5, p.1) * fade
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        // Braids and oxbows follow the smooth line under the meander (the
+        // wound line turns at every bend; offsets along it would cross).
+        let base_n = normals(&pts);
+        if split.iter().any(|&b| b > 0.0) {
+            let normals = &base_n;
+            for side in [1.0f32, -1.0] {
+                let chan: Vec<([f32; 2], f32)> = wound
+                    .iter()
+                    .zip(normals)
+                    .zip(&split)
+                    .map(|((p, nrm), &b)| {
+                        let off = side * b * p.1 * 0.9;
+                        ([p.0[0] + nrm[0] * off, p.0[1] + nrm[1] * off], p.1 * (1.0 - 0.45 * b))
+                    })
+                    .collect();
+                for seg in chan.windows(2) {
+                    draw_segment(&mut shallow, &mut deep, w, h, cell, seg[0], seg[1], s.deep_from_m);
+                }
+            }
+        } else {
+            for seg in wound.windows(2) {
+                draw_segment(&mut shallow, &mut deep, w, h, cell, seg[0], seg[1], s.deep_from_m);
+            }
+        }
+        // Oxbow lakes: beside the strongest bends, a cut-off crescent of the
+        // old loop, outside the bend.
+        if oxbow > 0.0 && wound.len() > 4 {
+            let mut last_at = f32::NEG_INFINITY;
+            for k in 1..wound.len() - 1 {
+                let (al, off, amp, _) = wave[k];
+                // The apex of a strong bend, one per bend at most.
+                let strong = amp > 0.8 && off.abs() >= 0.7 * amp && off.abs() >= wave[k - 1].1.abs() && off.abs() > wave[k + 1].1.abs();
+                if !strong || al - last_at < bend * 1.5 || unit_hash(id, k as u32) >= oxbow {
+                    continue;
+                }
+                last_at = al;
+                let wd = wound[k].1;
+                let side = off.signum();
+                // In the smooth frame: the river's apex offset, then a gap,
+                // then a crescent bowing out (the cut-off old loop).
+                let gap = wd * 0.5 + 2.5;
+                let bow = amp * 0.6 + wd * 0.5;
+                let half = bend * 0.35;
+                let arc: Vec<([f32; 2], f32)> = (0..pts.len())
+                    .filter(|&j| (wave[j].0 - al).abs() <= half)
+                    .map(|j| {
+                        let u = (wave[j].0 - al) / half;
+                        let o = off + side * (gap + wd * 0.35 + bow * (1.0 - u * u));
+                        ([pts[j].0[0] + base_n[j][0] * o, pts[j].0[1] + base_n[j][1] * o], (wd * 0.7 * (1.0 - 0.6 * u * u)).max(cell))
+                    })
+                    .collect();
+                if arc.len() < 3 {
+                    continue;
+                }
+                for seg in arc.windows(2) {
+                    draw_segment(&mut shallow, &mut deep, w, h, cell, seg[0], seg[1], s.deep_from_m);
+                }
+                let mid = arc[arc.len() / 2].0;
+                let length: f32 = arc.windows(2).map(|p| dist(p[0].0, p[1].0)).sum();
+                ponds.push(ForestPond { id: ponds.len() as u32 + 1, center_m: mid, area_m2: length * wd * 0.6 });
+            }
         }
         let path_m: Vec<[f32; 2]> = wound.iter().map(|p| p.0).collect();
         streams.push(ForestStream {
@@ -317,6 +433,34 @@ pub fn build_drainage(s: &crate::model::ForestWaterSettings, rng: &mut ChaCha8Rn
 
 fn dist(a: [f32; 2], b: [f32; 2]) -> f32 {
     (a[0] - b[0]).hypot(a[1] - b[1])
+}
+
+/// Unit normals (left of the direction of travel) of a polyline.
+fn normals(pts: &[([f32; 2], f32)]) -> Vec<[f32; 2]> {
+    (0..pts.len())
+        .map(|k| {
+            let (prev, next) = (pts[k.saturating_sub(1)].0, pts[(k + 1).min(pts.len() - 1)].0);
+            let (tx, ty) = (next[0] - prev[0], next[1] - prev[1]);
+            let tl = tx.hypot(ty).max(1e-6);
+            [-ty / tl, tx / tl]
+        })
+        .collect()
+}
+
+fn smoothstep(a: f32, b: f32, x: f32) -> f32 {
+    let t = ((x - a) / (b - a)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// A stable value in 0..1 from two numbers (no random stream: the water's
+/// draws stay the same whatever is switched on).
+fn unit_hash(a: u32, b: u32) -> f32 {
+    let mut x = (a as u64) << 32 | b as u64;
+    x = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    x = (x ^ (x >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    x = (x ^ (x >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    x ^= x >> 31;
+    (x >> 40) as f32 / (1u64 << 24) as f32
 }
 
 /// One Chaikin pass (keeps the end points).
@@ -405,6 +549,54 @@ mod tests {
         let a = areas::build(&c, &mut rng).layout;
         let t = terrain::build(&c, &mut rng, &a);
         build(&c, &mut rng, &t).layout
+    }
+
+    fn main_lengths(l: &WaterLayout) -> Vec<f32> {
+        l.streams.iter().filter(|s| s.mouth == StreamMouth::Edge).map(|s| s.length_m).collect()
+    }
+
+    #[test]
+    fn length_settings_give_longer_streams() {
+        let (mut plain, mut long) = (0.0, 0.0);
+        for seed in 0..6 {
+            plain += main_lengths(&run(seed, |c| c.forest.water.streams = 2)).iter().sum::<f32>();
+            let l = run(seed, |c| {
+                c.forest.water.streams = 2;
+                c.forest.water.spring_m2 = 150.0;
+                c.forest.water.prefer_long_pct = 100.0;
+                c.forest.water.min_length_m = 60.0;
+            });
+            long += main_lengths(&l).iter().sum::<f32>();
+        }
+        assert!(long > plain * 1.1, "long {long} vs plain {plain}");
+    }
+
+    #[test]
+    fn oxbows_are_separate_lakes_and_braids_leave_islands() {
+        let (mut oxbows, mut islands) = (0, 0);
+        for seed in 0..6 {
+            let plain = run(seed, |c| c.forest.water.meander_pct = 100.0);
+            let l = run(seed, |c| {
+                c.forest.water.meander_pct = 100.0;
+                c.forest.water.oxbow_pct = 100.0;
+                c.forest.water.braid_pct = 100.0;
+                c.forest.water.width_max_m = 10.0;
+            });
+            oxbows += l.ponds.len().saturating_sub(plain.ponds.len());
+            // Islands: dry pieces with no way to the map edge.
+            let dry = CellMask { width: l.deep.width, height: l.deep.height, cell_size_m: 1.0, cells: l.deep.cells.iter().map(|&d| !d).collect() };
+            let (labels, count) = crate::generator::grid::components(&dry);
+            let (w, h) = (dry.width, dry.height);
+            let mut on_edge = vec![false; count as usize + 1];
+            for (c, &lb) in labels.iter().enumerate() {
+                if c % w == 0 || c / w == 0 || c % w == w - 1 || c / w == h - 1 {
+                    on_edge[lb as usize] = true;
+                }
+            }
+            islands += (1..=count as usize).filter(|&i| !on_edge[i]).count();
+        }
+        assert!(oxbows > 0, "no oxbow lake");
+        assert!(islands > 0, "no braid island");
     }
 
     #[test]

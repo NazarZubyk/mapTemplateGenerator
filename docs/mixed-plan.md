@@ -342,3 +342,19 @@ a mixed map — the MCP `set_gates` tool already edits them).
 - Tested: the portals join every region; each portal sits on its border
   on dry ground; every gate lies in its region; loops 0 % = a tree,
   100 % = every pair; with the crossings, no region stays cut by water.
+
+## River length and shape (after M3)
+
+The user found mixed-map rivers too short and asked for more river
+settings. Cause: outlets were picked by catchment only, and near the map
+edge a big catchment is often a fan of small ones, so the traced main
+stream ended after a few dozen meters. The forest water node and the
+mixed Water node share seven new settings (`ForestWaterSettings`):
+spring size, min length, prefer long, bend size, width variation,
+braids, oxbow lakes — see forest-plan.md F3. Their defaults keep every
+single-kind map identical (checked by fingerprinting town / swamp /
+forest / cave levels before and after); the mixed map starts with
+`ForestWaterSettings::mixed()` (2 streams, meander 65 %, spring 120 m²,
+min length 60 m, prefer long 50 %, bend 22 m, width variation 35 %,
+braids 25 %, oxbows 40 %). Braid islands in deep water are separate
+pieces; M3's crossings bridge or ford them like any other cut.

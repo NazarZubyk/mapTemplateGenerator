@@ -627,6 +627,25 @@ ford or a bridge crosses them, so they separate areas. Narrower ones are shallow
     const TIP_MEANDER: &str = "How much the streams wind beyond what the land gives, %.";
     const TIP_POND: &str = "Hollows in the land at least this big, m², hold a pond (deep in the \
 middle when twice this big). 0 = no ponds.";
+    const TIP_SPRING: &str = "How much land must drain into a stream for it to start, m². \
+Smaller: streams rise higher up the slopes — longer streams and more brooks. Larger: only the \
+big valleys carry a stream, and they start lower down (shorter).";
+    const TIP_MIN_LEN: &str = "Streams shorter than this, meters, are skipped and the next \
+catchment is tried. If nothing long enough fits the land, the longest ones left fill the gap \
+(a note says so). 0 = any length.";
+    const TIP_PREFER: &str = "How the streams are picked, %. 0%: the biggest catchments (wide \
+streams, sometimes short ones near the map edge). 100%: the longest streams, even if they \
+carry less water. In between: a mix.";
+    const TIP_BEND: &str = "Bend size: the length of one meander wave, meters. Small: tight \
+wiggles. Large: broad sweeping bends (they may swing wider too). NO EFFECT with Meander 0%.";
+    const TIP_WIDTH_VAR: &str = "Width variation along a stream, %: pools where it widens, \
+narrows where it squeezes through. 0%: the width only grows downstream.";
+    const TIP_BRAID: &str = "Braids, %: wide stretches (3 m and more) split into two channels \
+around an island and join again. Higher: more and longer braided stretches. Islands in deep \
+water are cut off — on a mixed map the Connections node bridges or fords them. NO EFFECT on \
+narrow brooks.";
+    const TIP_OXBOW: &str = "Oxbow lakes, %: the chance that a strong bend has a cut-off \
+crescent lake beside it — the old loop the river left behind. NO EFFECT with little Meander.";
     egui::Grid::new((id, "water_grid")).num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
         param_row(ui, "Streams", TIP_STREAMS, |ui| ui.add(egui::DragValue::new(&mut s.streams).range(0..=6).speed(0.05)));
         param_row(ui, "Brooks", TIP_TRIB, |ui| ui.add(egui::Slider::new(&mut s.tributaries_pct, 0.0..=100.0).suffix("%")));
@@ -634,6 +653,17 @@ middle when twice this big). 0 = no ponds.";
         param_row(ui, "Deep from", TIP_DEEP, |ui| ui.add(meters(&mut s.deep_from_m, 30.0)));
         param_row(ui, "Meander", TIP_MEANDER, |ui| ui.add(egui::Slider::new(&mut s.meander_pct, 0.0..=100.0).suffix("%")));
         param_row(ui, "Pond min", TIP_POND, |ui| ui.add(egui::DragValue::new(&mut s.pond_min_m2).range(0.0..=5000.0).speed(5.0).suffix(" m²")));
+        ui.label(egui::RichText::new("Length").weak());
+        ui.end_row();
+        param_row(ui, "Spring size", TIP_SPRING, |ui| ui.add(egui::DragValue::new(&mut s.spring_m2).range(20.0..=5000.0).speed(5.0).suffix(" m²")));
+        param_row(ui, "Min length", TIP_MIN_LEN, |ui| ui.add(meters(&mut s.min_length_m, 2000.0)));
+        param_row(ui, "Prefer long", TIP_PREFER, |ui| ui.add(egui::Slider::new(&mut s.prefer_long_pct, 0.0..=100.0).suffix("%")));
+        ui.label(egui::RichText::new("Shape").weak());
+        ui.end_row();
+        param_row(ui, "Bend size", TIP_BEND, |ui| ui.add(meters(&mut s.bend_m, 200.0)));
+        param_row(ui, "Width variation", TIP_WIDTH_VAR, |ui| ui.add(egui::Slider::new(&mut s.width_var_pct, 0.0..=100.0).suffix("%")));
+        param_row(ui, "Braids", TIP_BRAID, |ui| ui.add(egui::Slider::new(&mut s.braid_pct, 0.0..=100.0).suffix("%")));
+        param_row(ui, "Oxbow lakes", TIP_OXBOW, |ui| ui.add(egui::Slider::new(&mut s.oxbow_pct, 0.0..=100.0).suffix("%")));
     });
     ui.horizontal(|ui| {
         if ui.button("🎲 Random params").on_hover_text("Rolls every water setting independently inside its reasonable range. Set values only; press Generate.").clicked() {
@@ -645,6 +675,13 @@ middle when twice this big). 0 = no ponds.";
             s.deep_from_m = rng.random_range(2.5..=7.0);
             s.meander_pct = rng.random_range(0.0..=100.0);
             s.pond_min_m2 = rng.random_range(0.0..=400.0);
+            s.spring_m2 = rng.random_range(80.0..=800.0);
+            s.min_length_m = rng.random_range(0.0..=120.0);
+            s.prefer_long_pct = rng.random_range(0.0..=100.0);
+            s.bend_m = rng.random_range(8.0..=40.0);
+            s.width_var_pct = rng.random_range(0.0..=80.0);
+            s.braid_pct = rng.random_range(0.0..=60.0);
+            s.oxbow_pct = rng.random_range(0.0..=80.0);
         }
         ui.weak("Changes apply on ⚙ Generate");
     });
