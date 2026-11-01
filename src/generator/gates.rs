@@ -100,6 +100,7 @@ pub fn build(
             notes.push(match fixed.map(|f| f[i].kind) {
                 Some(FixedGateKind::Portal { to, .. }) => format!("The opening to region {to}: no town wall near it"),
                 Some(FixedGateKind::MapGate { gate }) => format!("Gate #{gate}: no town wall near it"),
+                Some(FixedGateKind::PassEntrance { pass }) => format!("The entrance off pass {pass}: no town wall near it"),
                 None => format!("Gate #{id}: no town edge within {MAX_TURN_DEG}° of {direction_deg:.0}°"),
             });
             continue;

@@ -366,9 +366,9 @@ mod tests {
     fn run(c: &LevelConfig, seed: u64) -> All {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let st = style::build(c, &mut rng).layout;
-        let ch = chambers::build(c, &mut rng, &st).layout;
-        let t = tunnels::build(c, &mut rng, &st, &ch).layout;
-        let cv = carve::build(c, &mut rng, &st, &ch, &t).layout;
+        let ch = chambers::build(c, &mut rng, &st, None).layout;
+        let t = tunnels::build(c, &mut rng, &st, &ch, None).layout;
+        let cv = carve::build(c, &mut rng, &st, &ch, &t, None).layout;
         let hz = build(c, &mut rng, &ch, &t, &cv);
         All { chambers: ch, tunnels: t, carve: cv, hz }
     }

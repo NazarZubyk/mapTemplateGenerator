@@ -26,6 +26,7 @@ pub mod swamp;
 pub mod cave;
 pub mod forest;
 pub mod mixed;
+pub mod mountains;
 pub mod walls;
 
 /// Progress callback: (stage label, overall fraction 0..1). Called from the
@@ -531,7 +532,7 @@ fn remap_objects(level: &mut GeneratedLevel, f: impl Fn(usize) -> usize) {
         }
     }
     if let Some(t) = level.cave.as_mut().and_then(|c| c.tunnels.as_mut()) {
-        for g in &mut t.gates {
+        for g in t.gates.iter_mut().filter(|g| g.object != usize::MAX) {
             g.object = f(g.object);
         }
     }

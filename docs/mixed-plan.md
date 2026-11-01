@@ -232,7 +232,7 @@ connections) cannot disagree; and a single-kind map does not change at all
       at portals, river input: bridges, water gates).
 - [x] **M6 — Region chains: Swamp** (islands in the domain, gate anchors at
       portals, river mouths).
-- [ ] **M7 — Region chains: Mountains** (the cave kind on a mixed map: a
+- [x] **M7 — Region chains: Mountains** (the cave kind on a mixed map: a
       rock massif whose walkable inside is the cave chain — chambers in
       the domain, gate tunnels at the portals = cave mouths in the rock
       face; open question for the user: also surface paths / passes over
@@ -501,3 +501,45 @@ fingerprinted).
   shows its gates as set by the mixed map (island / bridge sizes stay).
 - Tested: a swamp region's walkable ground lies in its region, is one
   piece, has ground at every gate, and its objects lie in its region.
+
+## Step M7 notes — mountain regions (caves inside, passes over)
+
+`generator::mountains::generate_in` → `cave::generate_in` (`cave::
+generate_with_progress` = no region, unchanged — fingerprinted). The user
+asked for passes over the massif as well as the caves.
+
+- **Passes** (`cave.passes`, node "1b · Passes" in a mountain region:
+  count, width, rock buffer, cave entrances, low ground, wiggle, color):
+  between pairs of the region's openings, the farthest apart first (each
+  once); with too few openings a **climb** from a free one toward the
+  heart of the massif (deepest from its edge), cut at 3/5 of the way, ends
+  at a cave entrance (mountains often have a single opening). Routed by
+  the swamp A* over the region's ground: cost `1 + 6·low·height`
+  (normalized in the region — saddles and valleys are cheap) × a noise
+  wander, ×6 within 10 m of an opening left for a cave mouth. Own random
+  stream (`seed ^ "passes"`), so the caves' stream is the cave chain's.
+- **The caves' rock** = the region minus the passes and `buffer_m` around
+  them; a pass across the massif cuts it — the caves live in the biggest
+  piece. An opening no pass took is a cave mouth when that rock is there,
+  else a trail to the nearest pass (around the caves' rock).
+- **Entrances**: per pass, spurs (2.5 m) from a random spot of the pass
+  (a climb: from its end) across the buffer to rock with ≥ 5 m of depth
+  beyond; the spur's end is a cave gate (`FixedGateKind::PassEntrance`).
+  A pass that finds none connects where the caves' rock comes nearest, so
+  passes and caves are always one piece.
+- **The cave chain in a region** (`RegionCtx` = the caves' rock): chambers
+  only with room inside it (grotto density by its area; hall / grotto
+  counts scale), junctions and dead ends off its edge, tunnels never
+  outside it (closed cells, infinite cost), gate tunnels from its fixed
+  gates (no markers), carve never makes floor outside it, hidden pockets
+  2 m inside it (`CaveGround.inside`).
+- **Map**: `render::mountain_colors` — the caves (floor, wall rim,
+  hazards) and the passes (`passes.color`) on the mixed map's shaded
+  stone; legend: "mountain rock (blocked)", "mountain pass (walkable)".
+  The tunnels node's gate list shows a note in a region.
+- Tested: a mountain's passes + cave floor lie in its region, are one
+  piece, reach every opening, and its objects lie in its region (a pass
+  had cut the rock so an entrance landed on a cave-less piece; a small
+  massif had no deep rock beside its climb — both fixed above).
+- Open: mobs / props on the passes (now only in the caves); a pass gate
+  in the spec (M9).

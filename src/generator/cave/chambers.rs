@@ -29,6 +29,7 @@ use rand_chacha::ChaCha8Rng;
 use crate::generator::noise::NoiseField;
 use crate::generator::swamp::islands::tidy;
 use crate::level::{CaveStyle, Chamber, ChamberKind, ChamberLayout, StyleLayout};
+use crate::generator::region::RegionCtx;
 use crate::model::{LevelConfig, NodeAmount};
 
 /// Chamber ids are 16-bit: no more than this many chambers.
@@ -62,7 +63,7 @@ struct Seed {
     stretch: f32,
 }
 
-pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout) -> ChamberBuild {
+pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout, region: Option<&RegionCtx>) -> ChamberBuild {
     let s = &config.cave.chambers;
     let (w, h, cell) = (style.width, style.height, style.cell_size_m);
     let (wm, hm) = (w as f32 * cell, h as f32 * cell);
@@ -74,9 +75,18 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout) ->
     let noise = NoiseField::new(rng.random::<u64>());
 
     // 1 + 2. Centers and styles.
+    // A map region: its own ground, its edge as the map edge.
+    let area_m2 = region.map_or(wm * hm, |r| r.domain.count_true() as f32 * cell * cell);
+    let room = |p: (f32, f32)| match region {
+        Some(r) => {
+            let (x, y) = ((p.0 / cell).floor(), (p.1 / cell).floor());
+            if x < 0.0 || y < 0.0 || x >= w as f32 || y >= h as f32 { 0.0 } else { r.edge_dist[y as usize * w + x as usize] }
+        }
+        None => f32::INFINITY,
+    };
     let grottos = match s.grotto_amount {
         NodeAmount::Count => s.grotto_count,
-        NodeAmount::Density => (s.grotto_per_1000m2.max(0.0) * wm * hm / 1000.0).round() as u32,
+        NodeAmount::Density => (s.grotto_per_1000m2.max(0.0) * area_m2 / 1000.0).round() as u32,
     }
     .min(MAX_GROTTOS);
     let wanted = (0..s.hall_count)
@@ -102,7 +112,8 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout) ->
                     let clear = seeds
                         .iter()
                         .map(|o| (p.0 - o.center.0).hypot(p.1 - o.center.1) - r - o.r - s.gap_m)
-                        .fold(f32::INFINITY, f32::min);
+                        .fold(f32::INFINITY, f32::min)
+                        .min(room(p) - margin);
                     (p, clear)
                 })
                 .max_by(|a, b| a.1.total_cmp(&b.1));
@@ -156,7 +167,11 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout) ->
         let mut cells: Vec<(f32, usize)> = Vec::new();
         for y in y0..y1 {
             for x in x0..x1 {
-                if x < margin || y < margin || x + margin >= w || y + margin >= h {
+                let off = match region {
+                    Some(rg) => rg.edge_dist[y * w + x] < margin_m.max(cell),
+                    None => x < margin || y < margin || x + margin >= w || y + margin >= h,
+                };
+                if off {
                     continue;
                 }
                 let (px, py) = ((x as f32 + 0.5) * cell, (y as f32 + 0.5) * cell);
@@ -310,7 +325,7 @@ mod tests {
     fn run(c: &LevelConfig, seed: u64) -> (StyleLayout, ChamberBuild) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let st = style::build(c, &mut rng).layout;
-        let ch = build(c, &mut rng, &st);
+        let ch = build(c, &mut rng, &st, None);
         (st, ch)
     }
 

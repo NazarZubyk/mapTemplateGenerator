@@ -50,6 +50,7 @@ use crate::level::{
     CaveGate, CaveStyle, Category, CellMask, ChamberLayout, Junction, PlacedObject, RoadNode, StyleLayout, Tunnel,
     TunnelEnd, TunnelLayout,
 };
+use crate::generator::region::RegionCtx;
 use crate::model::{LabyrinthParams, LevelConfig};
 
 pub struct TunnelBuild {
@@ -107,7 +108,7 @@ struct Node {
     chamber: u16,
 }
 
-pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout, chambers: &ChamberLayout) -> TunnelBuild {
+pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout, chambers: &ChamberLayout, region: Option<&RegionCtx>) -> TunnelBuild {
     let s = &config.cave.tunnels;
     let (w, h, cell) = (chambers.width, chambers.height, chambers.cell_size_m);
     let ch_ids = &chambers.ids;
@@ -162,16 +163,18 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout, ch
                     (w / 2, h / 2)
                 };
                 let c = y * w + x;
+                // A map region: junctions in its own rock, off its edge.
+                let off = region.is_some_and(|r| r.edge_dist[c] < lo * cell);
                 let to_junction = junctions
                     .iter()
                     .map(|j: &Junction| (j.point_m[0] / cell - x as f32).hypot(j.point_m[1] / cell - y as f32))
                     .fold(f32::INFINITY, f32::min);
-                let clear = rock_dist[c].min(to_junction * gap_cells.max(1.0) / (JUNCTION_GAP_M / cell));
+                let clear = if off { f32::NEG_INFINITY } else { rock_dist[c].min(to_junction * gap_cells.max(1.0) / (JUNCTION_GAP_M / cell)) };
                 (c, clear, to_junction)
             })
             .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)));
         match best {
-            Some((c, _, to_j)) if rock_dist[c] >= gap_cells && to_j >= JUNCTION_GAP_M / cell && junctions.len() < u16::MAX as usize - 1 => {
+            Some((c, clear, to_j)) if clear > f32::NEG_INFINITY && rock_dist[c] >= gap_cells && to_j >= JUNCTION_GAP_M / cell && junctions.len() < u16::MAX as usize - 1 => {
                 let id = junctions.len() as u16 + 1;
                 junctions.push(Junction { id, point_m: center(c, w, cell) });
                 nodes.push(Node { cell: c, end: TunnelEnd::Junction(id), zone: style.ids[c], style: style.style_at(c), chamber: 0 });
@@ -186,15 +189,29 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout, ch
     // Gate points (needed for the tree's start).
     let inset = (cell / 2.0).max(MARKER_M / 2.0);
     let (wm, hm) = (w as f32 * cell, h as f32 * cell);
-    let gate_points: Vec<((f32, f32), (f32, f32))> = config
-        .gates
-        .gates
-        .iter()
-        .map(|g| {
-            let (p, nrm) = edge_hit((wm / 2.0, hm / 2.0), g.direction_deg.rem_euclid(360.0), wm, hm);
-            ((p.0.clamp(inset, wm - inset), p.1.clamp(inset, hm - inset)), nrm)
-        })
-        .collect();
+    // A map region: its fixed gates (cave mouths at the portals, map
+    // gates, the entrances from a mountain pass), stepped in onto its ground.
+    let gate_points: Vec<((f32, f32), (f32, f32))> = match region {
+        Some(r) => r
+            .gates
+            .iter()
+            .map(|g| {
+                let step = |k: usize| (g.point_m[0] + g.inward[0] * cell * (k as f32 + 0.5), g.point_m[1] + g.inward[1] * cell * (k as f32 + 0.5));
+                let at = |p: (f32, f32)| ((p.1 / cell).max(0.0) as usize).min(h - 1) * w + ((p.0 / cell).max(0.0) as usize).min(w - 1);
+                let p = (0..12).map(step).find(|&p| r.inside(at(p))).unwrap_or_else(|| step(0));
+                ((p.0.clamp(inset, wm - inset), p.1.clamp(inset, hm - inset)), (g.inward[0], g.inward[1]))
+            })
+            .collect(),
+        None => config
+            .gates
+            .gates
+            .iter()
+            .map(|g| {
+                let (p, nrm) = edge_hit((wm / 2.0, hm / 2.0), g.direction_deg.rem_euclid(360.0), wm, hm);
+                ((p.0.clamp(inset, wm - inset), p.1.clamp(inset, hm - inset)), nrm)
+            })
+            .collect(),
+    };
 
     // 2. Tree.
     let n = nodes.len();
@@ -302,10 +319,14 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout, ch
 
     // 5. Digging.
     let wiggle = s.wiggle_pct.clamp(0.0, 100.0) / 100.0;
-    let in_margin = |c: usize| {
-        let (x, y) = (c % w, c / w);
-        x < margin || y < margin || x + margin >= w || y + margin >= h
+    let in_margin = |c: usize| match region {
+        Some(r) => r.edge_dist[c] < margin as f32 * cell,
+        None => {
+            let (x, y) = (c % w, c / w);
+            x < margin || y < margin || x + margin >= w || y + margin >= h
+        }
     };
+    let closed = |c: usize| region.is_some_and(|r| !r.inside(c));
     let base: Vec<f32> = (0..w * h)
         .map(|c| {
             let (x, y) = xy(c);
@@ -315,8 +336,8 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout, ch
         .collect();
     let cheapest = OWN_CHAMBER_COST.min((-wiggle * WIGGLE_CONTRAST / 2.0).exp() * ON_TUNNEL_COST);
     // Everything but the outermost cells (gate tunnels may reach the edge).
-    let inner: Vec<bool> = (0..w * h).map(|c| !(c % w == 0 || c / w == 0 || c % w == w - 1 || c / w == h - 1)).collect();
-    let everywhere = vec![true; w * h];
+    let inner: Vec<bool> = (0..w * h).map(|c| !(c % w == 0 || c / w == 0 || c % w == w - 1 || c / w == h - 1) && !closed(c)).collect();
+    let everywhere: Vec<bool> = (0..w * h).map(|c| !closed(c)).collect();
     let mut dug = CellMask::new(w, h, cell);
     let mine_w = s.mine_width_m.max(cell);
     let mine_rough = (s.mine_roughness_pct / 100.0).clamp(0.0, 1.0);
@@ -333,6 +354,9 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout, ch
             from,
             to,
             |c| {
+                if closed(c) {
+                    return f32::INFINITY;
+                }
                 let id = ch_ids[c];
                 if id > 0 && own.contains(&id) {
                     return OWN_CHAMBER_COST;
@@ -444,6 +468,9 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout, ch
                 continue;
             }
             let target = ty as usize * w + tx as usize;
+            if region.is_some() && in_margin(target) {
+                continue;
+            }
             if floor_dist[target] < gap_cells.max(2.0) {
                 continue;
             }
@@ -489,8 +516,12 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout, ch
     // 7. Gates.
     let mut gates = Vec::new();
     let mut objects = Vec::new();
-    for (i, (&(p, nrm), spec)) in gate_points.iter().zip(&config.gates.gates).enumerate() {
+    for (i, &(p, nrm)) in gate_points.iter().enumerate() {
         let id = i as u32 + 1;
+        let direction_deg = match region {
+            Some(r) => r.gates[i].direction_deg(),
+            None => config.gates.gates[i].direction_deg,
+        };
         let Some(to) = (0..n_chambers).min_by(|&a, &b| {
             let d = |k: usize| {
                 let q = center(nodes[k].cell, w, cell);
@@ -528,6 +559,11 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout, ch
             length_m,
             path_m,
         });
+        if region.is_some() {
+            // The mixed map draws its own gate markers; a portal has none.
+            gates.push(CaveGate { id, direction_deg, point_m: [p.0, p.1], chamber: nd.chamber, object: usize::MAX });
+            continue;
+        }
         objects.push(PlacedObject {
             category: Category::Gate,
             type_name: GATE_NAME.to_owned(),
@@ -540,7 +576,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout, ch
             parts: Vec::new(),
             round: false,
         });
-        gates.push(CaveGate { id, direction_deg: spec.direction_deg, point_m: [p.0, p.1], chamber: nd.chamber, object: objects.len() - 1 });
+        gates.push(CaveGate { id, direction_deg, point_m: [p.0, p.1], chamber: nd.chamber, object: objects.len() - 1 });
     }
 
     // Tunnel floor = dug cells off the chambers.
@@ -803,8 +839,8 @@ mod tests {
     fn run(c: &LevelConfig, seed: u64) -> All {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let st = style::build(c, &mut rng).layout;
-        let ch = chambers::build(c, &mut rng, &st).layout;
-        let t = build(c, &mut rng, &st, &ch);
+        let ch = chambers::build(c, &mut rng, &st, None).layout;
+        let t = build(c, &mut rng, &st, &ch, None);
         All { style: st, chambers: ch, t }
     }
 

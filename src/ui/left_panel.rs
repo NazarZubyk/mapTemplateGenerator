@@ -115,6 +115,10 @@ fn swamp_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
 
 /// The cave chain (docs/cave-plan.md), shown instead of the town nodes.
 fn cave_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    if app.in_map_region {
+        node_mountain_passes(ui, app);
+        flow_arrow(ui, "passes over the massif; the rest of the rock for the caves");
+    }
     node_cave_style(ui, app);
     flow_arrow(ui, "natural / hand-made zones");
     node_chambers(ui, app);
@@ -220,9 +224,9 @@ fn mixed_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     });
     let i = app.mixed_selected;
     ui.weak(
-        "Forest, town and swamp regions are built with the settings below (inside their own \
-         ground; whole-map counts scaled to the region's size when \"Scale amounts\" is on). \
-         Mountain regions keep their settings until their step (docs/mixed-plan.md, M7).",
+        "Each region is built with the settings below, inside its own ground (whole-map counts \
+         scaled to the region's size when \"Scale amounts\" is on). Mountains: passes over the \
+         massif, then the cave nodes for the caves inside.",
     );
     ui.checkbox(&mut app.config.mixed.regions[i].scale_amounts, "Scale amounts").on_hover_text(
         "Counts set for a whole map — forest areas, interactive objects, hidden rooms, the mob \
@@ -256,6 +260,50 @@ fn mixed_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
 fn set_by_mixed_map(ui: &mut egui::Ui, title: &str, by: &str) {
     node(ui, title, |ui| {
         ui.weak(format!("Set for the whole map by {by}."));
+    });
+}
+
+/// A mountain region's passes (mixed maps, step M7 in docs/mixed-plan.md).
+fn node_mountain_passes(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_COUNT: &str = "Passes over the massif. Each links two of the mountain's openings, the \
+farthest apart first, along the low ground (saddles, valleys). With too few openings, a pass climbs \
+from one up into the massif and ends at a cave entrance. Openings no pass takes are cave mouths in \
+the rock face. 0 = caves only.";
+    const TIP_WIDTH: &str = "Width of a pass, meters.";
+    const TIP_BUFFER: &str = "Solid rock kept between a pass and the caves, meters: the caves never \
+break into a pass. Wider: thicker rock, less room for caves. A pass across the massif cuts the rock \
+in two; the caves live in the bigger piece.";
+    const TIP_ENTRANCES: &str = "Ways down into the caves off each pass: a short spur through the \
+rock to a cave tunnel. A pass always gets at least one where the caves' rock comes nearest, so the \
+passes and caves are one piece. NO EFFECT with 0 passes.";
+    const TIP_LOW: &str = "How strongly a pass keeps to the low ground, %: high = it winds through \
+the saddles and valleys; 0 = it takes the shortest way over the top.";
+    const TIP_WIGGLE: &str = "How much a pass winds beyond what the land gives, %.";
+    const TIP_COLOR: &str = "Pass color on the map image, the preview and the legend.";
+    node(ui, "1b · Passes", |ui| {
+        ui.weak("input: the mountain region, its openings · output: passes over the massif, the caves' rock");
+        let s = &mut app.config.cave.passes;
+        egui::Grid::new("mountain_passes_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Passes", TIP_COUNT, |ui| ui.add(egui::DragValue::new(&mut s.count).range(0..=6).speed(0.05)));
+            param_row(ui, "Width", TIP_WIDTH, |ui| ui.add(meters(&mut s.width_m, 12.0)));
+            param_row(ui, "Rock buffer", TIP_BUFFER, |ui| ui.add(meters(&mut s.buffer_m, 20.0)));
+            param_row(ui, "Cave entrances", TIP_ENTRANCES, |ui| ui.add(egui::DragValue::new(&mut s.entrances).range(0..=4).speed(0.05)));
+            param_row(ui, "Low ground", TIP_LOW, |ui| ui.add(egui::Slider::new(&mut s.low_ground_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Wiggle", TIP_WIGGLE, |ui| ui.add(egui::Slider::new(&mut s.wiggle_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Color", TIP_COLOR, |ui| ui.color_edit_button_srgb(&mut s.color));
+        });
+        ui.horizontal(|ui| {
+            if ui.button("🎲 Random params").on_hover_text("Rolls every pass setting independently inside its reasonable range. Set values only; press Generate.").clicked() {
+                let mut rng = rand::rng();
+                s.count = rng.random_range(0..=3);
+                s.width_m = rng.random_range(2.0..=5.0);
+                s.buffer_m = rng.random_range(2.0..=8.0);
+                s.entrances = rng.random_range(0..=2);
+                s.low_ground_pct = rng.random_range(0.0..=100.0);
+                s.wiggle_pct = rng.random_range(0.0..=100.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
     });
 }
 
@@ -1338,14 +1386,18 @@ zone at the edge. Where it leads is up to the game.";
             param_row(ui, "Max turns", TIP_TURNS, |ui| ui.add(egui::DragValue::new(&mut s.max_turns).range(0..=4).speed(0.05)));
             param_row(ui, "Stub length", TIP_STUB, |ui| range_m(ui, &mut s.stub_min_m, &mut s.stub_max_m, 1.0..=60.0));
         });
-        let mut remove = None;
-        egui::Grid::new("cave_gates_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
-            remove = gate_list_rows(ui, &mut app.config.gates.gates, TIP_GATES, false);
-        });
-        if let Some(i) = remove {
-            app.config.gates.gates.remove(i);
+        if app.in_map_region {
+            ui.weak("Gates: the mountain's openings no pass took (cave mouths in the rock face), the map gates landing on it and the ways down from its passes — set by the mixed map's 5 · Connections node and the Passes node.");
+        } else {
+            let mut remove = None;
+            egui::Grid::new("cave_gates_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+                remove = gate_list_rows(ui, &mut app.config.gates.gates, TIP_GATES, false);
+            });
+            if let Some(i) = remove {
+                app.config.gates.gates.remove(i);
+            }
+            ui.horizontal(|ui| gate_list_buttons(ui, &mut app.config.gates.gates));
         }
-        ui.horizontal(|ui| gate_list_buttons(ui, &mut app.config.gates.gates));
         let s = &mut app.config.cave.tunnels;
         ui.horizontal(|ui| {
             if ui

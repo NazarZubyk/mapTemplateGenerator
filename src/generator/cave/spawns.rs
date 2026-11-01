@@ -69,6 +69,8 @@ pub struct CaveGround<'a> {
     pub tunnels: &'a TunnelLayout,
     pub carve: &'a CarveLayout,
     pub hazards: &'a HazardLayout,
+    /// A map region's inner rock (mixed maps): hidden pockets stay in it.
+    pub inside: Option<Vec<bool>>,
 }
 
 impl<'a> CaveGround<'a> {
@@ -97,6 +99,7 @@ impl<'a> CaveGround<'a> {
             tunnels,
             carve,
             hazards,
+            inside: None,
         }
     }
 
@@ -277,7 +280,7 @@ pub(crate) fn hidden_rooms(config: &LevelConfig, rng: &mut ChaCha8Rng, g: &CaveG
     let near_gate = g.near_gates(GATE_CLEAR_M.max(hidden_rooms::GATE_CLEARANCE_M));
     let edge = |c: usize| {
         let (x, y) = (c % w, c / w);
-        x < 2 || y < 2 || x + 2 >= w || y + 2 >= h
+        x < 2 || y < 2 || x + 2 >= w || y + 2 >= h || g.inside.as_ref().is_some_and(|m| !m[c])
     };
     // A pocket sits in solid rock a cell clear of any floor.
     let near_floor = dilate(&g.carve.floor.cells, w, h, 1);

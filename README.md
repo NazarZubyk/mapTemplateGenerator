@@ -25,7 +25,7 @@ and mobs.
 | **Swamp** | islands, mud paths, boardwalks, water by depth, trees | 🧪 being tuned |
 | **Forest** | wild and managed areas, rock ridges, streams, thickets, trails, trees | 🧪 being tuned |
 | **Cave** | natural caverns and hand-dug mines, tunnels, chasms, pools | 🧪 being tuned |
-| **Mixed** | several regions on one map — town, swamp, forest, mountains with caves — each with its own settings | 🚧 being built (regions, land, rivers, the ways between regions, forest, town and swamp regions so far) |
+| **Mixed** | several regions on one map — town, swamp, forest, mountains with caves — each with its own settings | 🚧 being built (every region kind works — mountains with passes and caves; joining the borders next) |
 
 Every kind also places props, interactive objects, hidden rooms and mobs.
 The app opens on a Mixed map; switch the kind in **1 · Template**.

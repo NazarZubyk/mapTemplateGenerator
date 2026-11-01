@@ -94,6 +94,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, thi
     let gate_name = |i: usize| match region.and_then(|r| r.gates.get(i)).map(|g| g.kind) {
         Some(crate::generator::region::FixedGateKind::Portal { to, .. }) => format!("The opening to region {to}"),
         Some(crate::generator::region::FixedGateKind::MapGate { gate }) => format!("Gate #{gate}"),
+        Some(crate::generator::region::FixedGateKind::PassEntrance { pass }) => format!("The entrance off pass {pass}"),
         None => format!("Gate #{}", i + 1),
     };
     let cell_at = |p: (f32, f32)| ((p.1 / cell) as usize).min(h - 1) * w + ((p.0 / cell) as usize).min(w - 1);

@@ -16,6 +16,8 @@ pub enum FixedGateKind {
     Portal { portal: u32, to: u8 },
     /// A map gate (its id in the gate list).
     MapGate { gate: u32 },
+    /// A way down into a mountain's caves from one of its passes.
+    PassEntrance { pass: u32 },
 }
 
 /// A gate at a fixed point on the region's edge.

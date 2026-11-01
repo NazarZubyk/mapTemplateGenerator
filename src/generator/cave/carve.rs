@@ -27,6 +27,7 @@ use crate::generator::grid;
 use crate::generator::noise::NoiseField;
 use crate::generator::swamp::paths::polyline_cells;
 use crate::level::{CarveLayout, CaveStyle, CellMask, ChamberLayout, StyleLayout, TunnelLayout};
+use crate::generator::region::RegionCtx;
 use crate::model::LevelConfig;
 
 pub struct CarveBuild {
@@ -44,14 +45,16 @@ const POCKET_M2: f32 = 6.0;
 /// fBm rarely leaves 0.5 ± 0.25; stretched so `ROUGH_M` is about the swing.
 const ROUGH_GAIN: f32 = 2.0;
 
-pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout, chambers: &ChamberLayout, tunnels: &TunnelLayout) -> CarveBuild {
+pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout, chambers: &ChamberLayout, tunnels: &TunnelLayout, region: Option<&RegionCtx>) -> CarveBuild {
     let s = &config.cave.carve;
     let (w, h, cell) = (chambers.width, chambers.height, chambers.cell_size_m);
     let n = w * h;
     let notes = Vec::new();
     let noise = NoiseField::new(rng.random::<u64>());
     let natural: Vec<bool> = (0..n).map(|c| style.style_at(c) == CaveStyle::Natural).collect();
-    let edge = |c: usize| c.is_multiple_of(w) || c / w == 0 || c % w == w - 1 || c / w == h - 1;
+    // The map edge — and, in a map region, everything outside it (rock that
+    // never turns floor).
+    let edge = |c: usize| c.is_multiple_of(w) || c / w == 0 || c % w == w - 1 || c / w == h - 1 || region.is_some_and(|r| !r.inside(c));
 
     // 1. Carve.
     let original: Vec<bool> = (0..n).map(|c| chambers.ids[c] > 0 || tunnels.mask.cells[c]).collect();
@@ -129,6 +132,8 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, style: &StyleLayout, ch
     }
     for c in 0..n {
         floor[c] |= core[c];
+        // A map region: no floor outside it.
+        floor[c] &= region.is_none_or(|r| r.inside(c));
     }
 
     // 4. Clean up: keep the main floor. A cut-off piece that matters (hand-
@@ -282,9 +287,9 @@ mod tests {
     fn run(c: &LevelConfig, seed: u64) -> All {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let st = style::build(c, &mut rng).layout;
-        let ch = chambers::build(c, &mut rng, &st).layout;
-        let t = tunnels::build(c, &mut rng, &st, &ch).layout;
-        let carve = build(c, &mut rng, &st, &ch, &t);
+        let ch = chambers::build(c, &mut rng, &st, None).layout;
+        let t = tunnels::build(c, &mut rng, &st, &ch, None).layout;
+        let carve = build(c, &mut rng, &st, &ch, &t, None);
         All { style: st, chambers: ch, tunnels: t, carve }
     }
 

@@ -19,6 +19,7 @@
 
 use rand_chacha::{rand_core::SeedableRng, ChaCha8Rng};
 
+use crate::generator::region::RegionCtx;
 use crate::generator::Progress;
 use crate::level::{CaveLayout, GeneratedLevel};
 use crate::model::LevelConfig;
@@ -32,6 +33,14 @@ pub mod style;
 
 /// Generate a cave level: one RNG stream, nodes in fixed order.
 pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progress) -> GeneratedLevel {
+    generate_in(config, seed, None, progress)
+}
+
+/// Generate a cave — a whole map, or with `region` inside a map region of
+/// a mixed map (the caves of a mountain, docs/mixed-plan.md, M7): chambers
+/// and tunnels only inside it, gate tunnels from its fixed gates (cave
+/// mouths), the rest rock.
+pub fn generate_in(config: &LevelConfig, seed: u64, region: Option<&RegionCtx>, progress: Progress) -> GeneratedLevel {
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     let mut notes = Vec::new();
 
@@ -40,15 +49,15 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
     notes.extend(style.notes);
 
     progress("Carving chambers", 0.3);
-    let chambers = chambers::build(config, &mut rng, &style.layout);
+    let chambers = chambers::build(config, &mut rng, &style.layout, region);
     notes.extend(chambers.notes);
 
     progress("Digging tunnels", 0.5);
-    let tunnels = tunnels::build(config, &mut rng, &style.layout, &chambers.layout);
+    let tunnels = tunnels::build(config, &mut rng, &style.layout, &chambers.layout, region);
     notes.extend(tunnels.notes);
 
     progress("Smoothing the walls", 0.7);
-    let carve = carve::build(config, &mut rng, &style.layout, &chambers.layout, &tunnels.layout);
+    let carve = carve::build(config, &mut rng, &style.layout, &chambers.layout, &tunnels.layout, region);
     notes.extend(carve.notes);
 
     progress("Opening chasms and pools", 0.85);
@@ -56,7 +65,9 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
     notes.extend(hazards.notes);
 
     let stage = |from, to| crate::generator::Stage { progress, from, to };
-    let ground = spawns::CaveGround::new(&style.layout, &chambers.layout, &tunnels.layout, &carve.layout, &hazards.layout);
+    let mut ground = spawns::CaveGround::new(&style.layout, &chambers.layout, &tunnels.layout, &carve.layout, &hazards.layout);
+    // A map region: hidden pockets in its own rock, 2 m off its edge.
+    ground.inside = region.map(|r| r.edge_dist.iter().map(|&d| d >= 2.0).collect());
 
     progress("Placing props", 0.88);
     let props = spawns::props(config, &mut rng, &ground);
@@ -87,8 +98,9 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
 
     // Gate markers last, so they draw on top.
     let mut tunnel_layout = tunnels.layout;
-    for g in &mut tunnel_layout.gates {
-        g.object += objects.len();
+    let base = objects.len();
+    for g in tunnel_layout.gates.iter_mut().filter(|g| g.object != usize::MAX) {
+        g.object += base;
     }
     objects.extend(tunnels.objects);
 
@@ -114,6 +126,7 @@ pub fn generate_with_progress(config: &LevelConfig, seed: u64, progress: Progres
             tunnels: Some(tunnel_layout),
             carve: Some(carve.layout),
             hazards: Some(hazards.layout),
+            passes: None,
         }),
         forest: None,
         mixed: None,

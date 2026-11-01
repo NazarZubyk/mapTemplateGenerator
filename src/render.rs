@@ -268,19 +268,24 @@ pub fn mixed_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[u
     let land = m.land.as_ref().filter(|l| l.height_m.len() == w * h);
     let water = m.water.as_ref().filter(|wl| wl.deep.cells.len() == w * h);
     // A region whose chain ran shows its own ground (water included).
-    let built: Vec<Option<Vec<[u8; 3]>>> = m
+    let built: Vec<Option<Vec<Option<[u8; 3]>>>> = m
         .levels
         .iter()
         .map(|l| {
-            l.as_ref()
-                .and_then(|l| ground_colors(l).or_else(|| town_colors(l, water)).or_else(|| swamp_colors(l)))
+            let l = l.as_ref()?;
+            if l.cave.is_some() {
+                return mountain_colors(l).filter(|g| g.len() == w * h);
+            }
+            ground_colors(l)
+                .or_else(|| town_colors(l, water))
+                .or_else(|| swamp_colors(l))
                 .filter(|g| g.3.len() == w * h)
-                .map(|g| g.3)
+                .map(|g| g.3.into_iter().map(Some).collect())
         })
         .collect();
     let own = |c: usize| -> Option<[u8; 3]> {
         let id = *m.map.ids.get(c)? as usize;
-        built.get(id.checked_sub(1)?)?.as_ref().map(|g| g[c])
+        built.get(id.checked_sub(1)?)?.as_ref().and_then(|g| g[c])
     };
     let colors = (0..w * h)
         .map(|c| {
@@ -422,6 +427,30 @@ pub fn chain_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
     out
 }
 
+/// A mountain region's own ground per cell (mixed maps): the caves inside
+/// (floor, wall rim, hazards) and the passes over the massif; `None` on the
+/// massif's bare rock, which keeps the mixed map's shaded stone.
+pub fn mountain_colors(level: &GeneratedLevel) -> Option<Vec<Option<[u8; 3]>>> {
+    let cave = level.cave.as_ref()?;
+    let carve = cave.carve.as_ref()?;
+    let (_, _, _, colors) = cave_colors(level)?;
+    let pass = cave.passes.as_ref();
+    let pass_color = level.config.cave.passes.color;
+    Some(
+        (0..colors.len())
+            .map(|c| {
+                if pass.is_some_and(|p| p.mask.cells[c]) {
+                    Some(pass_color)
+                } else if carve.floor.cells[c] || carve.wall.cells[c] {
+                    Some(colors[c])
+                } else {
+                    None
+                }
+            })
+            .collect(),
+    )
+}
+
 /// A swamp region's ground per cell (mixed maps): the swamp's own map —
 /// water bands, islands, paths, boardwalks — without its objects.
 pub fn swamp_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[u8; 3]>)> {
@@ -452,6 +481,15 @@ pub fn mixed_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
         .filter(|r| m.levels.get(r.id as usize - 1).is_none_or(|l| l.is_none()))
         .map(|r| (r.color, format!("{} · {} ({})", r.id, r.name, r.kind.region_label())))
         .collect();
+    // Mountains: their bare rock keeps the region color; their passes.
+    for (r, l) in m.regions.iter().zip(&m.levels) {
+        if let Some(l) = l.as_ref().filter(|l| l.cave.is_some()) {
+            out.push((r.color, format!("{} · {} (mountain rock, blocked)", r.id, r.name)));
+            if l.cave.as_ref().and_then(|c| c.passes.as_ref()).is_some_and(|p| !p.passes.is_empty()) {
+                out.push((l.config.cave.passes.color, "mountain pass (walkable)".to_owned()));
+            }
+        }
+    }
     // The ground kinds of the regions whose chain ran.
     for l in m.levels.iter().flatten() {
         for e in ground_legend(l).into_iter().chain(chain_legend(l)) {

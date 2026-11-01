@@ -248,6 +248,8 @@ impl MixedRegion {
         c.forest.areas.count = scale(c.forest.areas.count);
         c.swamp.islands.hub_count = scale(c.swamp.islands.hub_count);
         c.swamp.islands.small_count = scale(c.swamp.islands.small_count);
+        c.cave.chambers.hall_count = scale(c.cave.chambers.hall_count);
+        c.cave.chambers.grotto_count = scale(c.cave.chambers.grotto_count);
         for t in &mut c.interactive {
             t.quantity = scale(t.quantity);
         }
@@ -561,6 +563,37 @@ pub struct CaveSettings {
     pub carve: CarveSettings,
     /// Node 6: chasms and pools.
     pub hazards: HazardSettings,
+    /// Mixed maps: the passes over a mountain region (a cave region is a
+    /// massif with the caves inside; docs/mixed-plan.md, M7).
+    pub passes: MountainPassSettings,
+}
+
+/// Settings of a mountain region's passes: surface trails over the massif
+/// between two of its openings, along the low saddles.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MountainPassSettings {
+    /// Passes over the massif, each between two of its openings (the
+    /// farthest apart first). Openings no pass uses are cave mouths.
+    pub count: u32,
+    /// Width of a pass, meters.
+    pub width_m: f32,
+    /// Solid rock kept between a pass and the caves, meters.
+    pub buffer_m: f32,
+    /// Cave entrances off each pass: a short way down into the caves.
+    pub entrances: u32,
+    /// How strongly a pass keeps to the low ground (saddles, valleys), %.
+    pub low_ground_pct: f32,
+    /// How much a pass winds beyond what the land gives, %.
+    pub wiggle_pct: f32,
+    /// Pass color on the map.
+    pub color: [u8; 3],
+}
+
+impl Default for MountainPassSettings {
+    fn default() -> Self {
+        Self { count: 1, width_m: 3.0, buffer_m: 4.0, entrances: 1, low_ground_pct: 70.0, wiggle_pct: 40.0, color: [214, 192, 146] }
+    }
 }
 
 /// Settings of the cave hazards node (step C5): chasms in halls (with

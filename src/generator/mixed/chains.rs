@@ -13,8 +13,8 @@
 //!   to its size) and its own random stream (the seed mixed with its id, so
 //!   changing one region never reshuffles another).
 //!
-//! Built so far: Forest (M4), Town (M5), Swamp (M6). Mountains keep their
-//! region-map color until their step.
+//! Every kind is built: Forest (M4), Town (M5), Swamp (M6), Mountains — the
+//! cave kind: passes over a massif, the caves inside (M7).
 
 use crate::generator::mixed::connections::capsule_cells;
 use crate::generator::region::{edge_distance, FixedGate, FixedGateKind, RegionCtx};
@@ -29,7 +29,7 @@ const MAP_GATE_WIDTH_M: f32 = 3.0;
 
 /// The kinds whose chain runs inside a map region so far.
 pub fn builds(kind: MapKind) -> bool {
-    matches!(kind, MapKind::Forest | MapKind::Town | MapKind::Swamp)
+    matches!(kind, MapKind::Forest | MapKind::Town | MapKind::Swamp | MapKind::Cave)
 }
 
 /// A region's own random stream: the map seed mixed with its id.
@@ -117,6 +117,7 @@ pub fn build(config: &LevelConfig, seed: u64, m: &MixedLayout, land: &TerrainLay
             MapKind::Forest => crate::generator::forest::generate_in(&cfg, region_seed(seed, r.id), Some(&ctx), &local),
             MapKind::Town => crate::generator::town_in(&cfg, region_seed(seed, r.id), Some(&ctx), &local),
             MapKind::Swamp => crate::generator::swamp::generate_in(&cfg, region_seed(seed, r.id), Some(&ctx), &local),
+            MapKind::Cave => crate::generator::mountains::generate_in(&cfg, region_seed(seed, r.id), &ctx, &local),
             _ => unreachable!("only built kinds get here"),
         };
         notes.extend(level.notes.iter().map(|n| format!("Region {} ({}): {n}", r.id, r.name)));
@@ -242,6 +243,39 @@ mod tests {
             }
         }
         assert!(swamps > 0);
+    }
+
+    #[test]
+    fn a_mountain_is_one_piece_of_passes_and_caves_reaching_its_openings() {
+        let mut passes = 0;
+        for seed in 1..=6 {
+            let lvl = crate::generator::generate(&config(), seed);
+            let m = lvl.mixed.as_ref().unwrap();
+            let (w, h, cell) = (m.map.width, m.map.height, m.map.cell_size_m);
+            for (r, level) in m.regions.iter().zip(&m.levels) {
+                let Some(level) = level.as_ref().filter(|_| r.kind == MapKind::Cave) else { continue };
+                let cave = level.cave.as_ref().unwrap();
+                let floor = &cave.carve.as_ref().unwrap().floor;
+                let pass = cave.passes.as_ref().unwrap();
+                passes += pass.passes.len();
+                let walk: Vec<bool> = (0..w * h).map(|c| floor.cells[c] || pass.mask.cells[c]).collect();
+                assert!((0..w * h).all(|c| !walk[c] || m.map.ids[c] == r.id), "seed {seed}: mountain ground outside its region");
+                let (labels, pieces) = crate::generator::grid::components(&CellMask { width: w, height: h, cell_size_m: cell, cells: walk });
+                assert_eq!(pieces, 1, "seed {seed}: mountain in {pieces} pieces; notes {:?}", lvl.notes);
+                // Every opening: a pass end or a cave mouth on the ground.
+                let cn = m.connections.as_ref().unwrap();
+                let points: Vec<[f32; 2]> = cn.portals_of(r.id).map(|p| p.point_m).chain(cn.gates.iter().filter(|g| g.region == r.id).map(|g| g.point_m)).collect();
+                for p in points {
+                    let near = (0..w * h).any(|c| labels[c] == 1 && (((c % w) as f32 + 0.5) * cell - p[0]).hypot(((c / w) as f32 + 0.5) * cell - p[1]) < 4.0);
+                    assert!(near, "seed {seed}: no way in at the opening {p:?}; notes {:?}", lvl.notes);
+                }
+                for o in &level.objects {
+                    let c = ((o.y_m + o.h_m / 2.0) / cell) as usize * w + ((o.x_m + o.w_m / 2.0) / cell) as usize;
+                    assert_eq!(m.map.ids[c], r.id, "seed {seed}: a {} outside the mountains", o.type_name);
+                }
+            }
+        }
+        assert!(passes > 0, "no mountain ever got a pass");
     }
 
     #[test]

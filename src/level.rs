@@ -1379,6 +1379,30 @@ pub struct CaveLayout {
     pub carve: Option<CarveLayout>,
     #[serde(default)]
     pub hazards: Option<HazardLayout>,
+    /// A mountain region's passes over the massif (mixed maps).
+    #[serde(default)]
+    pub passes: Option<MountainPasses>,
+}
+
+/// One pass over a mountain region's massif.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MountainPass {
+    pub id: u32,
+    /// The two openings it links (the region's fixed gates, 1-based).
+    pub gates: [u32; 2],
+    pub width_m: f32,
+    pub length_m: f32,
+    pub path_m: Vec<[f32; 2]>,
+    /// Where a way goes down into the caves.
+    pub entrances: Vec<[f32; 2]>,
+}
+
+/// A mountain region's passes (M7): the trails over the massif and the
+/// spurs to the cave entrances, as one walkable mask.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MountainPasses {
+    pub mask: CellMask,
+    pub passes: Vec<MountainPass>,
 }
 
 /// The mobs node's output.
