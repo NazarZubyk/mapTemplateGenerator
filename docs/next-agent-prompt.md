@@ -96,7 +96,9 @@ length/shape settings and the river border rule (rivers cross a border
 clearly or keep `river_clearance_m` off it). On a mixed map the cave kind
 is labelled **Mountains** (a massif with the caves inside); M4 (forest
 regions: `generator/region.rs` `RegionCtx`, `mixed/chains.rs`,
-`forest::generate_in`) is done — next M5, town regions; next M4, the
+`forest::generate_in`) and M5 (town regions: `generator::town_in`, fixed
+gates in `gates::build`, rivers on bridges) are done — next M6, swamp
+regions; next M4, the
 forest region chain inside its own ground (domain, portals and gates as
 fixed gates, the global water). The app and MCP start on Mixed.
 Single-kind maps must stay byte-identical (the chains get the new behaviour

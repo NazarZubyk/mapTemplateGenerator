@@ -228,7 +228,7 @@ connections) cannot disagree; and a single-kind map does not change at all
       map gates per region, river crossings.
 - [x] **M4 — Region chains: Forest** (domain, fixed gates, global water,
       domain edge band). Forest first: it already uses the same water.
-- [ ] **M5 — Region chains: Town** (shape = domain, wall around it, gates
+- [x] **M5 — Region chains: Town** (shape = domain, wall around it, gates
       at portals, river input: bridges, water gates).
 - [ ] **M6 — Region chains: Swamp** (islands in the domain, gate anchors at
       portals, river mouths).
@@ -437,3 +437,36 @@ Two user requests:
   domain; another region's settings never change it; counts scale.
 - Open for M8: the portal corridors are drawn as the mixed map's opening
   strip; the seams pass will join the two sides for real.
+
+## Step M5 notes — town regions
+
+`generator::town_in` (`town_chain` = no region, unchanged — fingerprinted).
+
+- **Shape** = the region's ground, two cells off the map edge (the outer
+  wall finds its inside by flooding from the map border, so a town that
+  touched the edge came out empty). The wall walks the region's edge.
+- **Water**: inside the wall, the mixed map's water is no town ground,
+  except on the bridges; pieces it cuts off that M3 did not bridge (too
+  small) are left out (`town_ground_in`). M3 now treats shallow brooks as
+  cutting a town too (a town builds on neither), and a town's bridges are
+  at least its road width + 1 m wide (`chains::context(.., bridge_m)`).
+  Bridge cells join the road mask, so nothing is built on them and the map
+  shows them as bridges.
+- **Gates** (`gates::build(.., fixed)`): a fixed gate casts a ray from 14 m
+  inside the region out through its point (sliding up to 10 m along the
+  edge) and the usual opening + gate road follow. If a district wall boxes
+  the gate in (a sliver of a district between the outer wall and its own
+  wall), the gate road goes through that district wall and opens it, as
+  roads do. No gate markers of its own (`object = usize::MAX`).
+- **Clip**: after the gates, town ground and roads end at the region's
+  edge (a wall opening can reach past it); specks of floor (≤ 4 m²) boxed
+  in by walls are dropped.
+- Hidden rooms go inside the wall only (outside is another region).
+- **Map**: `render::town_colors` — the town's own map without its objects
+  at one pixel per cell, then the mixed map's water where the town did not
+  build (water; a bridge where a road crosses it; the wall standing over
+  it). The town's Region shape and Gates nodes show "set by the mixed map".
+- Tested: a town region's floor (minus the district walls) is one piece
+  inside its region, it reaches every portal and map gate with a gate
+  road, it never stands on water off a bridge (and towns do get bridged),
+  its objects lie in its region.

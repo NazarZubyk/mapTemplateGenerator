@@ -268,8 +268,11 @@ pub fn mixed_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[u
     let land = m.land.as_ref().filter(|l| l.height_m.len() == w * h);
     let water = m.water.as_ref().filter(|wl| wl.deep.cells.len() == w * h);
     // A region whose chain ran shows its own ground (water included).
-    let built: Vec<Option<Vec<[u8; 3]>>> =
-        m.levels.iter().map(|l| l.as_ref().and_then(ground_colors).filter(|g| g.3.len() == w * h).map(|g| g.3)).collect();
+    let built: Vec<Option<Vec<[u8; 3]>>> = m
+        .levels
+        .iter()
+        .map(|l| l.as_ref().and_then(|l| ground_colors(l).or_else(|| town_colors(l, water))).filter(|g| g.3.len() == w * h).map(|g| g.3))
+        .collect();
     let own = |c: usize| -> Option<[u8; 3]> {
         let id = *m.map.ids.get(c)? as usize;
         built.get(id.checked_sub(1)?)?.as_ref().map(|g| g[c])
@@ -328,6 +331,43 @@ pub fn mixed_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[u
             }
         }
     }
+    Some((w, h, cell, colors))
+}
+
+/// A town region's ground per cell (mixed maps): the town's own map —
+/// districts, roads, walls — without its objects (they are drawn on top),
+/// then the mixed map's rivers where the town did not build: water, a
+/// bridge where a road crosses it, the wall standing over it.
+pub fn town_colors(level: &GeneratedLevel, water: Option<&crate::level::WaterLayout>) -> Option<(usize, usize, f32, Vec<[u8; 3]>)> {
+    use crate::level::ForestGround as G;
+    let split = level.regions.as_ref()?;
+    let (w, h, cell) = (split.map.width, split.map.height, split.map.cell_size_m);
+    let mut bare = level.clone();
+    bare.objects.clear();
+    bare.mixed = None;
+    let img = rasterize(&bare, 1.0 / cell).map;
+    if img.width() as usize != w || img.height() as usize != h {
+        return None;
+    }
+    let wall = |c: usize| level.walls.as_ref().is_some_and(|wl| wl.mask.cells[c]);
+    let road = |c: usize| level.roads.as_ref().is_some_and(|r| r.mask.cells[c]);
+    let colors = (0..w * h)
+        .map(|c| {
+            let px = img.get_pixel((c % w) as u32, (c / w) as u32).0;
+            match water {
+                Some(wl) if !wall(c) && (wl.deep.cells[c] || wl.shallow.cells[c]) => {
+                    if road(c) {
+                        G::Bridge.color()
+                    } else if wl.deep.cells[c] {
+                        G::Deep.color()
+                    } else {
+                        G::Shallow.color()
+                    }
+                }
+                _ => px,
+            }
+        })
+        .collect();
     Some((w, h, cell, colors))
 }
 

@@ -267,10 +267,14 @@ fn crossings(s: &crate::model::MixedConnectionSettings, m: &MixedLayout, water: 
     let center = |c: usize| [((c % w) as f32 + 0.5) * cell, ((c / w) as f32 + 0.5) * cell];
     let mut out = Vec::new();
     for r in &m.regions {
-        if water.deep.count_true() == 0 {
+        if water.deep.count_true() == 0 && water.shallow.count_true() == 0 {
             break;
         }
-        let ground = CellMask { width: w, height: h, cell_size_m: cell, cells: (0..w * h).map(|c| ids[c] == r.id && !water.deep.cells[c]).collect() };
+        // A town builds on no water: shallow brooks cut it too (and get a
+        // bridge); elsewhere shallow water is walked through.
+        let town = r.kind == MapKind::Town;
+        let wet = |c: usize| water.deep.cells[c] || (town && water.shallow.cells[c]);
+        let ground = CellMask { width: w, height: h, cell_size_m: cell, cells: (0..w * h).map(|c| ids[c] == r.id && !wet(c)).collect() };
         let (labels, count) = grid::components(&ground);
         if count < 2 {
             continue;

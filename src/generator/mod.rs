@@ -83,8 +83,45 @@ pub fn generate_with_progress(
 /// [`generate_with_progress`]; the tests also run it on other kinds to
 /// check it copes with island shapes and no houses.
 pub(crate) fn town_chain(config: &LevelConfig, seed: u64, progress: Progress) -> GeneratedLevel {
+    town_in(config, seed, None, progress)
+}
+
+/// The town chain — a whole map, or with `region` one map region of a
+/// mixed map (docs/mixed-plan.md, M5): the town fills the region, its wall
+/// along the region's edge; the portals and map gates landing in it are its
+/// gates; the mixed map's rivers run through it, crossed on bridges (kept
+/// clear like roads); no hidden room outside the wall (that is another
+/// region).
+pub fn town_in(config: &LevelConfig, seed: u64, region: Option<&region::RegionCtx>, progress: Progress) -> GeneratedLevel {
     let stage = |from, to| Stage { progress, from, to };
-    let built = shape::build_with_progress(config, seed, &stage(0.0, 0.55));
+    let built = match region {
+        Some(r) => shape::ShapeBuild {
+            shape: LevelShape {
+                // Two cells off the map edge: the wall's inside is found by
+                // flooding from the map border, which needs room outside it.
+                mask: {
+                    let mut m = r.domain.clone();
+                    let (w, h) = (m.width, m.height);
+                    for (c, v) in m.cells.iter_mut().enumerate() {
+                        let (x, y) = (c % w, c / w);
+                        *v &= x >= 2 && y >= 2 && x + 2 < w && y + 2 < h;
+                    }
+                    m
+                },
+                stats: crate::level::ShapeStats {
+                    raw_blobs: 1,
+                    speckle_cells_removed: 0,
+                    bridges: 0,
+                    hole_cells_filled: 0,
+                    sections: 1,
+                    section_bridges: 0,
+                    coverage_pct: 0.0,
+                },
+            },
+            noise_preview: crate::level::NoiseTexture { width: 0, height: 0, cell_size_m: r.domain.cell_size_m, values: Vec::new() },
+        },
+        None => shape::build_with_progress(config, seed, &stage(0.0, 0.55)),
+    };
     let mut notes = Vec::new();
     if built.shape.mask.count_true() == 0 {
         notes.push(format!(
@@ -112,6 +149,9 @@ pub(crate) fn town_chain(config: &LevelConfig, seed: u64, progress: Progress) ->
                 }
                 region_mask = w.region;
                 walls = Some(w.wall);
+                if let Some(r) = region {
+                    region_mask = town_ground_in(r, region_mask);
+                }
             }
             None => notes.push(
                 "Outer wall skipped: the region is too small for these segment lengths"
@@ -146,9 +186,48 @@ pub(crate) fn town_chain(config: &LevelConfig, seed: u64, progress: Progress) ->
     // openings plus a road into the network, so houses, props and the rest
     // keep off the gate roads and mobs keep away from the gates. Markers
     // are appended last so they draw on top.
+    let mut region_walls = region_walls;
     let gates = regions.as_mut().map(|split| {
-        gates::build(config, split, walls.as_mut(), region_walls.as_ref().map(|w| &w.mask), roads.as_mut())
+        gates::build(config, split, walls.as_mut(), region_walls.as_mut().map(|w| &mut w.mask), roads.as_mut(), region.map(|r| r.gates.as_slice()))
     });
+    // A map region: its town ground and roads end at its edge (a gate
+    // opening in the wall can reach past it); its bridges stay clear like
+    // roads (nothing is built on them).
+    if let (Some(r), Some(split)) = (region, regions.as_mut()) {
+        for (c, id) in split.map.ids.iter_mut().enumerate() {
+            if !r.inside(c) {
+                *id = 0;
+            }
+        }
+        if let Some(net) = roads.as_mut() {
+            for c in 0..net.mask.cells.len() {
+                net.mask.cells[c] = (net.mask.cells[c] && r.inside(c)) || (r.bridges.cells[c] && split.map.ids[c] != 0);
+            }
+        }
+        // Specks of town floor the walls box in (a cell or two between a
+        // wall and the edge) are no town: one walkable piece.
+        let rw = region_walls.as_ref().map(|x| &x.mask);
+        let floor = CellMask {
+            width: split.map.width,
+            height: split.map.height,
+            cell_size_m: split.map.cell_size_m,
+            cells: (0..split.map.ids.len()).map(|c| split.map.ids[c] != 0 && !rw.is_some_and(|m| m.cells[c])).collect(),
+        };
+        let (labels, count) = grid::components(&floor);
+        if count > 1 {
+            let mut size = vec![0usize; count as usize + 1];
+            for &l in &labels {
+                size[l as usize] += 1;
+            }
+            let main = (1..=count as usize).max_by_key(|&l| (size[l], std::cmp::Reverse(l))).unwrap_or(1);
+            let speck = (4.0 / (split.map.cell_size_m * split.map.cell_size_m)).ceil() as usize;
+            for (c, &l) in labels.iter().enumerate() {
+                if l > 0 && l as usize != main && size[l as usize] <= speck {
+                    split.map.ids[c] = 0;
+                }
+            }
+        }
+    }
     let (gates, gate_objects) = match gates {
         Some(built) => {
             notes.extend(built.notes);
@@ -265,7 +344,7 @@ pub(crate) fn town_chain(config: &LevelConfig, seed: u64, progress: Progress) ->
     let mut gates = gates;
     if let Some(layout) = gates.as_mut() {
         let offset = objects.len();
-        for g in &mut layout.gates {
+        for g in layout.gates.iter_mut().filter(|g| g.object != usize::MAX) {
             g.object += offset;
         }
         objects.extend(gate_objects);
@@ -297,13 +376,36 @@ pub(crate) fn town_chain(config: &LevelConfig, seed: u64, progress: Progress) ->
         cave: None,
         forest: None,
         mixed: None,
-        noise_preview: Some(built.noise_preview),
+        noise_preview: region.is_none().then_some(built.noise_preview),
         notes,
     };
     // Step 11: mobs (every map kind), last.
     place_mobs(&mut level, progress);
     progress("Done", 1.0);
     level
+}
+
+/// A town region's ground inside its wall: the mixed map's water is no
+/// town ground, except on the bridges; pieces the water cuts off (too small
+/// for a crossing) are left out, so the town is one piece.
+fn town_ground_in(r: &region::RegionCtx, inside_wall: CellMask) -> CellMask {
+    let mut m = inside_wall;
+    for c in 0..m.cells.len() {
+        let wet = r.water.deep.cells[c] || r.water.shallow.cells[c];
+        m.cells[c] &= !wet || r.bridges.cells[c];
+    }
+    let (labels, count) = grid::components(&m);
+    if count > 1 {
+        let mut size = vec![0usize; count as usize + 1];
+        for &l in &labels {
+            size[l as usize] += 1;
+        }
+        let main = (1..=count as usize).max_by_key(|&l| (size[l], std::cmp::Reverse(l))).unwrap_or(1);
+        for (c, v) in m.cells.iter_mut().enumerate() {
+            *v &= labels[c] as usize == main;
+        }
+    }
+    m
 }
 
 /// Mobs, the last node of every chain: (re)places the level's mobs from its
@@ -419,7 +521,7 @@ fn remap_objects(level: &mut GeneratedLevel, f: impl Fn(usize) -> usize) {
         }
     }
     if let Some(l) = level.gates.as_mut() {
-        for g in &mut l.gates {
+        for g in l.gates.iter_mut().filter(|g| g.object != usize::MAX) {
             g.object = f(g.object);
         }
     }

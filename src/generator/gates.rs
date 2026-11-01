@@ -21,6 +21,7 @@
 
 use std::collections::VecDeque;
 
+use crate::generator::region::{FixedGate, FixedGateKind};
 use crate::generator::region_walls::recount_stats;
 use crate::generator::roads::stamp_path;
 use crate::level::{
@@ -33,6 +34,10 @@ pub const GATE_NAME: &str = "gate";
 pub const MARKER_M: f32 = 1.0;
 /// Farthest a gate is turned from its asked direction, degrees.
 const MAX_TURN_DEG: i32 = 45;
+/// A fixed gate's ray reaches this far in and out of its point, meters.
+const FIXED_RAY_M: f32 = 14.0;
+/// How far a fixed gate slides along the edge to find the wall, meters.
+const FIXED_SLIDE_M: f32 = 10.0;
 
 pub struct GateBuild {
     pub layout: GateLayout,
@@ -47,30 +52,56 @@ pub fn build(
     config: &LevelConfig,
     split: &mut RegionSplit,
     walls: Option<&mut OuterWall>,
-    region_walls: Option<&CellMask>,
+    region_walls: Option<&mut CellMask>,
     roads: Option<&mut RoadNetwork>,
+    fixed: Option<&[FixedGate]>,
 ) -> GateBuild {
+    let mut region_walls = region_walls;
     let s = &config.gates;
     let (w, h) = (split.map.width, split.map.height);
     let cell = split.map.cell_size_m.max(0.05);
     let mut walls = walls;
     let mut roads = roads;
-    let mut layout = GateLayout { gates: Vec::new(), requested: s.gates.len() as u32 };
+    // A map region's gates are fixed points on its edge (the portals and the
+    // map gates landing in it); a whole map's are directions.
+    let count = fixed.map_or(s.gates.len(), |f| f.len());
+    let mut layout = GateLayout { gates: Vec::new(), requested: count as u32 };
     let mut objects = Vec::new();
     let mut notes = Vec::new();
     let center = (w as f32 * cell / 2.0, h as f32 * cell / 2.0);
 
-    for (i, spec) in s.gates.iter().enumerate() {
+    for i in 0..count {
         let id = i as u32 + 1;
         let wall_mask = walls.as_deref().map(|wl| &wl.mask);
-        let found = (0..=MAX_TURN_DEG)
-            .flat_map(|d| if d == 0 { vec![0] } else { vec![d, -d] })
-            .find_map(|turn| {
-                let deg = spec.direction_deg + turn as f32;
-                crossing(&ray_cells(center, deg, w, h, cell), &split.map.ids, wall_mask).map(|c| (deg, c))
-            });
+        let (direction_deg, found) = match fixed {
+            Some(f) => {
+                // A ray from inside the region out through the gate's point,
+                // slid along the edge if the wall is not there.
+                let g = f[i];
+                let along = [-g.inward[1], g.inward[0]];
+                let found = (0..=(FIXED_SLIDE_M / cell) as i32).flat_map(|k| [k, -k]).find_map(|k| {
+                    let p = [g.point_m[0] + along[0] * k as f32 * cell, g.point_m[1] + along[1] * k as f32 * cell];
+                    let a = (p[0] + g.inward[0] * FIXED_RAY_M, p[1] + g.inward[1] * FIXED_RAY_M);
+                    let b = (p[0] - g.inward[0] * FIXED_RAY_M, p[1] - g.inward[1] * FIXED_RAY_M);
+                    crossing(&segment_cells(a, b, w, h, cell), &split.map.ids, wall_mask).map(|c| (g.direction_deg(), c))
+                });
+                (g.direction_deg(), found)
+            }
+            None => {
+                let spec = &s.gates[i];
+                let found = (0..=MAX_TURN_DEG).flat_map(|d| if d == 0 { vec![0] } else { vec![d, -d] }).find_map(|turn| {
+                    let deg = spec.direction_deg + turn as f32;
+                    crossing(&ray_cells(center, deg, w, h, cell), &split.map.ids, wall_mask).map(|c| (deg, c))
+                });
+                (spec.direction_deg, found)
+            }
+        };
         let Some((deg, cross)) = found else {
-            notes.push(format!("Gate #{id}: no town edge within {MAX_TURN_DEG}° of {:.0}°", spec.direction_deg));
+            notes.push(match fixed.map(|f| f[i].kind) {
+                Some(FixedGateKind::Portal { to, .. }) => format!("The opening to region {to}: no town wall near it"),
+                Some(FixedGateKind::MapGate { gate }) => format!("Gate #{gate}: no town wall near it"),
+                None => format!("Gate #{id}: no town edge within {MAX_TURN_DEG}° of {direction_deg:.0}°"),
+            });
             continue;
         };
         let region = split.map.ids[cross.inner];
@@ -103,7 +134,32 @@ pub fn build(
         if s.road
             && let Some(net) = roads.as_deref_mut()
         {
-            match road_path(gate_cell, &split.map.ids, region_walls, &net.mask, w, h) {
+            // In a map region, also from the town cell inside the wall (the
+            // gate's midpoint can fall just outside the town ground).
+            let rw = region_walls.as_deref();
+            let mut found = road_path(gate_cell, &split.map.ids, rw, &net.mask, w, h);
+            // In a map region the gate is where the neighbour's way meets it:
+            // if a district wall boxes it in, the gate road opens that wall,
+            // as roads do wherever they cross one.
+            if found.is_none() && fixed.is_some() {
+                found = road_path(cross.inner, &split.map.ids, None, &net.mask, w, h);
+                if let (Some(path), Some(m)) = (found.as_ref(), region_walls.as_deref_mut()) {
+                    let r = (s.road_width_m / cell / 2.0).ceil() as i64 + 1;
+                    for &p in path {
+                        let (px, py) = ((p % w) as i64, (p / w) as i64);
+                        for dy in -r..=r {
+                            for dx in -r..=r {
+                                let (x, y) = (px + dx, py + dy);
+                                if x >= 0 && y >= 0 && x < w as i64 && y < h as i64 && dx * dx + dy * dy <= r * r {
+                                    m.cells[y as usize * w + x as usize] = false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let region_walls = region_walls.as_deref();
+            match found {
                 Some(path) => {
                     let width_cells = (s.road_width_m / cell).round().max(1.0) as u32;
                     // Town ground only: never into the walls.
@@ -135,6 +191,20 @@ pub fn build(
             }
         }
 
+        if fixed.is_some() {
+            // The mixed map draws its own gate markers; a portal has none.
+            layout.gates.push(GateInfo {
+                id,
+                direction_deg,
+                actual_deg: deg.rem_euclid(360.0),
+                point_m: [point.0, point.1],
+                region,
+                opening_m,
+                road_link,
+                object: usize::MAX,
+            });
+            continue;
+        }
         objects.push(PlacedObject {
             category: Category::Gate,
             type_name: GATE_NAME.to_owned(),
@@ -149,7 +219,7 @@ pub fn build(
         });
         layout.gates.push(GateInfo {
             id,
-            direction_deg: spec.direction_deg,
+            direction_deg,
             actual_deg: deg.rem_euclid(360.0),
             point_m: [point.0, point.1],
             region,
@@ -179,6 +249,26 @@ fn ray_cells(center: (f32, f32), deg: f32, w: usize, h: usize, cell: f32) -> Vec
             out.push(c);
         }
         t += step;
+    }
+    out
+}
+
+/// The cells under the segment a → b, in order, without repeats (cut at the
+/// map edge).
+fn segment_cells(a: (f32, f32), b: (f32, f32), w: usize, h: usize, cell: f32) -> Vec<usize> {
+    let len = (b.0 - a.0).hypot(b.1 - a.1);
+    let steps = (len / (cell / 4.0)).ceil().max(1.0) as usize;
+    let mut out: Vec<usize> = Vec::new();
+    for k in 0..=steps {
+        let t = k as f32 / steps as f32;
+        let (x, y) = (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t);
+        if x < 0.0 || y < 0.0 || x >= w as f32 * cell || y >= h as f32 * cell {
+            continue;
+        }
+        let c = (y / cell) as usize * w + (x / cell) as usize;
+        if out.last() != Some(&c) {
+            out.push(c);
+        }
     }
     out
 }

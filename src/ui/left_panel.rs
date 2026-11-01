@@ -48,7 +48,16 @@ fn generation_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
 
 /// The town chain after the template (docs/workflow.md).
 fn town_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
-    node_shape(ui, app);
+    if app.in_map_region {
+        set_by_mixed_map(
+            ui,
+            "2 · Region shape",
+            "the mixed map's 2 · Map regions node: the town fills its whole region, its wall along the region's edge. \
+             Rivers run through it on bridges; hidden rooms go inside the wall (outside is another region)",
+        );
+    } else {
+        node_shape(ui, app);
+    }
     flow_arrow(ui, "region mask");
     node_outer_walls(ui, app);
     flow_arrow(ui, "region inside the wall");
@@ -211,9 +220,9 @@ fn mixed_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     });
     let i = app.mixed_selected;
     ui.weak(
-        "Forest regions are built with the settings below (inside their own ground; whole-map \
-         counts scaled to the region's size when \"Scale amounts\" is on). Town, swamp and \
-         mountain regions keep their settings until their step (docs/mixed-plan.md, M5–M7).",
+        "Forest and town regions are built with the settings below (inside their own ground; \
+         whole-map counts scaled to the region's size when \"Scale amounts\" is on). Swamp and \
+         mountain regions keep their settings until their step (docs/mixed-plan.md, M6–M7).",
     );
     ui.checkbox(&mut app.config.mixed.regions[i].scale_amounts, "Scale amounts").on_hover_text(
         "Counts set for a whole map — forest areas, interactive objects, hidden rooms, the mob \
