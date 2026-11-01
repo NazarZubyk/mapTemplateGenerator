@@ -1,29 +1,37 @@
 # mapTemplateGenerator
 
+[![Release](https://img.shields.io/github/v/release/NazarZubyk/mapTemplateGenerator?include_prereleases&label=release)](https://github.com/NazarZubyk/mapTemplateGenerator/releases)
+![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-informational)
+![Rust](https://img.shields.io/badge/made%20with-Rust-orange)
+
 Make 2D map blueprints for ARPG levels in a few clicks. Hand the result to
 an AI agent (or a level designer) to build a playable prototype fast.
 
+<p align="center">
+  <img src="docs/media/town-build.gif" width="480" alt="A town map built step by step: shape, outer walls, regions, roads, region walls, gates, houses, props, interactive objects, hidden rooms and mobs">
+</p>
+
+Every map is built as a chain of steps, each one using the result of the
+one before. Above, a town grows from its outline to houses, hidden rooms
+and mobs.
+
 > **⚠ Beta.** This is an early version. Settings and file formats may still
-> change between releases.
->
-> **Only the Town map kind is ready.** Swamp has been rebuilt with its own layout
-> (islands, paths, water, border, trees, props, objects, hidden islets and
-> mobs) and is being tuned. **Cave is being rebuilt** with its own layout
-> (natural caverns + hand-made passages, chambers, tunnels, chasms and
-> pools, props, objects, hidden rooms and mobs) and is being tuned.
-> **Forest is being rebuilt** with its own layout: so far the map splits
-> into large wild and managed areas, each with its own character
-> (meadow, dense woods, logged...). Streams flow downhill off the map,
-> rock ridges and dense forest separate the areas, and you cross between
-> them on trails, passes, fords and bridges. Glades and winding trails
-> lead you through each area, and tree trunks stand where the forest
-> grows (you set how dense, how thick and how grouped). Props (shape and
-> place only — you decide what they are) lie in groups, alone, near the
-> rock and in the managed areas. Hidden glades sit inside thickets,
-> reached by one overgrown path; interactive objects and mobs spawn on
-> forest ground (wild or managed areas, glades as gathering spots). The
-> forest chain is complete and being tuned; settings that cannot work as
-> asked show a warning. The app opens on Forest for now.
+> change between releases. **Only the Town map kind is ready**; the others
+> work end to end but are still being tuned.
+
+| Map kind | What it builds | Status |
+|---|---|---|
+| **Town** | walls, districts, winding roads, gates, houses, props | ✅ ready |
+| **Swamp** | islands, mud paths, boardwalks, water by depth, trees | 🧪 being tuned |
+| **Forest** | wild and managed areas, rock ridges, streams, thickets, trails, trees | 🧪 being tuned |
+| **Cave** | natural caverns and hand-dug mines, tunnels, chasms, pools | 🧪 being tuned |
+
+Every kind also places props, interactive objects, hidden rooms and mobs.
+The app opens on Forest for now; switch the kind in **1 · Template**.
+
+<p align="center">
+  <img src="docs/media/map-kinds.gif" width="560" alt="Town, swamp, forest and cave maps, cycling through four seeds">
+</p>
 
 ## What you get
 
@@ -52,7 +60,7 @@ the details.
 
 ## How to use
 
-1. In **1 · Template**, pick the map size (keep **Town** as the kind). Maps
+1. In **1 · Template**, set the kind to **Town** and pick the map size. Maps
    can be up to 16 km on a side; for big maps raise the **Cell size** (the
    app warns when a map will take minutes and gigabytes of memory, and
    blocks sizes it cannot hold).
@@ -81,8 +89,8 @@ see `QUICKSTART.md`.
 
 ## Known limitations (beta)
 
-- Only **Town** is tuned. Forest is being rebuilt (areas, land, water, thickets, passages, glades, trails, trees, props, hidden glades, interactive objects and mobs — complete, being tuned); Swamp is new (complete,
-  still being tuned); Cave is new (complete, still being tuned).
+- Only **Town** is tuned. Swamp, Forest and Cave are complete but still
+  being tuned; settings that cannot work as asked show a warning.
 - The **walkable %** setting is not used yet.
 - Few safety checks. For example, two object types with the same color are
   not flagged yet.

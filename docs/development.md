@@ -59,12 +59,24 @@ src/
 │       ├── carve.rs     #   cave node 5: final floor, rough natural walls (CA), wall band
 │       ├── hazards.rs   #   cave node 6: chasms (+ rope bridges), pools
 │       └── spawns.rs    #   cave nodes 7–10: props, hidden pockets, interactive, mobs
+│   └── forest/          # the forest chain (docs/forest-plan.md)
+│       ├── mod.rs       #   forest pipeline
+│       ├── areas.rs     #   forest node 2: wild / managed areas with a character
+│       ├── terrain.rs   #   forest node 3: hidden height field, rock ridges
+│       ├── water.rs     #   forest node 4: streams, brooks, ponds (priority flood)
+│       ├── thickets.rs  #   forest node 5: open ground / forest floor / thicket
+│       ├── passages.rs  #   forest node 6: sealed / opened area borders, gates
+│       ├── clearings.rs #   forest node 7: glades, footpaths, cart tracks
+│       ├── trees.rs     #   forest node 8: tree trunks (round solid objects)
+│       ├── props.rs     #   forest node 9: props by shape and place
+│       └── spawns.rs    #   forest nodes 10–12: hidden glades, interactive, mobs
 ├── render.rs            # map.png / layer.png rasterizers
 ├── export.rs            # export bundle writer + spec.json
 ├── validate.rs          # config validation (early subset; step 13 extends it)
 └── ui/                  # app shell, node panel, preview, warnings, bench
 reference/               # previous full generator (dead code, copy pieces from here)
-docs/                    # goals, workflow + step notes, this file, next-agent prompt, plan
+docs/                    # goals, workflow + step notes, this file, next-agent prompt, plans
+docs/media/              # README GIFs (see "README media" below)
 packaging/QUICKSTART.md  # user guide shipped inside the release zips
 scripts/package.sh       # build + zip for this machine (dist/)
 .github/workflows/release.yml  # tag v* → Linux + Windows zips on a GitHub Release
@@ -110,7 +122,7 @@ share of mobs on hubs). Any map: **🎲 Re-roll mobs** / **⟳ Apply mobs
 only** redo just the mobs (`generator::place_mobs`, own RNG stream). Nodes 7–10 are the town nodes' cores
 on swamp ground.
 
-**Forest** has its own chain (being built, see [forest-plan.md](forest-plan.md)),
+**Forest** has its own chain (complete, being tuned, see [forest-plan.md](forest-plan.md)),
 land first: 1 Template → 2 **Areas** (the gameplay skeleton: large areas by a
 noise-warped weighted Voronoi, each wild or managed and with a character)
 → 3 **Terrain** (hidden height field, rock ridges from ridged noise) → 4
@@ -130,8 +142,9 @@ managed areas; all blocked; the designer decides what they are) → 10
 **Hidden glades** (pockets in a thicket, one overgrown path, a
 hidden-passage marker) → 11 **Interactive objects** → 12 **Mobs** (shared
 cores on forest ground: ground / trail / shallow water / hidden glade, wild
-/ managed filter, glades as hubs, guards in dead-end areas). Open: export
-polish. The town chain is `generator::town_chain`.
+/ managed filter, glades as hubs, guards in dead-end areas). Export polish
+(forest warnings, no empty town sections in spec.json) is done; open:
+tuning. The town chain is `generator::town_chain`.
 
 **Cave** has its own chain (complete, see [cave-plan.md](cave-plan.md)):
 1 Template → 2 **Style** (natural % + mixing → natural / hand-made zones;
@@ -155,10 +168,14 @@ Town for the tests.
 Export: map.png (colored map), layer.png (objects: R = category id 1–7,
 G/B = instance id; swamp ground: R = ground id 8–14, G = depth, B =
 island id; cave ground: R = ground id 15–23, G = style zone id, B =
-chamber id — spelled out in spec.json `layer_encoding`), spec.json
+chamber id; forest ground: R = ground id 24–31, G = area id, B = 1
+walkable / 0 blocked — spelled out in spec.json `layer_encoding`), spec.json
 (format v2) (legend, every object, regions, roads, wall gaps, interactive
 groups, hidden rooms, mobs, gates; swamp: `gate_anchors`, `islands`,
-`paths`, `gate_bridges`, `water`; cave: `cave_zones`, `chambers`, `tunnels`, `junctions`, `cave_gates`, `cave_floor`, `hazards`).
+`paths`, `gate_bridges`, `water`; cave: `cave_zones`, `chambers`, `tunnels`, `junctions`, `cave_gates`, `cave_floor`, `hazards`;
+forest: `forest_areas`, `forest_ground`, `forest_water`, `forest_passages`,
+`forest_clearings`, `forest_trees`, `forest_props`). Sections a map kind does
+not use are left out.
 
 ## Map size limits
 
@@ -208,6 +225,23 @@ rebuild it after code changes.
 
 Missing names become "Mob #n", missing colors are picked to differ from
 every color in use, and mob shares are kept at 100%.
+
+## README media
+
+`docs/media/town-build.gif` and `docs/media/map-kinds.gif` are rendered
+with `render::rasterize` from a temporary `examples/` file (deleted
+afterwards) and put together with ImageMagick + gifsicle:
+
+- **town-build.gif**: a 120 × 120 m town, seed 21, 4 regions (15/20/25/40 %),
+  region walls 1 m, gates at 0° / 120° / 240°, two interactive types
+  (Chest ×10, Well ×4), at 5 px/m. The frames are the finished level with
+  the later nodes stripped one by one (mobs, hidden rooms, interactive,
+  props, houses, gates, region walls, roads, regions, walls), shown in build
+  order with a caption bar.
+- **map-kinds.gif**: each kind's defaults (`ShapeSettings::for_kind`) on the
+  200 m map, seeds 1–4, at 3 px/m, in a 2 × 2 grid.
+
+Regenerate them when a kind's look changes noticeably.
 
 ## Making a release
 

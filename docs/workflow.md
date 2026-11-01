@@ -7,8 +7,11 @@ built straight into its own node of the left panel and tested in the app.
 
 **Status:** steps 0–6 and 8–12 are done (12 nodes), plus the `mapgen-mcp`
 server for Claude. Open: step 7 (walkable budget), step 13 (validation &
-export polish), cleanup.
-Next map kind: Swamp — its own node chain, planned in
+export polish), cleanup. Every map kind now has its full chain: Town (this
+file), Swamp ([swamp-plan.md](swamp-plan.md)), Cave
+([cave-plan.md](cave-plan.md)) and Forest ([forest-plan.md](forest-plan.md));
+Swamp, Cave and Forest are complete and being tuned with the user.
+Swamp — its own node chain, planned in
 [swamp-plan.md](swamp-plan.md) (step list and notes live there). Done:
 S1 gate anchors, S2 islands, S3 paths, S4 depth & border, S5 trees, S6
 spawns (props, interactive, hidden islets, mobs — the town modules now
@@ -60,7 +63,7 @@ own chain (`generator/swamp/`, `swamp_node_chain` in left_panel.rs) — the
 list below is the town / forest chain; the swamp one is in
 [swamp-plan.md](swamp-plan.md). **Cave** has its own chain too
 (`generator/cave/`, `cave_node_chain`), built step by step from
-[cave-plan.md](cave-plan.md): C1 style, C2 chambers, C3 tunnels, C4 carve & smooth, C5 hazards, C7 spawns, C8 export done (C6 pillars dropped) — the cave plan is complete. **Forest** is next: its own chain planned in [forest-plan.md](forest-plan.md) (land first: F1 areas → F2 terrain → F3 water → F4 thickets → F5 passages → F6 clearings & trails → F7 trees → F8 props → F9 hidden glades / interactive / mobs, then export polish), F1–F8 done (… thickets, passages, clearings & trails, trees, props, spawns) — the forest chain is complete (F10 export polish done), tuning open; the app starts on Forest for now.
+[cave-plan.md](cave-plan.md): C1 style, C2 chambers, C3 tunnels, C4 carve & smooth, C5 hazards, C7 spawns, C8 export done (C6 pillars dropped) — the cave plan is complete. **Forest** has its own chain too (`generator/forest/`), planned in [forest-plan.md](forest-plan.md) (land first: F1 areas → F2 terrain → F3 water → F4 thickets → F5 passages → F6 clearings & trails → F7 trees → F8 props → F9 hidden glades / interactive / mobs, then export polish), F1–F9 done — the forest chain is complete (F10 export polish done), tuning open; the app starts on Forest for now.
 
 Right now:
 
@@ -161,15 +164,16 @@ src/
 │   ├── mobs.rs        # step 11 / node 12: budgeted mob packs
 │   ├── placement.rs   # shared: rotated footprints, dilation, road tangents
 │   ├── swamp/, cave/  # the swamp and cave chains (their plans)
-│   └── forest/        # forest chain: areas, terrain, water, thickets, passages, clearings, trees, props
+│   └── forest/        # forest chain: areas, terrain, water, thickets, passages, clearings, trees, props, spawns
 ├── render.rs          # map.png / layer.png rasterizer
-├── export.rs          # export bundle: map.png + layer.png + spec.json (format v1)
+├── export.rs          # export bundle: map.png + layer.png + spec.json (format v2)
 ├── validate.rs        # config validation (still the early subset — step 13)
 └── ui/                # app.rs (shell, job, live sync), left_panel.rs (nodes),
                        # preview.rs, warnings.rs, widgets.rs (param_row), workflow.rs
 reference/             # OLD generator — copy small pieces from here
 .mcp.json              # registers mapgen-mcp for Claude Code
 docs/workflow.md       # this file
+docs/media/            # README GIFs (docs/development.md, "README media")
 ```
 
 ## The workflow loop (per section)

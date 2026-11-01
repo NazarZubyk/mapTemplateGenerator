@@ -137,12 +137,16 @@ Ctrl+scroll zooms). Bottom: warnings panel, then the (empty) bench.
 
 ## Current state
 
-Steps 0–6 and 8–12 and the MCP server are done; swamp steps S1 (gate
-anchors), S2 (islands), S3 (paths), S4 (depth & border), S5 (trees) and
-S6 (spawns) and S8 (export polish) are done — the swamp plan is
-complete. Open:
+Town steps 0–6 and 8–12 and the MCP server are done. The swamp (S1–S6,
+S8), cave (C1–C5, C7, C8) and forest (F1–F10) plans are complete; those
+kinds are being tuned with the user. Maps go up to 16384 m a side
+(cell-count limits in `validate`, see docs/development.md "Map size
+limits"). The README shows two GIFs in `docs/media/` (how they are made:
+docs/development.md "README media"). Open:
 - **Step 7 — walkable budget**: `map.walkable_pct` vs what houses and later
   objects take.
 - **Step 13 — validation & export polish**: feasibility pre-check, blocking
   duplicate colors, warnings for the newer nodes, fuller spec.json.
+- **Tuning** of Swamp, Cave and Forest (spawn amounts, looks) — the user
+  drives it one step at a time.
 - **Cleanup**: delete `reference/` and the history notes in workflow.md.
