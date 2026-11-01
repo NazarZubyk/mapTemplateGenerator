@@ -158,7 +158,10 @@ cave massif high, swamp basin low, town flat terrace, forest rolling;
 blurred into slopes, hills and a tilt on top) → 4 **Water** (the forest
 drainage on the whole land, `forest::water::build_drainage` with swamp
 regions as sinks and cave regions dry: rivers end at the map edge or in a
-swamp, springs at the foot of a massif;
+swamp, springs at the foot of a massif; rivers cross a region border
+clearly or keep `river_clearance_m` off it — a low rise along the
+borders, `forest::water::Borders`; the cave kind is labelled Mountains on
+a mixed map, a massif with the caves inside;
 rivers: the water node's length and shape settings — spring size, min
 length, prefer long, bend size, width variation, braids, oxbow lakes —
 shared with the forest, neutral there by default) → 5 **Connections**

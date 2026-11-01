@@ -427,7 +427,7 @@ fn mixed(config: &LevelConfig, warnings: &mut Vec<Warning>) {
     let total: f32 = rows.iter().map(|r| r.share_pct.max(0.1)).sum();
     let area = config.map.width_m.max(0.0) * config.map.height_m.max(0.0);
     for (i, r) in rows.iter().enumerate().take(max) {
-        let label = format!("Map region {} ({}, {})", i + 1, r.name, r.kind.label());
+        let label = format!("Map region {} ({}, {})", i + 1, r.name, r.kind.region_label());
         // A region about this many meters across (as a square).
         let across = (area * r.share_pct.max(0.1) / total).sqrt();
         if across < 24.0 {

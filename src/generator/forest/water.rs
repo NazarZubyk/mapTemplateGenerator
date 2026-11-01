@@ -64,7 +64,26 @@ pub struct Drainage<'a> {
     /// Cells no stream runs in (a cave massif): the water still drains off
     /// them, but a stream traced uphill stops at their foot — its spring.
     pub dry: Option<&'a CellMask>,
+    /// Region borders a stream must cross clearly or keep away from.
+    pub borders: Option<Borders<'a>>,
 }
+
+/// The map regions' borders for the streams (mixed maps). A low hump runs
+/// along every border, so water gathers at its foot, `clear_m` off the
+/// border, and crosses only at the hump's lowest spot — a stream crosses a
+/// border clearly or keeps away from it, never running along it touching.
+#[derive(Clone, Copy)]
+pub struct Borders<'a> {
+    /// Distance from each cell to the nearest cell of another region,
+    /// meters.
+    pub dist: &'a [f32],
+    /// Least gap between a stream and a border it does not cross, meters.
+    pub clear_m: f32,
+}
+
+/// Height of the border hump (share of the relief): below the depth that
+/// counts as a pond, so it makes none.
+const BORDER_HUMP: f32 = 0.025;
 
 /// The water with the extra outlets and dry ground of `extra` (none: the
 /// forest's own water).
@@ -77,7 +96,14 @@ pub fn build_drainage(s: &crate::model::ForestWaterSettings, rng: &mut ChaCha8Rn
     let meander_noise = NoiseField::new(rng.random::<u64>());
 
     // 1. Drainage.
-    let ground: Vec<f32> = (0..n).map(|c| terrain.height_m[c] + if terrain.rock.cells[c] { 1.0 } else { 0.0 }).collect();
+    let hump = |c: usize| {
+        extra.borders.map_or(0.0, |b| {
+            let reach = b.clear_m * 1.6 + 2.0;
+            let t = (b.dist[c] / reach).clamp(0.0, 1.0);
+            BORDER_HUMP * (1.0 - t * t * (3.0 - 2.0 * t))
+        })
+    };
+    let ground: Vec<f32> = (0..n).map(|c| terrain.height_m[c] + if terrain.rock.cells[c] { 1.0 } else { 0.0 } + hump(c)).collect();
     let mut filled = vec![f32::INFINITY; n];
     let mut down = vec![usize::MAX; n];
     let mut order = Vec::with_capacity(n);
@@ -292,11 +318,37 @@ pub fn build_drainage(s: &crate::model::ForestWaterSettings, rng: &mut ChaCha8Rn
     let braid = (s.braid_pct / 100.0).clamp(0.0, 1.0);
     let oxbow = (s.oxbow_pct / 100.0).clamp(0.0, 1.0);
     let mut streams = Vec::new();
+    // Mixed maps: room to a region border at a point, meters (the swing of
+    // a meander, a braid or an oxbow never reaches over it).
+    let room = |p: [f32; 2]| {
+        extra.borders.map_or(f32::INFINITY, |b| {
+            let c = ((p[1] / cell).floor().clamp(0.0, h as f32 - 1.0) as usize) * w + (p[0] / cell).floor().clamp(0.0, w as f32 - 1.0) as usize;
+            b.dist[c]
+        })
+    };
     for (i, (cells, mouth)) in raw.iter().enumerate() {
+        let id = i as u32 + 1;
+        // Mixed maps: a spring on a region border (other than a massif's
+        // foot, where the water comes out of the mountain) moves down the
+        // stream until it is clear of the border.
+        let cells: &[usize] = match extra.borders {
+            Some(b) => {
+                let near_dry = |c: usize| {
+                    let r = (b.clear_m / cell).ceil() as i64;
+                    let (x, y) = ((c % w) as i64, (c / w) as i64);
+                    (-r..=r).any(|dy| (-r..=r).any(|dx| {
+                        let (nx, ny) = (x + dx, y + dy);
+                        nx >= 0 && ny >= 0 && nx < w as i64 && ny < h as i64 && is_dry(ny as usize * w + nx as usize)
+                    }))
+                };
+                let skip = cells.iter().take_while(|&&c| b.dist[c] < b.clear_m && !near_dry(c)).count();
+                &cells[skip.min(cells.len())..]
+            }
+            None => cells,
+        };
         if cells.len() < 2 {
             continue;
         }
-        let id = i as u32 + 1;
         // Every 2nd cell, then smoothed.
         let mut pts: Vec<([f32; 2], f32)> = cells
             .iter()
@@ -321,7 +373,8 @@ pub fn build_drainage(s: &crate::model::ForestWaterSettings, rng: &mut ChaCha8Rn
             let (tx, ty) = (next[0] - prev[0], next[1] - prev[1]);
             let tl = tx.hypot(ty).max(1e-6);
             let fade = (along.min(total - along) / 10.0).clamp(0.0, 1.0);
-            let amp = (meander * MEANDER_AMP * pts[k].1 * 2.0).min(amp_cap) * fade;
+            // Near a border the swing shrinks to the room left.
+            let amp = (meander * MEANDER_AMP * pts[k].1 * 2.0).min(amp_cap).min((room(pts[k].0) - pts[k].1 * 0.5 - 1.0).max(0.0) / 1.2) * fade;
             let off = (meander_noise.fbm(along / bend + id as f32 * 7.3, id as f32 * 3.1, 2) - 0.5) * 4.0 * amp;
             // Pools and narrows (none at the ends).
             let mut wd = pts[k].1;
@@ -342,7 +395,7 @@ pub fn build_drainage(s: &crate::model::ForestWaterSettings, rng: &mut ChaCha8Rn
                 .zip(&wave)
                 .map(|(p, &(al, _, _, fade))| {
                     let v = meander_noise.fbm(al / (bend * 2.5) + id as f32 * 9.7, 13.3, 2);
-                    smoothstep(t, t + 0.08, v) * smoothstep(2.0, 3.5, p.1) * fade
+                    smoothstep(t, t + 0.08, v) * smoothstep(2.0, 3.5, p.1) * fade * smoothstep(p.1 * 1.5, p.1 * 2.5 + 2.0, room(p.0))
                 })
                 .collect()
         } else {
@@ -386,6 +439,9 @@ pub fn build_drainage(s: &crate::model::ForestWaterSettings, rng: &mut ChaCha8Rn
                 last_at = al;
                 let wd = wound[k].1;
                 let side = off.signum();
+                if room(wound[k].0) < wd * 2.0 + amp * 1.5 + 6.0 {
+                    continue;
+                }
                 // In the smooth frame: the river's apex offset, then a gap,
                 // then a crescent bowing out (the cut-off old loop).
                 let gap = wd * 0.5 + 2.5;

@@ -330,7 +330,7 @@ const PORTAL_REACH_M: f32 = 3.0;
 pub fn mixed_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
     use crate::level::ForestGround as G;
     let Some(m) = level.mixed.as_ref() else { return Vec::new() };
-    let mut out: Vec<_> = m.regions.iter().map(|r| (r.color, format!("{} · {} ({})", r.id, r.name, r.kind.label()))).collect();
+    let mut out: Vec<_> = m.regions.iter().map(|r| (r.color, format!("{} · {} ({})", r.id, r.name, r.kind.region_label()))).collect();
     if let Some(wl) = &m.water {
         if wl.shallow.count_true() > 0 {
             out.push((G::Shallow.color(), "shallow water (walkable)".to_owned()));

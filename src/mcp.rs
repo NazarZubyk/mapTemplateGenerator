@@ -742,7 +742,7 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
         "map_m": [level.config.map.width_m, level.config.map.height_m],
         "regions": level.regions.as_ref().map(|r| r.stats.len()),
         "mixed_regions": level.mixed.as_ref().map(|m| m.regions.iter().map(|r| json!({
-            "id": r.id, "name": r.name, "kind": r.kind.slug(), "placement": r.placement, "target_pct": r.target_pct, "actual_pct": r.actual_pct,
+            "id": r.id, "name": r.name, "kind": r.kind.slug(), "label": r.kind.region_label(), "placement": r.placement, "target_pct": r.target_pct, "actual_pct": r.actual_pct,
         })).collect::<Vec<_>>()),
         "mixed_water": level.mixed.as_ref().and_then(|m| m.water.as_ref()).map(|w| json!({
             "streams": w.streams.len(),

@@ -91,7 +91,10 @@ ground with portals as gates, then the seams. M1 (map regions:
 the Map regions node and the region picker) and M2 (land from the kinds,
 global water via `forest::water::build_drainage` with swamp sinks and dry
 caves) and M3 (connections: links tree + loops, portals, map gates per
-region, river crossings — `mixed/connections.rs`) are done; next M4, the
+region, river crossings — `mixed/connections.rs`) are done, plus river
+length/shape settings and the river border rule (rivers cross a border
+clearly or keep `river_clearance_m` off it). On a mixed map the cave kind
+is labelled **Mountains** (a massif with the caves inside); next M4, the
 forest region chain inside its own ground (domain, portals and gates as
 fixed gates, the global water). The app and MCP start on Mixed.
 Single-kind maps must stay byte-identical (the chains get the new behaviour

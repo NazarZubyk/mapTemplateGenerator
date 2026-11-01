@@ -39,7 +39,8 @@ pub fn kind_color(kind: MapKind) -> [u8; 3] {
         MapKind::Town => [206, 182, 140],
         MapKind::Swamp => [96, 124, 104],
         MapKind::Forest => [88, 132, 70],
-        MapKind::Cave => [104, 92, 86],
+        // Mountains: bare stone (the caves are inside).
+        MapKind::Cave => [128, 122, 116],
         MapKind::Mixed => [180, 180, 180],
     }
 }
@@ -152,7 +153,7 @@ fn split(config: &LevelConfig, rng: &mut ChaCha8Rng, notes: &mut Vec<String>) ->
 /// How high a kind's ground lies (0 low … 1 high) and how hilly it is.
 fn kind_land(kind: MapKind) -> (f32, f32) {
     match kind {
-        // A rock massif: high and rugged.
+        // Mountains: a rock massif, high and rugged (caves inside).
         MapKind::Cave => (1.0, 1.0),
         // Rolling ground.
         MapKind::Forest => (0.55, 0.8),
@@ -253,9 +254,68 @@ fn rivers(config: &LevelConfig, rng: &mut ChaCha8Rng, m: &MixedLayout, land: &Te
         cells: (0..w * h).map(|c| m.region_at(c).is_some_and(|r| r.kind == kind)).collect(),
     };
     let (sinks, dry) = (of_kind(MapKind::Swamp), of_kind(MapKind::Cave));
-    let extra = Drainage { sinks: Some(&sinks).filter(|s| s.count_true() > 0), dry: Some(&dry).filter(|d| d.count_true() > 0) };
+    // Distance to the nearest other region: a river crosses a border or
+    // keeps off it (never runs along it, touching).
+    let ids = &m.map.ids;
+    let clear = config.mixed.river_clearance_m.max(0.0);
+    let on_border = |c: usize| crate::generator::forest::neighbors4(c, w, h).any(|q| ids[q] != ids[c]);
+    let (dist, _) = crate::generator::forest::distance_field(w, h, cell, on_border, clear * 4.0 + 40.0);
+    let borders = (clear > 0.0 && m.regions.len() > 1).then_some(water::Borders { dist: &dist, clear_m: clear });
+    let extra = Drainage { sinks: Some(&sinks).filter(|s| s.count_true() > 0), dry: Some(&dry).filter(|d| d.count_true() > 0), borders };
     water::build_drainage(&config.mixed.water, rng, land, &extra)
 }
+
+#[doc(hidden)]
+/// Water cells touching a region border (within 1.5 m) with no
+/// crossing of that border (water on both sides, or a river mouth into
+/// a swamp) within `reach` meters. A spring at the foot of a massif (the
+/// water comes out of the mountain) is no touch. For the tests and the
+/// tuning examples.
+pub fn touching_without_crossing(lvl: &GeneratedLevel, reach: f32) -> Vec<usize> {
+    let m = lvl.mixed.as_ref().unwrap();
+    let wl = m.water.as_ref().unwrap();
+    let (w, h, cell) = (m.map.width, m.map.height, m.map.cell_size_m);
+    let ids = &m.map.ids;
+    let wet = |c: usize| wl.deep.cells[c] || wl.shallow.cells[c];
+    let swamp = |c: usize| m.region_at(c).is_some_and(|r| r.kind == MapKind::Swamp);
+    let mut crossings = Vec::new();
+    for c in 0..w * h {
+        for q in crate::generator::forest::neighbors4(c, w, h) {
+            if ids[q] != ids[c] && wet(c) && (wet(q) || swamp(q)) {
+                crossings.push(c);
+            }
+        }
+    }
+    let on_border = |c: usize| crate::generator::forest::neighbors4(c, w, h).any(|q| ids[q] != ids[c]);
+    let (dist, _) = crate::generator::forest::distance_field(w, h, cell, on_border, 3.0);
+    let at = |c: usize| (((c % w) as f32 + 0.5) * cell, ((c / w) as f32 + 0.5) * cell);
+    (0..w * h)
+        .filter(|&c| wet(c) && dist[c] <= 1.5)
+        .filter(|&c| {
+            let p = at(c);
+            let r = (2.0 / cell).ceil() as i64;
+            let (x, y) = ((c % w) as i64, (c / w) as i64);
+            let cave_near = (-r..=r).any(|dy| {
+                (-r..=r).any(|dx| {
+                    let (nx, ny) = (x + dx, y + dy);
+                    nx >= 0 && ny >= 0 && nx < w as i64 && ny < h as i64 && m.region_at(ny as usize * w + nx as usize).is_some_and(|r| r.kind == MapKind::Cave)
+                })
+            });
+            !(cave_near && wl.streams.iter().any(|st| {
+                let s0 = st.path_m[0];
+                (s0[0] - p.0).hypot(s0[1] - p.1) <= st.width_m[0] + 8.0
+            }))
+        })
+        .filter(|&c| {
+            let p = at(c);
+            !crossings.iter().any(|&x| {
+                let q = at(x);
+                (q.0 - p.0).hypot(q.1 - p.1) <= reach
+            })
+        })
+        .collect()
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -332,6 +392,26 @@ mod tests {
             }
         }
         assert!(sinks > 0, "no river ever reached a swamp");
+    }
+
+    #[test]
+    fn rivers_cross_borders_or_keep_off_them() {
+        let (mut before, mut after) = (0, 0);
+        for seed in 1..=8 {
+            let mut c = LevelConfig::of_kind(MapKind::Mixed);
+            c.map.width_m = 160.0;
+            c.map.height_m = 160.0;
+            c.cell_size_m = 1.0;
+            c.mixed.water.streams = 3;
+            let on = generate_with_progress(&c, seed, &|_, _| {});
+            c.mixed.river_clearance_m = 0.0;
+            let off = generate_with_progress(&c, seed, &|_, _| {});
+            after += touching_without_crossing(&on, 25.0).len();
+            before += touching_without_crossing(&off, 25.0).len();
+        }
+        eprintln!("touching cells: clearance off {before}, on {after}");
+        assert!(before > 0, "the test maps never had a river along a border");
+        assert_eq!(after, 0, "rivers still run along borders (off: {before})");
     }
 
     #[test]

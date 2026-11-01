@@ -161,9 +161,12 @@ fn forest_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     ui.separator();
 }
 
-const TIP_MIXED_KIND: &str = "What this map region is: town, swamp, forest or cave. It \
-decides which nodes the region gets (below, when the region is picked). Changing it keeps \
-the region's other settings (props, mobs...) and loads the new kind's shape defaults.";
+const TIP_MIXED_KIND: &str = "What this map region is: town, swamp, forest or mountains. \
+MOUNTAINS are a rock massif — the highest ground, rivers flow around it and spring at its \
+foot — whose walkable inside is a cave system (the cave nodes), entered by cave mouths where \
+it links to its neighbours. The kind decides which nodes the region gets (below, when the \
+region is picked). Changing it keeps the region's other settings (props, mobs...) and loads \
+the new kind's shape defaults.";
 const TIP_MIXED_SHARE: &str = "The region's share of the whole map, %. The shares stay at \
 100 in total: raising one lowers the rest. Regions are grown smallest first; the largest \
 takes whatever is left, so the result is close to these shares, not exact.";
@@ -201,7 +204,7 @@ fn mixed_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
         );
         for (i, r) in app.config.mixed.regions.iter().enumerate() {
             let label = format!("{} · {}", i + 1, r.name);
-            if ui.selectable_label(app.mixed_selected == i, label).on_hover_text(r.kind.label()).clicked() {
+            if ui.selectable_label(app.mixed_selected == i, label).on_hover_text(r.kind.region_label()).clicked() {
                 app.mixed_selected = i;
             }
         }
@@ -285,7 +288,15 @@ exported (spec.json) and used for the shading; the shapes do not change.";
 /// docs/mixed-plan.md).
 fn node_mixed_water(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node(ui, "4 · Water", |ui| {
-        ui.weak("input: land · output: rivers into swamps or off the map, none in caves");
+        ui.weak("input: land · output: rivers into swamps or off the map, none in the mountains");
+        const TIP_CLEAR: &str = "A river crosses a region border clearly or keeps at least this far \
+from it, meters — it never runs along a border, touching it. A low rise along every border \
+keeps the water off it; a river crosses where that rise is lowest, and its bends and braids \
+shrink where there is little room. A spring at the foot of the mountains stays (the water \
+comes out of the mountain). 0 = rivers go wherever the land takes them.";
+        egui::Grid::new("mixed_water_clear_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Border clearance", TIP_CLEAR, |ui| ui.add(meters(&mut app.config.mixed.river_clearance_m, 40.0)));
+        });
         water_controls(ui, &mut app.config.mixed.water, "mixed");
         if let Some(wl) = app.generated.as_ref().and_then(|l| l.mixed.as_ref()).and_then(|m| m.water.as_ref()) {
             water_stats(ui, wl);
@@ -377,17 +388,17 @@ fn node_map_regions(ui: &mut egui::Ui, app: &mut MapGenApp) {
                 let before = r.kind;
                 egui::ComboBox::from_id_salt(("map_region_kind", i))
                     .width(70.0)
-                    .selected_text(r.kind.label())
+                    .selected_text(r.kind.region_label())
                     .show_ui(ui, |ui| {
                         for kind in MapKind::ALL {
-                            ui.selectable_value(&mut r.kind, kind, kind.label());
+                            ui.selectable_value(&mut r.kind, kind, kind.region_label());
                         }
                     })
                     .response
                     .on_hover_text(TIP_MIXED_KIND);
                 if r.kind != before {
-                    if r.name == before.label() {
-                        r.name = r.kind.label().to_owned();
+                    if r.name == before.label() || r.name == before.region_label() {
+                        r.name = r.kind.region_label().to_owned();
                     }
                     r.config.kind = r.kind;
                     r.config.shape = ShapeSettings::for_kind(r.kind);
@@ -480,7 +491,7 @@ fn node_map_regions(ui: &mut egui::Ui, app: &mut MapGenApp) {
             ui.weak("Changes apply on ⚙ Generate");
         });
         if let Some(m) = app.generated.as_ref().and_then(|l| l.mixed.as_ref()) {
-            let line = m.regions.iter().map(|r| format!("#{} {} {:.1}%", r.id, r.kind.label(), r.actual_pct)).collect::<Vec<_>>().join(" · ");
+            let line = m.regions.iter().map(|r| format!("#{} {} {:.1}%", r.id, r.kind.region_label(), r.actual_pct)).collect::<Vec<_>>().join(" · ");
             ui.weak(format!("generated: {line}"));
         }
     });

@@ -232,8 +232,11 @@ connections) cannot disagree; and a single-kind map does not change at all
       at portals, river input: bridges, water gates).
 - [ ] **M6 — Region chains: Swamp** (islands in the domain, gate anchors at
       portals, river mouths).
-- [ ] **M7 — Region chains: Cave** (chambers in the domain, gate tunnels at
-      portals = cave mouths).
+- [ ] **M7 — Region chains: Mountains** (the cave kind on a mixed map: a
+      rock massif whose walkable inside is the cave chain — chambers in
+      the domain, gate tunnels at the portals = cave mouths in the rock
+      face; open question for the user: also surface paths / passes over
+      the massif?).
 - [ ] **M8 — Seams and composition**: portal corridors, global flood fill,
       composite preview / map.png / layer.png (+ regions.png), mobs re-roll
       across regions.
@@ -358,3 +361,33 @@ forest / cave levels before and after); the mixed map starts with
 min length 60 m, prefer long 50 %, bend 22 m, width variation 35 %,
 braids 25 %, oxbows 40 %). Braid islands in deep water are separate
 pieces; M3's crossings bridge or ford them like any other cut.
+
+## Rivers and borders; caves as mountains (after M3)
+
+Two user requests:
+
+- **A river must not run along a region border, touching it** (a town
+  river skimming the forest edge looked wrong). Cause: the region levels
+  meet on slopes, so the lowest line — where the water goes — is often
+  right at a border. Fix at the cause, in the land the water sees
+  (`forest::water::Borders`, mixed only): a low rise along every border
+  (`BORDER_HUMP` = 0.025 of the relief, below the pond depth so it makes
+  no ponds; smoothstep from the border to 1.6 × clearance + 2 m). Water
+  gathers at its foot, `river_clearance_m` (default 8 m, Water node
+  "Border clearance") off the border, and crosses only where the rise is
+  lowest; in a narrow strip it runs down the middle. Where there is
+  little room, the meander swing, braids and oxbows shrink (they never
+  reach a border). A spring on a border moves down the stream until it is
+  clear — except at the foot of the mountains, where the water comes out
+  of the mountain. A first try that pushed the drawn river line away
+  afterwards was dropped: in narrow strips it tangled the braids, oxbows
+  and brooks. Tested (`rivers_cross_borders_or_keep_off_them`): water
+  cells within 1.5 m of a border with no crossing within 25 m — 27 with
+  the clearance off, 0 with it on, over 8 maps.
+- **Caves are underground, so a cave region is MOUNTAINS**: a rock massif
+  (already the highest ground; rivers go round it and spring at its foot)
+  whose walkable inside is the cave system, entered by cave mouths at its
+  portals. Internally it stays `MapKind::Cave` (configs, spec.json
+  `"cave"`, the cave nodes); on a mixed map it is labelled Mountains
+  (`MapKind::region_label`) and drawn in stone gray. MCP reports
+  `"label": "Mountains"`. M7 builds it.

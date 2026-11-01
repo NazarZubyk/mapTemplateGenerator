@@ -35,6 +35,16 @@ impl MapKind {
         }
     }
 
+    /// Display name as a region of a mixed map: a cave region is a
+    /// mountain massif whose walkable inside is the cave system, entered
+    /// by cave mouths (docs/mixed-plan.md).
+    pub fn region_label(self) -> &'static str {
+        match self {
+            MapKind::Cave => "Mountains",
+            k => k.label(),
+        }
+    }
+
     /// Lowercase stable id used in legends and spec.json.
     pub fn slug(self) -> &'static str {
         match self {
@@ -200,7 +210,7 @@ impl MixedRegion {
     pub fn of(kind: MapKind, share_pct: f32) -> Self {
         let kind = if kind == MapKind::Mixed { MapKind::Forest } else { kind };
         Self {
-            name: kind.label().to_owned(),
+            name: kind.region_label().to_owned(),
             kind,
             share_pct,
             placement: RegionPlacement::Anywhere,
@@ -245,6 +255,10 @@ pub struct MixedSettings {
     /// Which regions link and where (node 5). The map gates are the
     /// config's `gates`.
     pub connections: MixedConnectionSettings,
+    /// A river crosses a region border or keeps at least this far from
+    /// it, meters (node 4): never running along a border, touching it.
+    /// 0 = rivers go where the land takes them.
+    pub river_clearance_m: f32,
 }
 
 /// Settings of the mixed map's connections node (docs/mixed-plan.md, M3).
@@ -319,6 +333,7 @@ impl Default for MixedSettings {
             land: MixedLandSettings::default(),
             water: ForestWaterSettings::mixed(),
             connections: MixedConnectionSettings::default(),
+            river_clearance_m: 8.0,
         }
     }
 }
