@@ -13,7 +13,7 @@ file), Swamp ([swamp-plan.md](swamp-plan.md)), Cave
 Swamp, Cave and Forest are complete and being tuned with the user.
 **Mixed** maps (map regions of several kinds, each with its own settings)
 are being built on branch `mixed-regions`: [mixed-plan.md](mixed-plan.md)
-(M1 map regions done).
+(M1 map regions, M2 land and water done). The app starts on Mixed.
 Swamp — its own node chain, planned in
 [swamp-plan.md](swamp-plan.md) (step list and notes live there). Done:
 S1 gate anchors, S2 islands, S3 paths, S4 depth & border, S5 trees, S6
@@ -66,7 +66,7 @@ own chain (`generator/swamp/`, `swamp_node_chain` in left_panel.rs) — the
 list below is the town / forest chain; the swamp one is in
 [swamp-plan.md](swamp-plan.md). **Cave** has its own chain too
 (`generator/cave/`, `cave_node_chain`), built step by step from
-[cave-plan.md](cave-plan.md): C1 style, C2 chambers, C3 tunnels, C4 carve & smooth, C5 hazards, C7 spawns, C8 export done (C6 pillars dropped) — the cave plan is complete. **Forest** has its own chain too (`generator/forest/`), planned in [forest-plan.md](forest-plan.md) (land first: F1 areas → F2 terrain → F3 water → F4 thickets → F5 passages → F6 clearings & trails → F7 trees → F8 props → F9 hidden glades / interactive / mobs, then export polish), F1–F9 done — the forest chain is complete (F10 export polish done), tuning open; the app starts on Forest for now.
+[cave-plan.md](cave-plan.md): C1 style, C2 chambers, C3 tunnels, C4 carve & smooth, C5 hazards, C7 spawns, C8 export done (C6 pillars dropped) — the cave plan is complete. **Forest** has its own chain too (`generator/forest/`), planned in [forest-plan.md](forest-plan.md) (land first: F1 areas → F2 terrain → F3 water → F4 thickets → F5 passages → F6 clearings & trails → F7 trees → F8 props → F9 hidden glades / interactive / mobs, then export polish), F1–F9 done — the forest chain is complete (F10 export polish done), tuning open.
 
 Right now:
 

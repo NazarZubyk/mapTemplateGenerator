@@ -222,7 +222,7 @@ connections) cannot disagree; and a single-kind map does not change at all
       share, placement, own config), the split by growth on the whole map,
       the kind-colored region map in the preview / map.png, the region
       picker in the UI with each region's own nodes, spec.json `mixed`.
-- [ ] **M2 — Land and water**: the height field from the kinds; global
+- [x] **M2 — Land and water**: the height field from the kinds; global
       rivers, lakes, sinks; drawn on the region map.
 - [ ] **M3 — Connections**: adjacency graph, labyrinth slider, portals,
       map gates per region, river crossings.
@@ -262,3 +262,39 @@ connections) cannot disagree; and a single-kind map does not change at all
   size, cell size and gates are global (shown as such).
 - spec.json `mixed_regions`: id, name, kind, placement, target / actual %,
   cells.
+
+## Step M2 notes — land and water
+
+- The app and the MCP server now start on a Mixed map with the starting
+  mix (`LevelConfig::of_kind(MapKind::Mixed)`).
+- **Land** (`mixed::land`): each cell gets its kind's level and hilliness
+  (cave 1.0 / rugged, forest 0.55 / rolling, town 0.45 / flat, swamp 0.0 /
+  flat); both fields are box-blurred three times with radius
+  `slope_m / 2` (≈ a Gaussian), so regions meet on slopes instead of
+  steps. On top: warped fBm hills (scaled by the hilliness, so a town
+  terrace stays flat) and a tilt. `kinds_pct` blends between "the kinds
+  set the land" and "hills only". Normalized 0..1; `relief_m` only for the
+  shading and the export. No rock yet: the forest's rock ridges come back
+  inside forest regions with M4.
+- **Water** (`mixed::rivers`): the forest's priority-flood drainage over
+  the whole land (`forest::water::build_drainage`), with two additions
+  that change nothing for a single forest:
+  - *sinks* — the swamp cells are flood seeds like the map edge, so a
+    river reaching a swamp ends there (`StreamMouth::Sink`); its water
+    becomes the swamp's own in M6.
+  - *dry* — cave cells drain but never hold a stream: tracing a river
+    uphill stops at the foot of the massif (the spring); no outlet or pond
+    in a cave.
+  Water is cleared from swamp and cave cells. Tested: cave above forest
+  above swamp on average; no water in a cave or swamp; every sink river
+  ends next to a swamp.
+- Map: each region's color shaded by the land (slope over ~2 m, light
+  from the north-west), water on top; legend lists the water.
+- A forest region shows a note instead of its own Terrain and Water nodes
+  (the mixed map sets them). The forest's water controls are one shared
+  function (`water_controls`) used by both water nodes.
+- spec.json: `mixed_water` (streams with their mouth, ponds),
+  `mixed_relief_m`. MCP `generate`: `mixed_regions`, `mixed_water`.
+- Open for later: rivers into a swamp end at its edge for now (M6 carries
+  them into the swamp water); a river crossing a town gets bridges in M3 /
+  M5.

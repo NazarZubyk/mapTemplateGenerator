@@ -996,6 +996,8 @@ pub enum StreamMouth {
     Stream(u32),
     /// Ends in a pond.
     Pond(u32),
+    /// Flows into a sink: a swamp region of a mixed map drinks it.
+    Sink,
 }
 
 /// One stream: a centerline from its spring down to its mouth.
@@ -1514,6 +1516,14 @@ pub struct MixedLayout {
     pub map: RegionMap,
     /// Per region, in id order.
     pub regions: Vec<MixedRegionStat>,
+    /// The land under the whole map (node 3): height 0..1 per cell; no
+    /// rock yet (`rock` empty).
+    #[serde(default)]
+    pub land: Option<TerrainLayout>,
+    /// Rivers, brooks and ponds across the regions (node 4). Rivers end at
+    /// the map edge or in a swamp region; none run in a cave region.
+    #[serde(default)]
+    pub water: Option<WaterLayout>,
 }
 
 impl MixedLayout {

@@ -47,6 +47,9 @@ pub struct MapGenApp {
     pub regen_pending: bool,
     /// Mixed maps: the map region whose own nodes the panel shows (index).
     pub mixed_selected: usize,
+    /// True while the panel draws a map region's own nodes (its config is
+    /// swapped into `config`): nodes the mixed map sets show a note.
+    pub in_map_region: bool,
 }
 
 /// How often live sync looks at the config file.
@@ -90,6 +93,7 @@ impl Default for MapGenApp {
             last_sync_check: Instant::now() - SYNC_EVERY,
             regen_pending: false,
             mixed_selected: 0,
+            in_map_region: false,
         }
     }
 }

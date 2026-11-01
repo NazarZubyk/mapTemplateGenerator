@@ -259,17 +259,56 @@ pub fn forest_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
         .collect()
 }
 
-/// Mixed maps: every cell in its map region's color.
+/// Mixed maps: every cell in its map region's color, shaded by the land
+/// (light from the north-west), with the water on top.
 pub fn mixed_colors(level: &GeneratedLevel) -> Option<(usize, usize, f32, Vec<[u8; 3]>)> {
+    use crate::level::ForestGround as G;
     let m = level.mixed.as_ref()?;
-    let colors = (0..m.map.ids.len()).map(|c| m.region_at(c).map_or(GROUND, |r| r.color)).collect();
-    Some((m.map.width, m.map.height, m.map.cell_size_m, colors))
+    let (w, h, cell) = (m.map.width, m.map.height, m.map.cell_size_m);
+    let land = m.land.as_ref().filter(|l| l.height_m.len() == w * h);
+    let water = m.water.as_ref().filter(|wl| wl.deep.cells.len() == w * h);
+    let colors = (0..w * h)
+        .map(|c| {
+            if let Some(wl) = water {
+                if wl.deep.cells[c] {
+                    return G::Deep.color();
+                }
+                if wl.shallow.cells[c] {
+                    return G::Shallow.color();
+                }
+            }
+            let base = m.region_at(c).map_or(GROUND, |r| r.color);
+            let Some(l) = land else { return base };
+            let (x, y) = (c % w, c / w);
+            // Slope over a few meters (not cell to cell: no grain).
+            let k = ((2.0 / cell).round() as usize).max(1);
+            let at = |x: usize, y: usize| l.height_m[y * w + x] * l.relief_m;
+            let (xa, xb) = (x.saturating_sub(k), (x + k).min(w - 1));
+            let (ya, yb) = (y.saturating_sub(k), (y + k).min(h - 1));
+            let gx = (at(xb, y) - at(xa, y)) / ((xb - xa).max(1) as f32 * cell);
+            let gy = (at(x, yb) - at(x, ya)) / ((yb - ya).max(1) as f32 * cell);
+            // Rising toward the south-east = facing the north-west light.
+            let lit = ((gx + gy) * 0.707 * 0.8).clamp(-0.2, 0.2);
+            base.map(|v| (v as f32 * (1.0 + lit)).round().clamp(0.0, 255.0) as u8)
+        })
+        .collect();
+    Some((w, h, cell, colors))
 }
 
-/// Mixed map legend entries: one per map region.
+/// Mixed map legend entries: one per map region, then the water.
 pub fn mixed_legend(level: &GeneratedLevel) -> Vec<([u8; 3], String)> {
+    use crate::level::ForestGround as G;
     let Some(m) = level.mixed.as_ref() else { return Vec::new() };
-    m.regions.iter().map(|r| (r.color, format!("{} · {} ({})", r.id, r.name, r.kind.label()))).collect()
+    let mut out: Vec<_> = m.regions.iter().map(|r| (r.color, format!("{} · {} ({})", r.id, r.name, r.kind.label()))).collect();
+    if let Some(wl) = &m.water {
+        if wl.shallow.count_true() > 0 {
+            out.push((G::Shallow.color(), "shallow water (walkable)".to_owned()));
+        }
+        if wl.deep.count_true() > 0 {
+            out.push((G::Deep.color(), "deep water (blocked)".to_owned()));
+        }
+    }
+    out
 }
 
 /// Per-cell ground colors of the kinds that paint their own ground (cave,
@@ -739,7 +778,7 @@ mod tests {
 
     #[test]
     fn forest_layer_carries_ground_area_and_walkable() {
-        let mut c = crate::model::LevelConfig::starting();
+        let mut c = crate::model::LevelConfig::of_kind(crate::model::MapKind::Forest);
         c.map.width_m = 120.0;
         c.map.height_m = 100.0;
         c.cell_size_m = 1.0;

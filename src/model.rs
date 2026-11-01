@@ -121,11 +121,22 @@ impl LevelConfig {
     /// The map kind the app (and the MCP server, with no config file yet)
     /// starts on — the kind being built right now. `default()` stays Town,
     /// the baseline the tests are written against.
-    pub const START_KIND: MapKind = MapKind::Forest;
+    pub const START_KIND: MapKind = MapKind::Mixed;
 
-    /// The defaults with [`Self::START_KIND`] and its shape defaults.
+    /// The defaults with [`Self::START_KIND`] and its shape defaults (a
+    /// mixed map gets the starting mix of map regions).
     pub fn starting() -> Self {
-        Self { kind: Self::START_KIND, shape: ShapeSettings::for_kind(Self::START_KIND), ..Self::default() }
+        Self::of_kind(Self::START_KIND)
+    }
+
+    /// The defaults for a map of `kind`, with that kind's shape defaults;
+    /// a mixed map gets the starting mix of map regions.
+    pub fn of_kind(kind: MapKind) -> Self {
+        let mut c = Self { kind, shape: ShapeSettings::for_kind(kind), ..Self::default() };
+        if kind == MapKind::Mixed {
+            c.mixed.regions = MixedSettings::starter();
+        }
+        c
     }
 
     /// The defaults on the old 64 m map: the town-chain tests were written
@@ -226,6 +237,38 @@ pub struct MixedSettings {
     /// How irregular the region borders are, %: 0 = compact round blobs,
     /// higher = lobes, bays and fingers (as in the town districts).
     pub irregularity_pct: f32,
+    /// The land under the whole map (node 3).
+    pub land: MixedLandSettings,
+    /// Rivers, brooks and ponds across the regions (node 4): the forest's
+    /// water settings, for the whole map.
+    pub water: ForestWaterSettings,
+}
+
+/// Settings of the mixed map's land node: one height field for the whole
+/// map, shaped by the region kinds (docs/mixed-plan.md, M2).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MixedLandSettings {
+    /// How strongly the kinds shape the land, %: a cave region is a high
+    /// rock massif, a swamp a low basin, a town a flat terrace, a forest
+    /// rolling ground. 0 = hills only, the kinds do not matter.
+    pub kinds_pct: f32,
+    /// Hill size, meters (the noise on top).
+    pub hill_scale_m: f32,
+    /// How much the land tilts to one (random) side, %.
+    pub tilt_pct: f32,
+    /// How wide the slopes between regions of different height are,
+    /// meters: small = steep steps at the borders, large = long slopes.
+    pub slope_m: f32,
+    /// Height between the lowest and the highest point, meters (exported
+    /// and used for the shading only).
+    pub relief_m: f32,
+}
+
+impl Default for MixedLandSettings {
+    fn default() -> Self {
+        Self { kinds_pct: 65.0, hill_scale_m: 70.0, tilt_pct: 25.0, slope_m: 18.0, relief_m: 40.0 }
+    }
 }
 
 impl MixedSettings {
@@ -244,7 +287,12 @@ impl MixedSettings {
 
 impl Default for MixedSettings {
     fn default() -> Self {
-        Self { regions: Vec::new(), irregularity_pct: 50.0 }
+        Self {
+            regions: Vec::new(),
+            irregularity_pct: 50.0,
+            land: MixedLandSettings::default(),
+            water: ForestWaterSettings { streams: 2, ..ForestWaterSettings::default() },
+        }
     }
 }
 

@@ -26,7 +26,7 @@ exports them as `map.png`, `layer.png` and `spec.json`.
 Start the app from this folder: config and exports paths are relative to
 the folder you start it in (`configs/config.json`, `exports/`).
 
-1. In node 1 set the kind to **Town** (the app opens on Forest for now) and
+1. In node 1 set the kind to **Town** (the app opens on a Mixed map) and
    pick the map size, then adjust the nodes below it.
 2. Press **⚙ Generate** (🎲 **Re-roll** tries another seed).
 3. **Export** writes the three files into `exports/`.

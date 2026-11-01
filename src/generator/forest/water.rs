@@ -53,8 +53,26 @@ const MEANDER_AMP: f32 = 0.9;
 const MEANDER_MAX_M: f32 = 4.0;
 
 pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, terrain: &TerrainLayout) -> WaterBuild {
-    let s = &config.forest.water;
+    build_drainage(&config.forest.water, rng, terrain, &Drainage::default())
+}
+
+/// What a mixed map adds to the drainage (docs/mixed-plan.md, M2).
+#[derive(Default)]
+pub struct Drainage<'a> {
+    /// Cells that take the water like the map edge: a stream reaching one
+    /// ends there (a swamp drinks it).
+    pub sinks: Option<&'a CellMask>,
+    /// Cells no stream runs in (a cave massif): the water still drains off
+    /// them, but a stream traced uphill stops at their foot — its spring.
+    pub dry: Option<&'a CellMask>,
+}
+
+/// The water with the extra outlets and dry ground of `extra` (none: the
+/// forest's own water).
+pub fn build_drainage(s: &crate::model::ForestWaterSettings, rng: &mut ChaCha8Rng, terrain: &TerrainLayout, extra: &Drainage) -> WaterBuild {
     let (w, h, cell) = (terrain.width, terrain.height, terrain.cell_size_m);
+    let is_sink = |c: usize| extra.sinks.is_some_and(|m| m.cells[c]);
+    let is_dry = |c: usize| extra.dry.is_some_and(|m| m.cells[c]);
     let n = w * h;
     let mut notes = Vec::new();
     let meander_noise = NoiseField::new(rng.random::<u64>());
@@ -68,7 +86,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, terrain: &TerrainLayout
     let mut seen = vec![false; n];
     for c in 0..n {
         let (x, y) = (c % w, c / w);
-        if x == 0 || y == 0 || x + 1 == w || y + 1 == h {
+        if x == 0 || y == 0 || x + 1 == w || y + 1 == h || is_sink(c) {
             seen[c] = true;
             filled[c] = ground[c];
             heap.push(Reverse((ground[c].to_bits(), c)));
@@ -98,7 +116,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, terrain: &TerrainLayout
     let mut shallow = CellMask::new(w, h, cell);
     let mut deep = CellMask::new(w, h, cell);
     if s.pond_min_m2 > 0.0 {
-        let hollow = CellMask { width: w, height: h, cell_size_m: cell, cells: (0..n).map(|c| filled[c] - ground[c] > POND_DEPTH).collect() };
+        let hollow = CellMask { width: w, height: h, cell_size_m: cell, cells: (0..n).map(|c| filled[c] - ground[c] > POND_DEPTH && !is_dry(c)).collect() };
         let (labels, count) = crate::generator::grid::components(&hollow);
         let mut cells_of: Vec<Vec<usize>> = vec![Vec::new(); count as usize + 1];
         for (c, &l) in labels.iter().enumerate() {
@@ -166,7 +184,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, terrain: &TerrainLayout
         kids[start[c]..start[c + 1]].sort_by_key(|&k| (Reverse(flow[k]), k));
     }
     let spring = (SPRING_M2 / (cell * cell)).ceil() as u32;
-    let mut outlets: Vec<usize> = (0..n).filter(|&c| down[c] == usize::MAX && flow[c] >= spring * 3).collect();
+    let mut outlets: Vec<usize> = (0..n).filter(|&c| down[c] == usize::MAX && flow[c] >= spring * 3 && !is_dry(c)).collect();
     outlets.sort_by_key(|&c| (Reverse(flow[c]), c));
     let mut chosen: Vec<usize> = Vec::new();
     for &o in &outlets {
@@ -194,7 +212,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, terrain: &TerrainLayout
         loop {
             let ks = &kids[start[c]..start[c + 1]];
             match ks.first() {
-                Some(&k) if flow[k] >= spring => {
+                Some(&k) if flow[k] >= spring && !is_dry(k) => {
                     path.push(k);
                     c = k;
                 }
@@ -207,17 +225,18 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, terrain: &TerrainLayout
     for &o in &chosen {
         let main = trace_up(o);
         let main_id = raw.len() as u32 + 1;
+        let outlet_mouth = if is_sink(o) { StreamMouth::Sink } else { StreamMouth::Edge };
         let trib_min = if trib > 0.0 { ((flow[o] as f32) * (0.5 - 0.46 * trib)).max(spring as f32 * 2.0) as u32 } else { u32::MAX };
         // Side brooks off the main stream, then off those (two levels).
         let mut queue = vec![(main.clone(), main_id)];
-        raw.push((main, StreamMouth::Edge));
+        raw.push((main, outlet_mouth));
         let mut level = 0;
         while !queue.is_empty() && level < 2 {
             let mut next = Vec::new();
             for (path, id) in queue {
                 for &c in &path {
                     for &k in kids[start[c]..start[c + 1]].iter().skip(1) {
-                        if flow[k] >= trib_min && !path.contains(&k) {
+                        if flow[k] >= trib_min && !is_dry(k) && !path.contains(&k) {
                             let sub = trace_up(k);
                             let mouth = if pond_id[c] > 0 { StreamMouth::Pond(pond_id[c]) } else { StreamMouth::Stream(id) };
                             let sid = raw.len() as u32 + 1;
@@ -286,8 +305,11 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, terrain: &TerrainLayout
         });
     }
     for c in 0..n {
-        if deep.cells[c] {
+        if deep.cells[c] || is_sink(c) || is_dry(c) {
             shallow.cells[c] = false;
+        }
+        if is_sink(c) || is_dry(c) {
+            deep.cells[c] = false;
         }
     }
     WaterBuild { layout: WaterLayout { shallow, deep, streams, ponds }, notes }
@@ -399,6 +421,7 @@ mod tests {
                     }
                     StreamMouth::Stream(p) => assert!(l.streams.iter().any(|x| x.id == p)),
                     StreamMouth::Pond(p) => assert!(l.ponds.iter().any(|x| x.id == p)),
+                    StreamMouth::Sink => panic!("seed {seed}: a forest has no sinks"),
                 }
                 assert!(st.width_m[0] <= st.width_m[1] + 1e-3, "seed {seed}: narrows downstream");
             }

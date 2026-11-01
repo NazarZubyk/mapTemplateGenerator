@@ -153,10 +153,17 @@ tuning. The town chain is `generator::town_chain`.
 one kind with its own settings: 1 Template → 2 **Map regions** (kind, share,
 placement anywhere / on the map edge / inside; the town district growth on
 the whole map, `regions::build_placed`; nested regions grow first and keep
-a wavy margin off the edge) → next: land, water, connections (portals),
-each region's own chain in its ground, seams. In the app, the picked
+a wavy margin off the edge) → 3 **Land** (one height field from the kinds:
+cave massif high, swamp basin low, town flat terrace, forest rolling;
+blurred into slopes, hills and a tilt on top) → 4 **Water** (the forest
+drainage on the whole land, `forest::water::build_drainage` with swamp
+regions as sinks and cave regions dry: rivers end at the map edge or in a
+swamp, springs at the foot of a massif) → next: connections (portals),
+each region's own chain in its ground, seams. The map is shaded by the
+land (light from the north-west). In the app, the picked
 region's nodes are the kind's normal nodes: its config is swapped into
-`app.config` while they draw. spec.json `mixed_regions`.
+`app.config` while they draw. spec.json `mixed_regions`, `mixed_water`, `mixed_relief_m`; MCP `generate`
+reports `mixed_regions` and `mixed_water`.
 
 **Cave** has its own chain (complete, see [cave-plan.md](cave-plan.md)):
 1 Template → 2 **Style** (natural % + mixing → natural / hand-made zones;
@@ -173,9 +180,10 @@ edge) → 8 **Hidden rooms** (pockets in the rock, a cracked wall each) →
 9 **Interactive objects** / 10 **Mobs** (spawn terrains chamber /
 tunnel / shallow pool / hidden room + natural / hand-made style filter;
 halls are the hubs, dead-end chamber guards). The app and the MCP server
-(with no config file / `reset_config`) start on Forest for now
-(`LevelConfig::START_KIND`, `LevelConfig::starting()`); `default()` stays
-Town for the tests.
+(with no config file / `reset_config`) start on a Mixed map with the
+starting mix of regions (`LevelConfig::START_KIND`,
+`LevelConfig::starting()` = `LevelConfig::of_kind(START_KIND)`);
+`default()` stays Town for the tests.
 
 Export: map.png (colored map), layer.png (objects: R = category id 1–7,
 G/B = instance id; swamp ground: R = ground id 8–14, G = depth, B =

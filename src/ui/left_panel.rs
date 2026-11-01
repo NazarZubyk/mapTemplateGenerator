@@ -129,9 +129,13 @@ fn cave_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
 fn forest_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_forest_areas(ui, app);
     flow_arrow(ui, "areas (style + character), not separated yet");
-    node_forest_terrain(ui, app);
-    flow_arrow(ui, "hidden height field + rock ridges");
-    node_forest_water(ui, app);
+    if app.in_map_region {
+        set_by_mixed_map(ui, "3 · Terrain · 4 · Water", "the mixed map's 3 · Land and 4 · Water nodes (rock ridges come back with M4)");
+    } else {
+        node_forest_terrain(ui, app);
+        flow_arrow(ui, "hidden height field + rock ridges");
+        node_forest_water(ui, app);
+    }
     flow_arrow(ui, "streams (spring → map edge) and ponds");
     node_forest_thickets(ui, app);
     flow_arrow(ui, "open ground / forest floor / thicket");
@@ -174,6 +178,10 @@ and spec.json. Only a label.";
 fn mixed_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node_map_regions(ui, app);
     flow_arrow(ui, "map regions (kind + ground of each)");
+    node_mixed_land(ui, app);
+    flow_arrow(ui, "one height field: massifs, basins, terraces");
+    node_mixed_water(ui, app);
+    flow_arrow(ui, "rivers (spring → map edge or swamp), brooks, ponds");
     let n = app.config.mixed.regions.len();
     if n == 0 {
         ui.weak("Add a map region to configure it.");
@@ -202,18 +210,81 @@ fn mixed_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     // the app config's place while they draw.
     let mut region = app.config.mixed.regions[i].resolved(&app.config);
     std::mem::swap(&mut app.config, &mut region);
-    match app.config.kind {
+    app.in_map_region = true;
+    // Own widget ids: a region's "4 · Water" is not the mixed map's.
+    ui.push_id(("map_region", i), |ui| match app.config.kind {
         MapKind::Swamp => swamp_node_chain(ui, app),
         MapKind::Cave => cave_node_chain(ui, app),
         MapKind::Forest => forest_node_chain(ui, app),
         _ => town_node_chain(ui, app),
-    }
+    });
+    app.in_map_region = false;
     std::mem::swap(&mut app.config, &mut region);
     // Keep what the nodes changed; the region kind stays the row's.
     let row = &mut app.config.mixed.regions[i];
     region.kind = row.kind;
     region.mixed = Default::default();
     row.config = region;
+}
+
+/// A region node the mixed map decides for every region: a note instead
+/// of its controls.
+fn set_by_mixed_map(ui: &mut egui::Ui, title: &str, by: &str) {
+    node(ui, title, |ui| {
+        ui.weak(format!("Set for the whole map by {by}."));
+    });
+}
+
+/// Mixed node 3: the land under the whole map, shaped by the kinds (step
+/// M2 in docs/mixed-plan.md).
+fn node_mixed_land(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_KINDS: &str = "How strongly the region kinds shape the land, %. A cave region \
+is a high rock massif, a swamp a low basin (the water gathers there), a town a flat terrace, \
+a forest rolling ground; slopes join them at the borders. 0%: hills only, the kinds do not \
+matter for the height (rivers then go anywhere, not into the swamps).";
+    const TIP_HILLS: &str = "Hill size, meters: the noise on top of the kinds' levels. Small: \
+many little bumps. Large: broad swells. Flat kinds (town, swamp) get less of it.";
+    const TIP_TILT: &str = "How much the whole land tilts to one side, % (random side): the \
+rivers then mostly run that way.";
+    const TIP_SLOPE: &str = "How wide the slopes between regions of different height are, \
+meters. Small: steep steps right at the borders. Large: long gentle slopes reaching into the \
+regions.";
+    const TIP_RELIEF: &str = "Height between the lowest and the highest point, meters. Only \
+exported (spec.json) and used for the shading; the shapes do not change.";
+    node(ui, "3 · Land", |ui| {
+        ui.weak("input: map regions · output: one height field (hidden, shaded)");
+        let s = &mut app.config.mixed.land;
+        egui::Grid::new("mixed_land_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Kinds shape it", TIP_KINDS, |ui| ui.add(egui::Slider::new(&mut s.kinds_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Hill size", TIP_HILLS, |ui| ui.add(meters(&mut s.hill_scale_m, 400.0)));
+            param_row(ui, "Tilt", TIP_TILT, |ui| ui.add(egui::Slider::new(&mut s.tilt_pct, 0.0..=100.0).suffix("%")));
+            param_row(ui, "Slopes", TIP_SLOPE, |ui| ui.add(meters(&mut s.slope_m, 200.0)));
+            param_row(ui, "Relief", TIP_RELIEF, |ui| ui.add(meters(&mut s.relief_m, 400.0)));
+        });
+        ui.horizontal(|ui| {
+            if ui.button("🎲 Random params").on_hover_text("Rolls every land setting independently inside its reasonable range. Set values only; press Generate.").clicked() {
+                let mut rng = rand::rng();
+                s.kinds_pct = rng.random_range(0.0..=100.0);
+                s.hill_scale_m = rng.random_range(30.0..=160.0);
+                s.tilt_pct = rng.random_range(0.0..=80.0);
+                s.slope_m = rng.random_range(4.0..=60.0);
+                s.relief_m = rng.random_range(10.0..=120.0);
+            }
+            ui.weak("Changes apply on ⚙ Generate");
+        });
+    });
+}
+
+/// Mixed node 4: rivers, brooks and ponds across the regions (step M2 in
+/// docs/mixed-plan.md).
+fn node_mixed_water(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    node(ui, "4 · Water", |ui| {
+        ui.weak("input: land · output: rivers into swamps or off the map, none in caves");
+        water_controls(ui, &mut app.config.mixed.water, "mixed");
+        if let Some(wl) = app.generated.as_ref().and_then(|l| l.mixed.as_ref()).and_then(|m| m.water.as_ref()) {
+            water_stats(ui, wl);
+        }
+    });
 }
 
 /// Mixed node 2: the map regions — kind, share, placement of each
@@ -473,9 +544,10 @@ Large: long sweeping ridges. NO EFFECT with Rock 0%.";
     });
 }
 
-/// Forest node 4: streams and ponds (step F3 in docs/forest-plan.md).
-fn node_forest_water(ui: &mut egui::Ui, app: &mut MapGenApp) {
-    const TIP_STREAMS: &str = "Streams that flow off the map. Each rises at a spring, follows \
+/// The water controls (streams, brooks, width, deep, meander, ponds),
+/// shared by the forest's and the mixed map's water nodes.
+fn water_controls(ui: &mut egui::Ui, s: &mut crate::model::ForestWaterSettings, id: &str) {
+    const TIP_STREAMS: &str = "Streams that flow off the map (on a mixed map: or into a swamp region). Each rises at a spring, follows \
 the land downhill, gathers brooks, gets wider and leaves at the map edge — never starting or \
 ending in the open. The biggest catchments are taken; a note says if fewer fit.";
     const TIP_TRIB: &str = "Side brooks flowing into the streams, %. 0%: single streams. 100%: \
@@ -487,39 +559,49 @@ ford or a bridge crosses them, so they separate areas. Narrower ones are shallow
     const TIP_MEANDER: &str = "How much the streams wind beyond what the land gives, %.";
     const TIP_POND: &str = "Hollows in the land at least this big, m², hold a pond (deep in the \
 middle when twice this big). 0 = no ponds.";
+    egui::Grid::new((id, "water_grid")).num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+        param_row(ui, "Streams", TIP_STREAMS, |ui| ui.add(egui::DragValue::new(&mut s.streams).range(0..=6).speed(0.05)));
+        param_row(ui, "Brooks", TIP_TRIB, |ui| ui.add(egui::Slider::new(&mut s.tributaries_pct, 0.0..=100.0).suffix("%")));
+        param_row(ui, "Width", TIP_WIDTH, |ui| range_m(ui, &mut s.width_min_m, &mut s.width_max_m, 0.5..=20.0));
+        param_row(ui, "Deep from", TIP_DEEP, |ui| ui.add(meters(&mut s.deep_from_m, 30.0)));
+        param_row(ui, "Meander", TIP_MEANDER, |ui| ui.add(egui::Slider::new(&mut s.meander_pct, 0.0..=100.0).suffix("%")));
+        param_row(ui, "Pond min", TIP_POND, |ui| ui.add(egui::DragValue::new(&mut s.pond_min_m2).range(0.0..=5000.0).speed(5.0).suffix(" m²")));
+    });
+    ui.horizontal(|ui| {
+        if ui.button("🎲 Random params").on_hover_text("Rolls every water setting independently inside its reasonable range. Set values only; press Generate.").clicked() {
+            let mut rng = rand::rng();
+            s.streams = rng.random_range(0..=3);
+            s.tributaries_pct = rng.random_range(0.0..=100.0);
+            s.width_min_m = rng.random_range(1.0..=3.0);
+            s.width_max_m = rng.random_range(3.0..=10.0);
+            s.deep_from_m = rng.random_range(2.5..=7.0);
+            s.meander_pct = rng.random_range(0.0..=100.0);
+            s.pond_min_m2 = rng.random_range(0.0..=400.0);
+        }
+        ui.weak("Changes apply on ⚙ Generate");
+    });
+}
+
+/// The generated-water stats line.
+fn water_stats(ui: &mut egui::Ui, wl: &crate::level::WaterLayout) {
+    let main = wl.streams.iter().filter(|s| matches!(s.mouth, crate::level::StreamMouth::Edge | crate::level::StreamMouth::Sink)).count();
+    let sinks = wl.streams.iter().filter(|s| s.mouth == crate::level::StreamMouth::Sink).count();
+    let len: f32 = wl.streams.iter().map(|s| s.length_m).sum();
+    ui.weak(format!(
+        "generated: {main} streams ({sinks} into a swamp), {} brooks ({len:.0} m, {} deep) · {} ponds",
+        wl.streams.len() - main,
+        wl.streams.iter().filter(|s| s.deep).count(),
+        wl.ponds.len()
+    ));
+}
+
+/// Forest node 4: streams and ponds (step F3 in docs/forest-plan.md).
+fn node_forest_water(ui: &mut egui::Ui, app: &mut MapGenApp) {
     node(ui, "4 · Water", |ui| {
         ui.weak("input: terrain · output: streams (spring → map edge), brooks, ponds (forest)");
-        let s = &mut app.config.forest.water;
-        egui::Grid::new("forest_water_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
-            param_row(ui, "Streams", TIP_STREAMS, |ui| ui.add(egui::DragValue::new(&mut s.streams).range(0..=6).speed(0.05)));
-            param_row(ui, "Brooks", TIP_TRIB, |ui| ui.add(egui::Slider::new(&mut s.tributaries_pct, 0.0..=100.0).suffix("%")));
-            param_row(ui, "Width", TIP_WIDTH, |ui| range_m(ui, &mut s.width_min_m, &mut s.width_max_m, 0.5..=20.0));
-            param_row(ui, "Deep from", TIP_DEEP, |ui| ui.add(meters(&mut s.deep_from_m, 30.0)));
-            param_row(ui, "Meander", TIP_MEANDER, |ui| ui.add(egui::Slider::new(&mut s.meander_pct, 0.0..=100.0).suffix("%")));
-            param_row(ui, "Pond min", TIP_POND, |ui| ui.add(egui::DragValue::new(&mut s.pond_min_m2).range(0.0..=5000.0).speed(5.0).suffix(" m²")));
-        });
-        ui.horizontal(|ui| {
-            if ui.button("🎲 Random params").on_hover_text("Rolls every water setting independently inside its reasonable range. Set values only; press Generate.").clicked() {
-                let mut rng = rand::rng();
-                s.streams = rng.random_range(0..=3);
-                s.tributaries_pct = rng.random_range(0.0..=100.0);
-                s.width_min_m = rng.random_range(1.0..=3.0);
-                s.width_max_m = rng.random_range(3.0..=10.0);
-                s.deep_from_m = rng.random_range(2.5..=7.0);
-                s.meander_pct = rng.random_range(0.0..=100.0);
-                s.pond_min_m2 = rng.random_range(0.0..=400.0);
-            }
-            ui.weak("Changes apply on ⚙ Generate");
-        });
+        water_controls(ui, &mut app.config.forest.water, "forest");
         if let Some(wl) = app.generated.as_ref().and_then(|l| l.forest.as_ref()).and_then(|f| f.water.as_ref()) {
-            let main = wl.streams.iter().filter(|s| s.mouth == crate::level::StreamMouth::Edge).count();
-            let len: f32 = wl.streams.iter().map(|s| s.length_m).sum();
-            ui.weak(format!(
-                "generated: {main} streams, {} brooks ({len:.0} m, {} deep) · {} ponds",
-                wl.streams.len() - main,
-                wl.streams.iter().filter(|s| s.deep).count(),
-                wl.ponds.len()
-            ));
+            water_stats(ui, wl);
         }
     });
 }

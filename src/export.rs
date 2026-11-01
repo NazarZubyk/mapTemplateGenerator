@@ -172,6 +172,15 @@ pub struct ExportSpec {
     /// actual share, cells, map color (docs/mixed-plan.md).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mixed_regions: Option<Vec<crate::level::MixedRegionStat>>,
+    /// Mixed maps: rivers and brooks (spring → mouth centerlines, widths,
+    /// where they end: map edge, another stream, a pond, or a swamp region
+    /// = "sink") and ponds, across the regions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mixed_water: Option<ExportForestWater>,
+    /// Mixed maps: height between the lowest and the highest point of the
+    /// land, meters.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mixed_relief_m: Option<f32>,
     /// Cave chambers: id, kind (hall / grotto), style, zone, center, size,
     /// long-axis angle, area.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -571,6 +580,8 @@ impl ExportSpec {
                 relief_m: level.forest.as_ref().and_then(|f| f.terrain.as_ref()).map_or(0.0, |t| t.relief_m),
             }),
             mixed_regions: level.mixed.as_ref().map(|m| m.regions.clone()),
+            mixed_water: level.mixed.as_ref().and_then(|m| m.water.as_ref()).map(|l| ExportForestWater { streams: l.streams.clone(), ponds: l.ponds.clone() }),
+            mixed_relief_m: level.mixed.as_ref().and_then(|m| m.land.as_ref()).map(|l| l.relief_m),
             chambers: level.cave.as_ref().and_then(|c| c.chambers.as_ref()).map(|l| l.chambers.clone()),
             tunnels: level.cave.as_ref().and_then(|c| c.tunnels.as_ref()).map(|l| l.tunnels.clone()),
             junctions: level.cave.as_ref().and_then(|c| c.tunnels.as_ref()).map(|l| l.junctions.clone()),

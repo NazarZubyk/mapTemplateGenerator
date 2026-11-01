@@ -741,6 +741,14 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
         "kind": level.config.kind.slug(),
         "map_m": [level.config.map.width_m, level.config.map.height_m],
         "regions": level.regions.as_ref().map(|r| r.stats.len()),
+        "mixed_regions": level.mixed.as_ref().map(|m| m.regions.iter().map(|r| json!({
+            "id": r.id, "name": r.name, "kind": r.kind.slug(), "placement": r.placement, "target_pct": r.target_pct, "actual_pct": r.actual_pct,
+        })).collect::<Vec<_>>()),
+        "mixed_water": level.mixed.as_ref().and_then(|m| m.water.as_ref()).map(|w| json!({
+            "streams": w.streams.len(),
+            "into_swamps": w.streams.iter().filter(|s| s.mouth == crate::level::StreamMouth::Sink).count(),
+            "ponds": w.ponds.len(),
+        })),
         "roads": level.roads.as_ref().map(|r| r.links.len()),
         "houses": level.houses.as_ref().map(|h| h.street_houses + h.yard_houses),
         "props": level.props.as_ref().map(|p| p.near_houses + p.roadside + p.scattered + p.near_trees + p.shore + p.in_water + p.path_edge + p.near_walls + p.in_tunnels + p.pool_edge)

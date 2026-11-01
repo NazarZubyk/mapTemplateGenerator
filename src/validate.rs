@@ -492,14 +492,14 @@ mod tests {
 
     #[test]
     fn default_forest_is_clean() {
-        let forest = LevelConfig::starting();
+        let forest = LevelConfig::of_kind(crate::model::MapKind::Forest);
         assert_eq!(forest.kind, MapKind::Forest);
         assert!(validate(&forest).is_empty(), "{:?}", validate(&forest));
     }
 
     #[test]
     fn map_size_warns_then_blocks() {
-        let mut c = LevelConfig::starting();
+        let mut c = LevelConfig::of_kind(crate::model::MapKind::Forest);
         c.map.width_m = 2048.0;
         c.map.height_m = 2048.0;
         c.cell_size_m = 1.0;
@@ -517,7 +517,7 @@ mod tests {
 
     #[test]
     fn forest_warnings_fire() {
-        let mut c = LevelConfig::starting();
+        let mut c = LevelConfig::of_kind(crate::model::MapKind::Forest);
         c.forest.trees.trunk_min_m = 2.0;
         c.forest.trees.trunk_max_m = 1.0;
         c.forest.areas.count = 40;
