@@ -172,10 +172,16 @@ length, prefer long, bend size, width variation, braids, oxbow lakes —
 shared with the forest, neutral there by default) → 5 **Connections**
 (`mixed/connections.rs`: touching pairs linked by a random tree + loops
 slider, one portal per link scored for both sides, map gates owned by the
-region at the edge, bridges / fords where a river cuts a region) → 6
+region at the edge, bridges / fords where a river cuts a region) → 5b
+**Blending** (`generator/blend.rs`, [blending-plan.md](blending-plan.md):
+per border pair a transition depth, `mixed.blending`; each region gets
+its transition zones toward every neighbouring kind in `RegionCtx.blend`,
+from the region map only, and its chain uses them: Forest ↔ Town = trees
+in the town's yards on the ground left after the hidden rooms, the
+forest's thicket belt cut back along the town) → 6
 **Region chains** (`mixed/chains.rs` + `generator/region.rs`: each built
 region runs its own chain inside its ground — `RegionCtx` with the domain,
-edge distance, fixed gates, shared land and water; own seed; counts scaled
+edge distance, fixed gates, shared land and water, blend zones; own seed; counts scaled
 by **Scale amounts**; forests via `forest::generate_in`, towns via
 `generator::town_in` — walled, rivers on bridges; swamps via
 `swamp::generate_in` — gate islands at the portals, rivers into open
@@ -183,7 +189,7 @@ water; mountains via `generator::mountains` — passes over the massif, the
 cave chain (`cave::generate_in`) in the rest of its rock) → 7 **Seams**
 (`mixed/seams.rs`: stray contacts sealed on one side, every opening's two
 sides joined by a corridor, one walkable piece checked; Re-roll mobs per
-region) → next: export and MCP (M9), blending (M10). The map is shaded by the
+region) → export and MCP (M9); blending (M10) in progress. The map is shaded by the
 land (light from the north-west). In the app, the picked
 region's nodes are the kind's normal nodes: its config is swapped into
 `app.config` while they draw. spec.json `mixed_regions`, `mixed_water`, `mixed_relief_m`,
@@ -220,7 +226,8 @@ wall (outer and hidden-room walls), 35 district wall, G = district id, B =
 `layer_encoding`), spec.json (format v2) (legend, every object, regions,
 roads, wall gaps, interactive groups, hidden rooms, mobs, gates, `notes` =
 the generation compromises; town: `town` = area share, outer wall
-thickness / closed, house counts and coverage vs target; swamp: `gate_anchors`, `islands`,
+thickness / closed, house counts and coverage vs target, yard trees on a
+mixed map; swamp: `gate_anchors`, `islands`,
 `paths`, `gate_bridges`, `water`; cave: `cave_zones`, `chambers`, `tunnels`, `junctions`, `cave_gates`, `cave_floor`, `hazards`;
 forest: `forest_areas`, `forest_ground`, `forest_water`, `forest_passages`,
 `forest_clearings`, `forest_trees`, `forest_props`). Sections a map kind does
@@ -302,7 +309,8 @@ Missing names become "Mob #n", missing colors are picked to differ from
 every color in use, and mob shares are kept at 100%. On a mixed map every
 mob tool takes `region` (1-based) to set that region's mobs; `generate`
 also reports `mixed_regions`, `mixed_water`, `mixed_connections`,
-`mixed_built` and `mixed_walkable_pieces`.
+`mixed_built` (with `yard_trees` per town), `mixed_blending` and
+`mixed_walkable_pieces`.
 
 ## README media
 

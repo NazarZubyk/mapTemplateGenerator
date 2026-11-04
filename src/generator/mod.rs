@@ -23,6 +23,7 @@ pub mod regions;
 pub mod roads;
 pub mod shape;
 pub mod swamp;
+pub mod blend;
 pub mod cave;
 pub mod forest;
 pub mod mixed;
@@ -283,7 +284,6 @@ pub fn town_in(config: &LevelConfig, seed: u64, region: Option<&region::RegionCt
         }
         _ => None,
     };
-
     // Step 8: props (every map kind) — against houses, at road edges,
     // scattered.
     let props = regions.as_ref().and_then(|split| {
@@ -369,6 +369,52 @@ pub fn town_in(config: &LevelConfig, seed: u64, region: Option<&region::RegionCt
         }
         built.layout
     });
+
+    // Blending: trees in the yards near a forest region, on the yard ground
+    // the houses, props, interactive objects and hidden rooms left (they
+    // never take a place something asked for); the mobs keep off them (the
+    // trunks join the house mask). No draws from the chain's stream:
+    // hashes of the blending seed.
+    let mut houses = houses;
+    if let (Some(r), Some(split)) = (region, regions.as_ref())
+        && let (Some(t), Some(trees)) = (r.blend_toward(crate::model::MapKind::Forest), r.neighbour_trees.as_ref())
+    {
+        let n = split.map.ids.len();
+        let free = CellMask {
+            width: split.map.width,
+            height: split.map.height,
+            cell_size_m: split.map.cell_size_m,
+            cells: (0..n)
+                .map(|c| {
+                    split.map.ids[c] != 0
+                        && !walls.as_ref().is_some_and(|w| w.mask.cells[c])
+                        && !region_walls.as_ref().is_some_and(|w| w.mask.cells[c])
+                        && !roads.as_ref().is_some_and(|w| w.mask.cells[c])
+                        && !houses.as_ref().is_some_and(|w| w.mask.cells[c])
+                        && !props.as_ref().is_some_and(|w| w.mask.cells[c])
+                        && !interactive.as_ref().is_some_and(|w| w.mask.cells[c])
+                        && !hidden_rooms.as_ref().is_some_and(|w| w.floor_mask.cells[c] || w.wall_mask.cells[c])
+                })
+                .collect(),
+        };
+        let built = blend::yard_trees(t, trees, &free, &r.gates, r.blend_seed ^ r.id as u64);
+        if !built.objects.is_empty() {
+            let layout = houses.get_or_insert_with(|| crate::level::HouseLayout {
+                mask: CellMask::new(free.width, free.height, free.cell_size_m),
+                street_houses: 0,
+                yard_houses: 0,
+                complex_houses: 0,
+                coverage_pct: 0.0,
+                target_pct: 0.0,
+                yard_trees: 0,
+            });
+            for (m, &tr) in layout.mask.cells.iter_mut().zip(&built.mask.cells) {
+                *m |= tr;
+            }
+            layout.yard_trees = built.objects.len() as u32;
+            objects.extend(built.objects);
+        }
+    }
 
     let mut gates = gates;
     if let Some(layout) = gates.as_mut() {

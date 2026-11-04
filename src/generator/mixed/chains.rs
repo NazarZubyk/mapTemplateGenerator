@@ -39,7 +39,8 @@ pub fn region_seed(seed: u64, id: u8) -> u64 {
 
 /// The context for region `id`. `bridge_m`: the least width of a bridge
 /// in this region (a town's are as wide as its roads).
-pub fn context(m: &MixedLayout, id: u8, land: &TerrainLayout, water: &WaterLayout, bridge_m: f32, gate_styles: &[crate::model::GateStyle]) -> RegionCtx {
+pub fn context(config: &LevelConfig, seed: u64, m: &MixedLayout, id: u8, land: &TerrainLayout, water: &WaterLayout, bridge_m: f32) -> RegionCtx {
+    let gate_styles: Vec<crate::model::GateStyle> = config.gates.gates.iter().map(|g| g.style).collect();
     let (w, h, cell) = (m.map.width, m.map.height, m.map.cell_size_m);
     let domain = CellMask { width: w, height: h, cell_size_m: cell, cells: m.map.ids.iter().map(|&i| i == id).collect() };
     let edge_dist = edge_distance(&domain, EDGE_LIMIT_M);
@@ -86,7 +87,10 @@ pub fn context(m: &MixedLayout, id: u8, land: &TerrainLayout, water: &WaterLayou
             }
         }
     }
-    RegionCtx { id, domain, edge_dist, gates, land: land.clone(), water, bridges }
+    let blend_seed = crate::generator::blend::seed(seed);
+    let blend = crate::generator::blend::zones(m, id, &config.mixed.blending, blend_seed);
+    let neighbour_trees = crate::generator::blend::neighbour_trees(config, m, id);
+    RegionCtx { id, domain, edge_dist, gates, land: land.clone(), water, bridges, blend, neighbour_trees, blend_seed }
 }
 
 /// Node 6: every region whose kind is built runs its chain. Returns the
@@ -104,8 +108,7 @@ pub fn build(config: &LevelConfig, seed: u64, m: &MixedLayout, land: &TerrainLay
         };
         let mut cfg = row.for_share(config, 0.0);
         let bridge_m = if r.kind == MapKind::Town { cfg.roads.width_m + 1.0 } else { 0.0 };
-        let styles: Vec<crate::model::GateStyle> = config.gates.gates.iter().map(|g| g.style).collect();
-        let ctx = context(m, r.id, land, water, bridge_m, &styles);
+        let ctx = context(config, seed, m, r.id, land, water, bridge_m);
         cfg = row.for_share(config, ctx.share());
         if r.kind == MapKind::Town {
             // Outside the wall is another region: hidden rooms inside only.

@@ -321,6 +321,10 @@ pub struct HouseLayout {
     /// Share of the buildable ground covered by houses: reached / asked, %.
     pub coverage_pct: f32,
     pub target_pct: f32,
+    /// Trees in the yards near a forest region (mixed maps, blending);
+    /// their trunks are in `mask` too, so nothing else is placed on them.
+    #[serde(default)]
+    pub yard_trees: u32,
 }
 
 /// What the props node built (the props themselves are `PlacedObject`s in

@@ -61,11 +61,27 @@ pub struct RegionCtx {
     pub water: WaterLayout,
     /// This region's bridges: walkable over the deep water.
     pub bridges: CellMask,
+    /// Blending (docs/blending-plan.md): per neighbouring kind, how deep
+    /// each cell lies in the transition zone toward it — 1 at the border,
+    /// falling to 0 at the zone's (noisy) width, 0 outside the region.
+    /// Empty with blending off. From the region map only, never from a
+    /// neighbour's result.
+    pub blend: Vec<(crate::model::MapKind, Vec<f32>)>,
+    /// The trees a forest neighbour lends to the transition (its tree
+    /// settings: trunk sizes, color).
+    pub neighbour_trees: Option<crate::model::ForestTreeSettings>,
+    /// Seed of the blending's own noise and hashes (never a chain's stream).
+    pub blend_seed: u64,
 }
 
 impl RegionCtx {
     pub fn inside(&self, c: usize) -> bool {
         self.domain.cells[c]
+    }
+
+    /// The transition zone toward `kind`, if this region has one.
+    pub fn blend_toward(&self, kind: crate::model::MapKind) -> Option<&[f32]> {
+        self.blend.iter().find(|(k, _)| *k == kind).map(|(_, t)| t.as_slice())
     }
 
     /// The region's share of the whole map, 0..1.

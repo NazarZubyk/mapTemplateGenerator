@@ -288,6 +288,36 @@ pub struct MixedSettings {
     /// it, meters (node 4): never running along a border, touching it.
     /// 0 = rivers go where the land takes them.
     pub river_clearance_m: f32,
+    /// Transitions between neighbouring regions (node 5b,
+    /// docs/blending-plan.md).
+    pub blending: BlendSettings,
+}
+
+/// How deep the transition zone between two neighbouring kinds of land
+/// reaches into the regions, meters per border pair (0 = a hard border).
+/// docs/blending-plan.md.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BlendSettings {
+    /// Forest ↔ Town: trees in the town's yards near the forest, and the
+    /// forest's thicket belt cut back to an open edge outside the wall.
+    pub forest_town_m: f32,
+}
+
+impl Default for BlendSettings {
+    fn default() -> Self {
+        Self { forest_town_m: 18.0 }
+    }
+}
+
+impl BlendSettings {
+    /// The transition width between kinds `a` and `b` (either order), m.
+    pub fn width_m(&self, a: MapKind, b: MapKind) -> f32 {
+        match (a, b) {
+            (MapKind::Forest, MapKind::Town) | (MapKind::Town, MapKind::Forest) => self.forest_town_m.max(0.0),
+            _ => 0.0,
+        }
+    }
 }
 
 /// Settings of the mixed map's connections node (docs/mixed-plan.md, M3).
@@ -363,6 +393,7 @@ impl Default for MixedSettings {
             water: ForestWaterSettings::mixed(),
             connections: MixedConnectionSettings::default(),
             river_clearance_m: 8.0,
+            blending: BlendSettings::default(),
         }
     }
 }

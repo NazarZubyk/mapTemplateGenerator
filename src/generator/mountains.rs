@@ -274,6 +274,9 @@ pub fn generate_in(config: &LevelConfig, seed: u64, ctx: &RegionCtx, progress: P
         land: ctx.land.clone(),
         water: ctx.water.clone(),
         bridges: ctx.bridges.clone(),
+        blend: ctx.blend.clone(),
+        neighbour_trees: ctx.neighbour_trees,
+        blend_seed: ctx.blend_seed,
     };
     let mut level = crate::generator::cave::generate_in(config, seed, Some(&caves), progress);
     level.notes.splice(0..0, notes);

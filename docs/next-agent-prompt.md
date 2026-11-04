@@ -33,7 +33,7 @@ a time.
   username, the SSH key is refused). First thing: run `git status -sb`; if
   it is still ahead, ask the user to run `git push origin main` in their
   own terminal (or `! git push origin main` here).
-- 269 tests pass, `cargo clippy --all-targets` is clean.
+- 272 tests pass, `cargo clippy --all-targets` is clean.
 - 2026-11-04: the unused `map.walkable_pct` setting was dropped (town
   step 7); town step 13 is done (town ground on layer.png, spec.json
   `town` + `notes`, blocking duplicate colors, node warnings, feasibility
@@ -69,7 +69,8 @@ note); mob buttons only record `app.mobs_request`.
 ### Open work (the user picks)
 
 1. **M10 — Blending** (in progress on branch `blending`; the plan is
-   `docs/blending-plan.md`, steps B1–B5): nature
+   `docs/blending-plan.md`, steps B1–B5; B1 Forest ↔ Town done, next B2
+   Forest ↔ Swamp): nature
    crossing region borders — trees in the yards of a town district next to
    a forest, a wet forest belt beside a swamp, boulders from a massif in the
    forest, embankments where a river crosses a town. Needs its own small

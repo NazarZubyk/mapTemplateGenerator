@@ -695,6 +695,28 @@ fn forest(config: &LevelConfig, out: &mut Vec<Warning>) {
     }
 }
 
+/// Blending widths (docs/blending-plan.md): not negative, and not so deep
+/// the zone covers the whole of the smaller region of the pair.
+fn blending(config: &LevelConfig, rows: &[crate::model::MixedRegion], total: f32, area: f32, out: &mut Vec<Warning>) {
+    let b = &config.mixed.blending;
+    for (f, label, width, pair) in [("mixed.blending.forest_town_m", "Forest ↔ Town", b.forest_town_m, (MapKind::Forest, MapKind::Town))] {
+        if width < 0.0 {
+            out.push(field(f, format!("Blending {label}: the depth cannot be negative")));
+            continue;
+        }
+        // The smaller region of the pair, about this many meters across.
+        let across = rows
+            .iter()
+            .filter(|r| r.kind == pair.0 || r.kind == pair.1)
+            .map(|r| (area * r.share_pct.max(0.1) / total).sqrt())
+            .fold(f32::INFINITY, f32::min);
+        let both = rows.iter().any(|r| r.kind == pair.0) && rows.iter().any(|r| r.kind == pair.1);
+        if both && width > across / 2.0 {
+            out.push(field(f, format!("Blending {label}: {width:.0} m reaches past the middle of a {across:.0} m region — the transition covers all of it")));
+        }
+    }
+}
+
 /// Mixed maps (docs/mixed-plan.md): the region list, then every region's
 /// own settings as a map of its kind, each warning prefixed with the region.
 fn mixed(config: &LevelConfig, warnings: &mut Vec<Warning>) {
@@ -729,6 +751,7 @@ fn mixed(config: &LevelConfig, warnings: &mut Vec<Warning>) {
     }
     let total: f32 = rows.iter().map(|r| r.share_pct.max(0.1)).sum();
     let area = config.map.width_m.max(0.0) * config.map.height_m.max(0.0);
+    blending(config, rows, total, area, warnings);
     for (i, r) in rows.iter().enumerate().take(max) {
         let label = format!("Map region {} ({}, {})", i + 1, r.name, r.kind.region_label());
         // A region about this many meters across (as a square).

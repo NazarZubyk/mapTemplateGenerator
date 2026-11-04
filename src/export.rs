@@ -272,6 +272,14 @@ pub struct ExportHouses {
     pub compound: u32,
     pub coverage_pct: f32,
     pub target_pct: f32,
+    /// Mixed maps: trees in the yards near a forest region (blending;
+    /// `objects` of type "tree trunk").
+    #[serde(skip_serializing_if = "is_zero")]
+    pub yard_trees: u32,
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 /// The meaning of layer.png's channels (written into spec.json so a reader
@@ -720,6 +728,7 @@ impl ExportSpec {
                         compound: h.complex_houses,
                         coverage_pct: h.coverage_pct,
                         target_pct: h.target_pct,
+                        yard_trees: h.yard_trees,
                     }),
                 }
             }),

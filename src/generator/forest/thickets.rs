@@ -38,6 +38,11 @@ const EDGE_WARP_SCALE_M: f32 = 26.0;
 const FRINGE_SCALE_M: f32 = 5.0;
 const MOIST_M: f32 = 6.0;
 
+/// Blending toward a town: share of the edge belt cut away at the border.
+const CUT_BELT: f32 = 0.7;
+/// Blending toward a town: thicket density taken off at the border.
+const CUT_DENSITY: f32 = 0.22;
+
 pub fn base_density(c: ForestCharacter) -> f32 {
     match c {
         ForestCharacter::Meadow => 0.12,
@@ -66,6 +71,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, ter
     let border = (s.border_pct / 100.0).clamp(0.0, 1.5);
     let shift = s.density_pct / 100.0 * 0.3;
 
+    let town_cut = region.and_then(|r| r.blend_toward(crate::model::MapKind::Town));
     let mut class = vec![ForestGround::Floor; n];
     let mut density = vec![0.0f32; n];
     for c in 0..n {
@@ -82,6 +88,11 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, ter
             Some(r) => r.edge_dist[c].min(1e4),
             None => (x.min(y).min(w as f32 * cell - x).min(h as f32 * cell - y)).max(0.0),
         };
+        // Blending: toward a town the forest is cut — the belt is a narrow
+        // hedge outside the wall and the woods behind it are thinned,
+        // most at the border (docs/blending-plan.md, B1).
+        let cut = town_cut.map_or(0.0, |t| t[c]);
+        let ew = ew * (1.0 - CUT_BELT * (cut * 3.0).min(1.0));
         let edge = if ew > 0.0 { 0.9 * fade((edge_d + wobble * ew * 0.5) / ew) } else { 0.0 };
         let amp = if managed { 0.5 } else { 1.0 } * patchy * 0.5;
         let inner = amp * (patch.fbm(x / PATCH_SCALE_M, y / PATCH_SCALE_M, 4) - 0.5) * 2.0 + 0.08 * (fine.fbm(x / FINE_SCALE_M, y / FINE_SCALE_M, 2) - 0.5) * 2.0;
@@ -91,7 +102,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, ter
         if managed {
             d = d.min(DENSE_FROM - 0.02);
         }
-        d += belt + edge;
+        d += belt + edge - CUT_DENSITY * cut;
         density[c] = d;
         class[c] = if d >= DENSE_FROM {
             ForestGround::Thicket

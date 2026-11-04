@@ -822,8 +822,10 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
             "objects": l.objects.len(),
             "mobs": l.mobs.as_ref().map(|x| x.spawns.len()),
             "hidden_rooms": l.hidden_rooms.as_ref().map(|x| x.rooms.len()),
+            "yard_trees": l.houses.as_ref().map(|h| h.yard_trees).filter(|&n| n > 0),
             "notes": l.notes.len(),
         }))).collect::<Vec<_>>()),
+        "mixed_blending": level.mixed.as_ref().map(|_| json!({ "forest_town_m": level.config.mixed.blending.forest_town_m })),
         "mixed_water": level.mixed.as_ref().and_then(|m| m.water.as_ref()).map(|w| json!({
             "streams": w.streams.len(),
             "into_swamps": w.streams.iter().filter(|s| s.mouth == crate::level::StreamMouth::Sink).count(),

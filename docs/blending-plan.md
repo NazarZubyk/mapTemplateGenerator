@@ -85,8 +85,7 @@ already guarantee them do the work.
    one side. Test: regions still meet walkably only at their openings.
 7. **The town wall at a rock face.** A real town would use the cliff as
    its wall. Dropping the wall there is natural but risky (the rock must
-   really be blocked all along). Open question for the user (below);
-   until decided, the wall stays.
+   really be blocked all along). The user chose to keep the wall.
 8. **Amounts.** Yard trees, boulders and puddles are densities per m² of
    the zone, so they do not depend on the map size; "Scale amounts" does
    not apply to them.
@@ -107,9 +106,9 @@ already guarantee them do the work.
 
 ## Step list
 
-- [ ] **B1 — Blending node + Forest ↔ Town**: the setting, the distance
+- [x] **B1 — Blending node + Forest ↔ Town**: the setting, the distance
       fields in `RegionCtx`, yard trees in the town near a forest, the
-      forest's thinned belt near a town.
+      forest's thinned belt near a town. (done — see "Step B1 notes")
 - [ ] **B2 — Forest ↔ Swamp**: the forest's wet belt (puddles, water
       trees), the swamp's wooded edge.
 - [ ] **B3 — Scree**: boulders at the foot of a massif in forests, towns
@@ -119,9 +118,54 @@ already guarantee them do the work.
 - [ ] **B5 — Export, MCP, docs**: `mixed_blending`, the MCP summary,
       README picture of a blended border.
 
-## Open questions for the user
+## Decisions (user, 2026-11-04)
 
-- Blending **on by default** for new and existing mixed configs? (Plan:
-  on; mixed maps are beta, so their look may change.)
-- The town wall against a rock face: **keep it**, or **let the cliff be the
-  wall** there?
+- Blending is **on by default**, for new and existing mixed configs
+  (`#[serde(default)]` gives the default widths).
+- The town wall **stays** against a rock face; only the scree crosses.
+
+## Step B1 notes — the Blending node, Forest ↔ Town
+
+- **Setting**: `MixedSettings.blending: BlendSettings { forest_town_m }`
+  (default 18 m; `width_m(a, b)` gives a pair's depth, 0 for pairs not
+  built yet). Node **5b · Blending** after Connections: one row per pair,
+  🎲 Random params, a stats line (yard trees). Validation: no negative
+  depth; a depth past the middle of the smaller region of the pair warns.
+- **Zones** (`blend::zones`, called in `chains::context`): per other kind
+  present, the distance from each cell of the region to the nearest cell
+  of a region of that kind; `t = 1 − (d − cell) / width`, the width
+  wavering ±40 % with slow noise (40 m) — 1 at the border, 0 past it.
+  `RegionCtx.blend`, `blend_toward(kind)`, `blend_seed` (from the map
+  seed, its own: no chain stream gets extra draws), `neighbour_trees` (the
+  tree settings of the forest region with the longest shared border).
+- **Town: yard trees** (`blend::yard_trees`, at the end of `town_in`,
+  after the hidden rooms, before the gate markers). First built right
+  after the houses; that took the only free spot a hidden room needed
+  ("no free ground for a 6.0×4.5 m room"), so the trees now take only the
+  yard ground everything else left — the town's houses, props,
+  interactive objects and hidden rooms are the same with blending on or
+  off. Free = town floor minus walls, district walls, roads, houses,
+  props, interactive objects, hidden rooms (floor, path, walls). Every
+  free cell with room for the smallest trunk + 1.5 m ring, in a weighted
+  random order (`u^(1/t²)`, hashes), placed until `1 tree / 45 m² × Σ t²`
+  of the free ground is reached; spacing = the forest's `spacing_m` and at
+  least the two rings; none within 8 m of an opening. A trunk inside a
+  free ring cannot cut the ground. Trunks are "tree trunk" objects
+  (structure, round) in the forest's tree color and sizes; they join the
+  house mask, so the mobs keep off them. `HouseLayout.yard_trees`, spec
+  `town.houses.yard_trees`. First try (random rolls per cell, then a room
+  check) placed 0 trees in a packed town: almost no rolled cell had room.
+- **Forest: cut edge** (`forest::thickets`): toward a town the map-edge
+  belt keeps 30 % of its width at the border (`CUT_BELT`) and the thicket
+  density drops by 0.22 × t (`CUT_DENSITY`): open ground and forest floor
+  outside the wall instead of a dark thicket strip. The passages and
+  trails follow from the new ground as usual.
+- **Checks**: with the depth at 0 every kind (and the mixed map) is
+  byte-identical to before (map.png / layer.png fingerprints, two seeds
+  each). Tests: yard trees stand in their town, off the roads, under no
+  other object and within the zone of a forest region (4 maps, > 0
+  trees); blending off adds no trees, on leaves less thicket within 6 m of
+  a town. The mixed invariants (one walkable piece; regions meet only at
+  openings) pass with blending on.
+- Looks: the trunks are small dots, like the forest's own (the map shows
+  trunks, what blocks the player — no canopies).

@@ -204,6 +204,8 @@ fn mixed_node_chain(ui: &mut egui::Ui, app: &mut MapGenApp) {
     flow_arrow(ui, "rivers (spring to map edge or swamp), brooks, ponds");
     node_mixed_connections(ui, app);
     flow_arrow(ui, "portals between regions, gates, river crossings");
+    node_mixed_blending(ui, app);
+    flow_arrow(ui, "transition zones toward each neighbouring kind");
     let n = app.config.mixed.regions.len();
     if n == 0 {
         ui.weak("Add a map region to configure it.");
@@ -425,6 +427,35 @@ in whichever region is there (on deep water it slides along the edge to dry grou
                 bridges,
                 cn.crossings.len() - bridges
             ));
+        }
+    });
+}
+
+/// Mixed node 5b: transitions between neighbouring kinds of land
+/// (docs/blending-plan.md).
+fn node_mixed_blending(ui: &mut egui::Ui, app: &mut MapGenApp) {
+    const TIP_FOREST_TOWN: &str = "How deep the transition between a forest region and a town \
+region reaches into each, meters (the depth wavers along the border, so it is no stripe). In the \
+town: trees in the yards near the forest, densest by the wall, none past this depth (trunk sizes, \
+spacing and color are the forest region's tree settings). In the forest: the thicket belt along \
+the town is cut back to open ground and the woods behind it are thinned. 0 = a hard border. NO \
+EFFECT unless a forest region and a town region touch.";
+    node(ui, "5b · Blending", |ui| {
+        ui.weak("input: map regions · output: a transition zone per border pair, used by the region chains");
+        let s = &mut app.config.mixed.blending;
+        egui::Grid::new("mixed_blending_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+            param_row(ui, "Forest ↔ Town", TIP_FOREST_TOWN, |ui| ui.add(meters(&mut s.forest_town_m, 60.0)));
+        });
+        ui.horizontal(|ui| {
+            if ui.button("🎲 Random params").on_hover_text("Rolls each transition depth independently inside its reasonable range. Set values only; press Generate.").clicked() {
+                let mut rng = rand::rng();
+                s.forest_town_m = rng.random_range(8.0..=30.0);
+            }
+        });
+        ui.weak("Changes apply on ⚙ Generate");
+        if let Some(m) = app.generated.as_ref().and_then(|l| l.mixed.as_ref()) {
+            let trees: u32 = m.levels.iter().flatten().filter_map(|l| l.houses.as_ref().map(|h| h.yard_trees)).sum();
+            ui.weak(format!("generated: {trees} yard trees in the towns"));
         }
     });
 }

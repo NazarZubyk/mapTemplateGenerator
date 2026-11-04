@@ -337,6 +337,7 @@ pub(crate) fn build_with_progress(
             complex_houses,
             coverage_pct,
             target_pct,
+            yard_trees: 0,
         },
         objects,
         notes,
