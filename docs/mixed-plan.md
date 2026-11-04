@@ -245,8 +245,9 @@ connections) cannot disagree; and a single-kind map does not change at all
 - [ ] **M10 — Blending** (the next big step): nature crossing borders —
       trees in the yards of a district next to a forest, a wet forest belt
       by a swamp, boulders from the massif in the forest, a river crossing
-      a town with its embankments. Needs its own small plan: per border
-      pair, a transition width and what crosses.
+      a town with its embankments. Planned in
+      [blending-plan.md](blending-plan.md) (branch `blending`, steps
+      B1–B5).
 
 ## Step M1 notes — map regions
 

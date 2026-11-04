@@ -68,7 +68,8 @@ note); mob buttons only record `app.mobs_request`.
 
 ### Open work (the user picks)
 
-1. **M10 — Blending** (the planned next step, see mixed-plan.md): nature
+1. **M10 — Blending** (in progress on branch `blending`; the plan is
+   `docs/blending-plan.md`, steps B1–B5): nature
    crossing region borders — trees in the yards of a town district next to
    a forest, a wet forest belt beside a swamp, boulders from a massif in the
    forest, embankments where a river crosses a town. Needs its own small
