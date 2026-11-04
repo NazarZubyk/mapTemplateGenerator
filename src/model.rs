@@ -1984,9 +1984,6 @@ impl Default for OuterWallSettings {
 pub struct MapSettings {
     pub width_m: f32,
     pub height_m: f32,
-    /// Share of the map that must remain walkable; governs the occupancy
-    /// budget of everything the generator places.
-    pub walkable_pct: f32,
 }
 
 impl Default for MapSettings {
@@ -1994,7 +1991,6 @@ impl Default for MapSettings {
         Self {
             width_m: 200.0,
             height_m: 200.0,
-            walkable_pct: 60.0,
         }
     }
 }

@@ -74,7 +74,7 @@ note); mob buttons only record `app.mobs_request`.
 2. **Tuning** of Swamp, Forest, Cave and Mixed with the user (spawn amounts
    on 200 m maps, looks).
 3. Mountain passes have no props / mobs yet (only the caves do).
-4. Town step 7 (walkable budget, `map.walkable_pct` unused) and step 13
+4. Town step 13
    (validation & export polish, duplicate colors), cleanup (`reference/`).
 
 ## How the user wants to work

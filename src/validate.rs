@@ -18,12 +18,6 @@ pub fn validate(config: &LevelConfig) -> Vec<Warning> {
     if config.map.height_m <= 0.0 {
         warnings.push(Warning::new("Map height must be positive"));
     }
-    if !(1.0..=99.0).contains(&config.map.walkable_pct) {
-        warnings.push(Warning::new(format!(
-            "Walkable % must be in 1..=99 (is {})",
-            config.map.walkable_pct
-        )));
-    }
     if config.cell_size_m <= 0.0 {
         warnings.push(Warning::new("Cell size must be positive"));
     }
@@ -584,11 +578,10 @@ mod tests {
     #[test]
     fn field_warnings_fire() {
         let mut config = LevelConfig::test_64();
-        config.map.walkable_pct = 150.0;
         config.map.width_m = -1.0;
         config.cell_size_m = 0.0;
         let warnings = validate(&config);
-        assert_eq!(warnings.len(), 3);
+        assert_eq!(warnings.len(), 2);
     }
 
     #[test]

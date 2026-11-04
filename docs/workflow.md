@@ -6,8 +6,8 @@ generator is now rebuilt **incrementally**: one section at a time, each one
 built straight into its own node of the left panel and tested in the app.
 
 **Status:** steps 0–6 and 8–12 are done (12 nodes), plus the `mapgen-mcp`
-server for Claude. Open: step 7 (walkable budget), step 13 (validation &
-export polish), cleanup. Every map kind now has its full chain: Town (this
+server for Claude. Open: step 13 (validation & export polish), cleanup
+(step 7, the walkable budget, was dropped). Every map kind now has its full chain: Town (this
 file), Swamp ([swamp-plan.md](swamp-plan.md)), Cave
 ([cave-plan.md](cave-plan.md)) and Forest ([forest-plan.md](forest-plan.md));
 Swamp, Cave and Forest are complete and being tuned with the user.
@@ -263,8 +263,12 @@ Rules that carried over from the old build (keep them in every section):
 - [x] **Step 6 — houses** (town only): street-front houses facing the
       roads, then yard houses; density, size range, spacing, road setback,
       face-the-road chance, color. Node 8. (done — see "Step 6 notes")
-- [ ] **Step 7 — walkable budget**: `map.walkable_pct` vs what the houses
-      and later objects take (houses already keep the ground connected).
+- [x] ~~**Step 7 — walkable budget**~~: dropped (2026-11-04). The
+      `map.walkable_pct` setting was never shown or used; walkable ground
+      follows from each kind's own settings (natural over literal), and the
+      stats lines report the measured walkable %. The field was removed;
+      old config files that still carry it load fine (unknown fields are
+      ignored).
 - [x] **Step 8 — props** (every kind): quantity + density cap + size range,
       placed against houses / at road edges / scattered. Node 9. (done —
       see "Step 8 notes")

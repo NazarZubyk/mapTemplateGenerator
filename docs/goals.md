@@ -61,7 +61,7 @@ work.
 | Setting | Description |
 |---|---|
 | Map size | Width × height of the map; the map is **rectangular** (metric units) |
-| Walkable zone | Percentage of the total area that is walkable. The generator does **not** have to fill all available space |
+| ~~Walkable zone~~ | Dropped (2026-11-04): a fixed walkable % fought each kind's own settings. How much ground is walkable follows from the kind's settings (house density, thickets, swamp depth, cave carving); each node's stats line shows the measured walkable %. |
 
 ### Uninteractive props
 
@@ -146,7 +146,7 @@ The tool must prevent bad configurations and bad results as early as possible:
 - **Overlap avoidance** — placed objects must not overlap.
 - **Feasibility pre-check** — while the user is selecting parameters (before generation),
   the tool pre-counts whether the level is generatable at all with these parameters (do all
-  requested objects fit the map and the walkable zone) and shows a warning when they don't.
+  requested objects fit the map) and shows a warning when they don't.
 - **Warning display:**
   - All warning texts are collected in one place (a dedicated window/panel); where exactly
     it appears is not fixed.

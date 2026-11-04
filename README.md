@@ -115,7 +115,6 @@ see `QUICKSTART.md`.
 - On a Mixed map the regions meet at sharp borders; land that blends from
   one kind into the next (trees in town yards, a wet forest edge by a
   swamp) is planned.
-- The **walkable %** setting is not used yet.
 - Few safety checks. For example, two object types with the same color are
   not flagged yet.
 - Windows builds are not code-signed, so expect the SmartScreen warning.
