@@ -109,8 +109,8 @@ already guarantee them do the work.
 - [x] **B1 — Blending node + Forest ↔ Town**: the setting, the distance
       fields in `RegionCtx`, yard trees in the town near a forest, the
       forest's thinned belt near a town. (done — see "Step B1 notes")
-- [ ] **B2 — Forest ↔ Swamp**: the forest's wet belt (puddles, water
-      trees), the swamp's wooded edge.
+- [x] **B2 — Forest ↔ Swamp**: the forest's wet belt (puddles, damp
+      undergrowth), the swamp's wooded edge. (done — see "Step B2 notes")
 - [ ] **B3 — Scree**: boulders at the foot of a massif in forests, towns
       and swamps; forest rock patches; swamp rocky islets.
 - [ ] **B4 — Town ↔ Swamp and rivers in towns**: the drained swamp margin,
@@ -169,3 +169,28 @@ already guarantee them do the work.
   openings) pass with blending on.
 - Looks: the trunks are small dots, like the forest's own (the map shows
   trunks, what blocks the player — no canopies).
+
+## Step B2 notes — Forest ↔ Swamp
+
+- **Setting**: `BlendSettings.forest_swamp_m` (default 16 m), a row in
+  5b · Blending, validated like Forest ↔ Town; MCP `mixed_blending` now
+  lists the whole `BlendSettings`.
+- **Forest: wet belt** (`forest::thickets`): toward a swamp the thicket
+  density gets `+0.08 × t` (damp, denser undergrowth, `WET_DENSITY`), and
+  **puddles**: where a 9 m noise blob of the blending seed passes
+  `1 − 0.4 × t` (`PUDDLE_SHARE`), open ground and forest floor turn
+  shallow water (walkable; dense thicket, rock, rivers stay). The trees
+  stand around them (they plant on open ground and forest floor only).
+  The plan's "water-loving trees" came out as this: the forest's own trees
+  ring the puddles; no separate tree kind.
+- **Swamp: wooded edge** (`swamp::depth`): the share of the region-edge
+  band that turns thicket rises to 1 toward a forest (`want + (1 − want)
+  × min(1, 3t)`), still never at a river mouth. **Groves**
+  (`swamp::trees`): a cell's grove value gets `+0.35 × t`, so the island
+  groves gather on the forest side (same number of grove cells, no extra
+  draws).
+- **Checks**: with both depths at 0 every kind and the mixed map are
+  byte-identical to before (fingerprints). Test: on two maps the forest
+  has more shallow water within 10 m of the swamp and the swamp more
+  thicket within 4 m of the forest with blending on. The mixed invariants
+  pass; the starting map's notes do not change.

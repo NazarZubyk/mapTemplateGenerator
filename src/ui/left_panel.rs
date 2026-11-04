@@ -440,16 +440,24 @@ town: trees in the yards near the forest, densest by the wall, none past this de
 spacing and color are the forest region's tree settings). In the forest: the thicket belt along \
 the town is cut back to open ground and the woods behind it are thinned. 0 = a hard border. NO \
 EFFECT unless a forest region and a town region touch.";
+    const TIP_FOREST_SWAMP: &str = "How deep the transition between a forest region and a swamp \
+region reaches into each, meters (wavering along the border). In the forest: a wet belt — \
+puddles of shallow water (walkable) and damper, denser undergrowth, more of both nearer the \
+swamp. In the swamp: its border band toward the forest is thicket instead of open deep water, \
+and its tree groves gather on the forest side. 0 = a hard border. NO EFFECT unless a forest \
+region and a swamp region touch.";
     node(ui, "5b · Blending", |ui| {
         ui.weak("input: map regions · output: a transition zone per border pair, used by the region chains");
         let s = &mut app.config.mixed.blending;
         egui::Grid::new("mixed_blending_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
             param_row(ui, "Forest ↔ Town", TIP_FOREST_TOWN, |ui| ui.add(meters(&mut s.forest_town_m, 60.0)));
+            param_row(ui, "Forest ↔ Swamp", TIP_FOREST_SWAMP, |ui| ui.add(meters(&mut s.forest_swamp_m, 60.0)));
         });
         ui.horizontal(|ui| {
             if ui.button("🎲 Random params").on_hover_text("Rolls each transition depth independently inside its reasonable range. Set values only; press Generate.").clicked() {
                 let mut rng = rand::rng();
                 s.forest_town_m = rng.random_range(8.0..=30.0);
+                s.forest_swamp_m = rng.random_range(8.0..=28.0);
             }
         });
         ui.weak("Changes apply on ⚙ Generate");

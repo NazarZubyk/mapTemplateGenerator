@@ -115,10 +115,10 @@ see `QUICKSTART.md`.
 
 - Only **Town** is tuned. Swamp, Forest, Cave and Mixed are complete but
   still being tuned; settings that cannot work as asked show a warning.
-- On a Mixed map, only forests and towns blend into each other so far
-  (trees in the town's yards, a cleared forest edge outside the wall). The
-  other borders are still sharp; a wet forest edge by a swamp and rocks
-  fallen from the mountains are coming.
+- On a Mixed map, forests blend into towns (trees in the town's yards, a
+  cleared forest edge outside the wall) and into swamps (a wet forest edge
+  with puddles, a wooded swamp edge). The other borders are still sharp;
+  rocks fallen from the mountains and river banks in towns are coming.
 - Windows builds are not code-signed, so expect the SmartScreen warning.
 - Huge maps export smaller images: map.png and layer.png stay within
   16384 px on a side (spec.json records the scale used).

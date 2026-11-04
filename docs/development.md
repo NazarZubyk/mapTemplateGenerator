@@ -178,7 +178,9 @@ per border pair a transition depth, `mixed.blending`; each region gets
 its transition zones toward every neighbouring kind in `RegionCtx.blend`,
 from the region map only, and its chain uses them: Forest ↔ Town = trees
 in the town's yards on the ground left after the hidden rooms, the
-forest's thicket belt cut back along the town) → 6
+forest's thicket belt cut back along the town; Forest ↔ Swamp = puddles
+and damp undergrowth in the forest, the swamp's edge band thicket and its
+groves on the forest side) → 6
 **Region chains** (`mixed/chains.rs` + `generator/region.rs`: each built
 region runs its own chain inside its ground — `RegionCtx` with the domain,
 edge distance, fixed gates, shared land and water, blend zones; own seed; counts scaled

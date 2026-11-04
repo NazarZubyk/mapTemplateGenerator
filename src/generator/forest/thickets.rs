@@ -42,6 +42,13 @@ const MOIST_M: f32 = 6.0;
 const CUT_BELT: f32 = 0.7;
 /// Blending toward a town: thicket density taken off at the border.
 const CUT_DENSITY: f32 = 0.22;
+/// Blending toward a swamp: thicket density added at the border (damp
+/// undergrowth).
+const WET_DENSITY: f32 = 0.08;
+/// Blending toward a swamp: share of the ground under puddles at the border.
+const PUDDLE_SHARE: f32 = 0.4;
+/// Size of the puddle blobs, meters.
+const PUDDLE_SCALE_M: f32 = 9.0;
 
 pub fn base_density(c: ForestCharacter) -> f32 {
     match c {
@@ -72,6 +79,19 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, ter
     let shift = s.density_pct / 100.0 * 0.3;
 
     let town_cut = region.and_then(|r| r.blend_toward(crate::model::MapKind::Town));
+    let swamp_wet = region.and_then(|r| r.blend_toward(crate::model::MapKind::Swamp));
+    // Puddles in the wet belt: blobs of a noise of the blending seed (no
+    // draws from the chain's stream), more of them nearer the swamp.
+    let puddle_noise = region.map(|r| NoiseField::new(r.blend_seed ^ 0x9D1E ^ r.id as u64));
+    let puddle = |c: usize| {
+        let (Some(t), Some(nf)) = (swamp_wet, puddle_noise.as_ref()) else { return false };
+        if t[c] <= 0.0 {
+            return false;
+        }
+        let (x, y) = (((c % w) as f32 + 0.5) * cell, ((c / w) as f32 + 0.5) * cell);
+        let v = ((nf.fbm(x / PUDDLE_SCALE_M, y / PUDDLE_SCALE_M, 3) - 0.3) / 0.4).clamp(0.0, 1.0);
+        v > 1.0 - PUDDLE_SHARE * t[c]
+    };
     let mut class = vec![ForestGround::Floor; n];
     let mut density = vec![0.0f32; n];
     for c in 0..n {
@@ -96,7 +116,8 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, ter
         let edge = if ew > 0.0 { 0.9 * fade((edge_d + wobble * ew * 0.5) / ew) } else { 0.0 };
         let amp = if managed { 0.5 } else { 1.0 } * patchy * 0.5;
         let inner = amp * (patch.fbm(x / PATCH_SCALE_M, y / PATCH_SCALE_M, 4) - 0.5) * 2.0 + 0.08 * (fine.fbm(x / FINE_SCALE_M, y / FINE_SCALE_M, 2) - 0.5) * 2.0;
-        let moist = 0.12 * fade(to_water[c] / MOIST_M);
+        // Blending: toward a swamp the ground gets wetter (B2).
+        let moist = 0.12 * fade(to_water[c] / MOIST_M) + WET_DENSITY * swamp_wet.map_or(0.0, |t| t[c]);
         let mut d = base_density(area.character) + shift + inner + moist - 0.1 * terrain.height_m[c];
         // Managed: thickets inside are cut back, the belts stay.
         if managed {
@@ -129,6 +150,8 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, ter
                 ForestGround::Shallow
             } else if terrain.rock.cells[c] {
                 ForestGround::Rock
+            } else if !(class[c] == ForestGround::Thicket && dense.cells[c]) && puddle(c) {
+                ForestGround::Shallow
             } else if class[c] == ForestGround::Thicket && !dense.cells[c] {
                 ForestGround::Floor
             } else {

@@ -206,6 +206,9 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, islands: &mut IslandLay
     // the swamp's water) and never outside.
     if let Some(r) = region {
         let want = (s.thicket_pct / 100.0).clamp(0.0, 1.0);
+        // Blending: toward a forest the band is wooded — thicket, not open
+        // water (docs/blending-plan.md, B2).
+        let wooded = r.blend_toward(crate::model::MapKind::Forest);
         let scale = (lo + hi) / 2.0;
         let mouth = |c: usize| {
             let rad = (6.0 / cell).ceil() as i64;
@@ -227,6 +230,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, islands: &mut IslandLay
             let (x, y) = (((c % w) as f32 + 0.5) * cell, ((c / w) as f32 + 0.5) * cell);
             let v = noise.fbm(x / scale + 91.0, y / scale - 17.0, 2);
             // fBm sits mostly in 0.3..0.7: stretch it to 0..1.
+            let want = want + (1.0 - want) * wooded.map_or(0.0, |t| (t[c] * 3.0).min(1.0));
             if ((v - 0.3) / 0.4).clamp(0.0, 1.0) < want && !mouth(c) {
                 t[c] = Terrain::Thicket;
             }

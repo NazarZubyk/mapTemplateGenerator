@@ -34,12 +34,17 @@ pub struct TreeBuild {
     pub notes: Vec<String>,
 }
 
+/// Blending: how much nearness to a forest region lifts a cell's grove
+/// value (the noise spans about 0.3–0.7).
+const GROVE_TOWARD_FOREST: f32 = 0.35;
+
 pub fn build(
     config: &LevelConfig,
     rng: &mut ChaCha8Rng,
     anchors: &[GateAnchor],
     islands: &IslandLayout,
     depth: &DepthLayout,
+    near_forest: Option<&[f32]>,
 ) -> TreeBuild {
     let s = &config.swamp.trees;
     let (w, h, cell) = (islands.width, islands.height, islands.cell_size_m);
@@ -125,7 +130,8 @@ pub fn build(
         .collect();
     let value = |c: usize| {
         let (x, y) = center(c);
-        noise.fbm(x / GROVE_SCALE_M, y / GROVE_SCALE_M, 3)
+        // Blending: the groves gather on the forest side (B2).
+        noise.fbm(x / GROVE_SCALE_M, y / GROVE_SCALE_M, 3) + GROVE_TOWARD_FOREST * near_forest.map_or(0.0, |t| t[c])
     };
     let mut ranked: Vec<(f32, usize)> = ground.iter().map(|&c| (value(c), c)).collect();
     ranked.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
@@ -231,7 +237,7 @@ mod tests {
         let mut isl = islands::build(c, &mut rng, &anchors, None).layout;
         let mut p = paths::build(c, &mut rng, &anchors, &isl, None).layout;
         let d = depth::build(c, &mut rng, &mut isl, &mut p, None).layout;
-        let trees = build(c, &mut rng, &anchors, &isl, &d);
+        let trees = build(c, &mut rng, &anchors, &isl, &d, None);
         All { anchors, islands: isl, paths: p, depth: d, trees }
     }
 

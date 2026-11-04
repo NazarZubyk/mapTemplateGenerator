@@ -218,6 +218,45 @@ mod tests {
         c
     }
 
+    /// Cells of `own` regions within `reach` m of a region of `other`
+    /// kind where `pick(level, cell)` holds.
+    fn count_by(m: &MixedLayout, own: MapKind, other: MapKind, reach: f32, pick: impl Fn(&crate::level::GeneratedLevel, usize) -> bool) -> usize {
+        let (w, h, cell) = (m.map.width, m.map.height, m.map.cell_size_m);
+        let kind = |c: usize| (m.map.ids[c] != 0).then(|| m.regions[m.map.ids[c] as usize - 1].kind);
+        let (d, _) = distance_field(w, h, cell, |c| kind(c) == Some(other), reach + cell);
+        m.regions
+            .iter()
+            .zip(&m.levels)
+            .filter(|(r, _)| r.kind == own)
+            .filter_map(|(r, l)| l.as_ref().map(|l| (r.id, l)))
+            .map(|(id, l)| (0..w * h).filter(|&c| m.map.ids[c] == id && d[c] <= reach && pick(l, c)).count())
+            .sum()
+    }
+
+    #[test]
+    fn forest_and_swamp_blend_wet_and_wooded() {
+        for seed in 1..=2 {
+            let mut off = mixed(18.0);
+            off.mixed.blending.forest_swamp_m = 0.0;
+            let on = mixed(18.0);
+            let (lo, ln) = (crate::generator::generate(&off, seed), crate::generator::generate(&on, seed));
+            let (mo, mn) = (lo.mixed.as_ref().unwrap(), ln.mixed.as_ref().unwrap());
+            if !mo.regions.iter().any(|r| r.kind == MapKind::Swamp) {
+                continue;
+            }
+            // Forest: puddles (shallow water) near the swamp.
+            let shallow = |l: &crate::level::GeneratedLevel, c: usize| {
+                crate::level::ForestGround::from_code(l.forest.as_ref().unwrap().ground().unwrap()[c]) == crate::level::ForestGround::Shallow
+            };
+            let (a, b) = (count_by(mo, MapKind::Forest, MapKind::Swamp, 10.0, shallow), count_by(mn, MapKind::Forest, MapKind::Swamp, 10.0, shallow));
+            assert!(b > a, "seed {seed}: forest puddles by the swamp {a} → {b}");
+            // Swamp: thicket along the forest instead of open water.
+            let thicket = |l: &crate::level::GeneratedLevel, c: usize| l.swamp.as_ref().unwrap().depth.as_ref().unwrap().thicket.cells[c];
+            let (a, b) = (count_by(mo, MapKind::Swamp, MapKind::Forest, 4.0, thicket), count_by(mn, MapKind::Swamp, MapKind::Forest, 4.0, thicket));
+            assert!(b > a, "seed {seed}: swamp thicket by the forest {a} → {b}");
+        }
+    }
+
     #[test]
     fn yard_trees_stand_in_the_town_near_the_forest_on_free_ground() {
         let width = 18.0;

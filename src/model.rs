@@ -302,11 +302,15 @@ pub struct BlendSettings {
     /// Forest ↔ Town: trees in the town's yards near the forest, and the
     /// forest's thicket belt cut back to an open edge outside the wall.
     pub forest_town_m: f32,
+    /// Forest ↔ Swamp: a wet belt in the forest (puddles, damp
+    /// undergrowth), and the swamp's edge toward the forest wooded (thicket
+    /// along the border, its tree groves on that side).
+    pub forest_swamp_m: f32,
 }
 
 impl Default for BlendSettings {
     fn default() -> Self {
-        Self { forest_town_m: 18.0 }
+        Self { forest_town_m: 18.0, forest_swamp_m: 16.0 }
     }
 }
 
@@ -315,6 +319,7 @@ impl BlendSettings {
     pub fn width_m(&self, a: MapKind, b: MapKind) -> f32 {
         match (a, b) {
             (MapKind::Forest, MapKind::Town) | (MapKind::Town, MapKind::Forest) => self.forest_town_m.max(0.0),
+            (MapKind::Forest, MapKind::Swamp) | (MapKind::Swamp, MapKind::Forest) => self.forest_swamp_m.max(0.0),
             _ => 0.0,
         }
     }

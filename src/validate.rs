@@ -699,7 +699,10 @@ fn forest(config: &LevelConfig, out: &mut Vec<Warning>) {
 /// the zone covers the whole of the smaller region of the pair.
 fn blending(config: &LevelConfig, rows: &[crate::model::MixedRegion], total: f32, area: f32, out: &mut Vec<Warning>) {
     let b = &config.mixed.blending;
-    for (f, label, width, pair) in [("mixed.blending.forest_town_m", "Forest ↔ Town", b.forest_town_m, (MapKind::Forest, MapKind::Town))] {
+    for (f, label, width, pair) in [
+        ("mixed.blending.forest_town_m", "Forest ↔ Town", b.forest_town_m, (MapKind::Forest, MapKind::Town)),
+        ("mixed.blending.forest_swamp_m", "Forest ↔ Swamp", b.forest_swamp_m, (MapKind::Forest, MapKind::Swamp)),
+    ] {
         if width < 0.0 {
             out.push(field(f, format!("Blending {label}: the depth cannot be negative")));
             continue;

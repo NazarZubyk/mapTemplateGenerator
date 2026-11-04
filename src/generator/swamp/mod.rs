@@ -60,7 +60,7 @@ pub fn generate_in(config: &LevelConfig, seed: u64, region: Option<&RegionCtx>, 
     notes.extend(depth.notes);
 
     progress("Planting trees", 0.85);
-    let trees = trees::build(config, &mut rng, &anchors.anchors, &islands.layout, &depth.layout);
+    let trees = trees::build(config, &mut rng, &anchors.anchors, &islands.layout, &depth.layout, region.and_then(|r| r.blend_toward(crate::model::MapKind::Forest)));
     notes.extend(trees.notes);
 
     let mut objects = trees.objects;
