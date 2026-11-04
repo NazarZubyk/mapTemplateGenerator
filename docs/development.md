@@ -79,7 +79,7 @@ src/
 │   └── mountains.rs     # a mountain region: passes over the massif, caves inside
 ├── render.rs            # map.png / layer.png / regions.png rasterizers
 ├── export.rs            # export bundle writer + spec.json
-├── validate.rs          # config validation (early subset; step 13 extends it)
+├── validate.rs          # config validation: per-kind checks, duplicate colors (blocking), node ranges, feasibility
 └── ui/                  # app shell, node panel, preview, warnings, bench
 reference/               # previous full generator (dead code, copy pieces from here)
 docs/                    # goals, workflow + step notes, this file, next-agent prompt, plans
@@ -214,9 +214,13 @@ Export: map.png (colored map), layer.png (objects: R = category id 1–7,
 G/B = instance id; swamp ground: R = ground id 8–14, G = depth, B =
 island id; cave ground: R = ground id 15–23, G = style zone id, B =
 chamber id; forest ground: R = ground id 24–31, G = area id, B = 1
-walkable / 0 blocked — spelled out in spec.json `layer_encoding`), spec.json
-(format v2) (legend, every object, regions, roads, wall gaps, interactive
-groups, hidden rooms, mobs, gates; swamp: `gate_anchors`, `islands`,
+walkable / 0 blocked; town ground: R = 32 district floor, 33 road, 34 town
+wall (outer and hidden-room walls), 35 district wall, G = district id, B =
+1 walkable / 0 blocked, 0 outside the town — spelled out in spec.json
+`layer_encoding`), spec.json (format v2) (legend, every object, regions,
+roads, wall gaps, interactive groups, hidden rooms, mobs, gates, `notes` =
+the generation compromises; town: `town` = area share, outer wall
+thickness / closed, house counts and coverage vs target; swamp: `gate_anchors`, `islands`,
 `paths`, `gate_bridges`, `water`; cave: `cave_zones`, `chambers`, `tunnels`, `junctions`, `cave_gates`, `cave_floor`, `hazards`;
 forest: `forest_areas`, `forest_ground`, `forest_water`, `forest_passages`,
 `forest_clearings`, `forest_trees`, `forest_props`). Sections a map kind does
@@ -225,12 +229,26 @@ not use are left out.
 Mixed maps: layer.png takes each region's own ground (town regions R =
 32 town_district, 33 road, 34 town_wall, 35 district_wall, their rivers as
 the forest water ids; mountain passes 36; a joined opening its region's
-path id — `render::ground_layer`, the same values as before for single
-maps); **regions.png** (R = map region id, G = kind 1 town / 2 swamp / 3
+path id — `render::ground_layer`, the same values a map of that kind
+writes); **regions.png** (R = map region id, G = kind 1 town / 2 swamp / 3
 forest / 4 mountains, B = 255 walkable); spec.json `mixed_regions`,
 `mixed_water`, `mixed_relief_m`, `mixed_connections`, `mixed_seams` and
 `mixed_region_specs` (each built region's own full spec, `object_offset`
 into the top-level `objects`, `mountain_passes`).
+
+Validation (`validate::validate`, shown in the warnings panel; blocking
+ones disable Generate): map size, each kind's own checks, and for every
+kind (each region of a mixed map on its own) **duplicate colors**
+(blocking: two different things drawn in one color — the object types, the
+kind's own colors and its fixed ones such as town roads and walls, see
+`validate::color_uses`), min above max, sizes and prices that must be
+positive, a mob budget with no types / no balance / a 0 cap, interactive
+groups bigger than the quantity, gates whose openings run into each other
+(not swamps, which have their own gate-island check; not mixed regions,
+whose gates are portals), and a rough feasibility pre-check (props +
+interactive + hidden rooms vs 40 % of the free ground). New types get a
+color far from every used one (`validate::distinct_color`, the UI's
+interactive "Add type" and the MCP mob tools).
 
 ## Map size limits
 

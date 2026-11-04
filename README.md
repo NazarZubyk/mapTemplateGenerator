@@ -49,7 +49,8 @@ Each map is exported as three files (a Mixed map adds a fourth):
 - **map.png**: the colored map. Walls, roads, houses, props, mobs, gates
   and everything else each have their own color.
 - **layer.png**: the same layout as machine-readable data, for tools and AI
-  agents.
+  agents: every object, and the ground under it (roads, walls, water,
+  walkable or not).
 - **spec.json**: a legend plus the exact position and size of every
   object.
 - **regions.png** (Mixed maps): which region each pixel belongs to, its
@@ -86,7 +87,9 @@ the details.
      mobs.
 3. Press **⚙ Generate**. Press **🎲 Re-roll** for another variant. To move
    only the mobs, use **🎲 Re-roll mobs** in the Mobs block (on a Mixed
-   map, the picked region's mobs).
+   map, the picked region's mobs). Problems show in the warnings list;
+   red ones, such as two things in the same color, must be fixed before
+   you can generate.
 4. Drag or swipe to move the preview, and pinch or Ctrl+scroll to zoom.
 5. Use **Export** to write the files, and **Config file → Save** to keep
    your settings.
@@ -115,8 +118,6 @@ see `QUICKSTART.md`.
 - On a Mixed map the regions meet at sharp borders; land that blends from
   one kind into the next (trees in town yards, a wet forest edge by a
   swamp) is planned.
-- Few safety checks. For example, two object types with the same color are
-  not flagged yet.
 - Windows builds are not code-signed, so expect the SmartScreen warning.
 - Huge maps export smaller images: map.png and layer.png stay within
   16384 px on a side (spec.json records the scale used).

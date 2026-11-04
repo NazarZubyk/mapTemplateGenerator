@@ -740,8 +740,8 @@ pub fn regions_image(level: &GeneratedLevel, px_per_m: f32) -> Option<ImageBuffe
 /// Width, height, cell size and one layer.png ground value per cell.
 pub type GroundCells = (usize, usize, f32, Vec<Option<[u8; 3]>>);
 
-/// Town ground ids on layer.png (R), mixed maps only (a whole town map
-/// keeps its ground empty): after the forest ones.
+/// Town ground ids on layer.png (R), town maps and a mixed map's town
+/// regions: after the forest ones. Hidden-room walls count as town wall.
 pub const TOWN_GROUND_IDS: [(u8, &str); 4] = [(32, "town_district"), (33, "road"), (34, "town_wall"), (35, "district_wall")];
 /// A mountain pass on layer.png (R), mixed maps.
 pub const PASS_GROUND_ID: (u8, &str) = (36, "mountain_pass");
@@ -751,6 +751,7 @@ pub const PASS_GROUND_ID: (u8, &str) = (36, "mountain_pass");
 /// - swamp: [terrain id 8–14, depth, island id];
 /// - cave: [ground id 15–23, style zone, chamber];
 /// - forest: [ground id 24–31, area, walkable];
+/// - town: [32–35, district, walkable], hidden-room walls as town wall;
 /// - mixed: each region's own (town: [32–35, district, walkable], its
 ///   water as the forest water ids; mountains: the cave ids, passes
 ///   [36, pass, 1]); a joined opening takes its region's path id.
@@ -763,6 +764,9 @@ pub fn ground_layer(level: &GeneratedLevel) -> Option<GroundCells> {
             .iter()
             .map(|l| {
                 let l = l.as_ref()?;
+                if l.config.kind == crate::model::MapKind::Town {
+                    return town_layer(l, water);
+                }
                 match ground_layer(l) {
                     Some(g) if l.cave.is_some() => {
                         // Mountains: the passes over the cave layer.
@@ -775,7 +779,7 @@ pub fn ground_layer(level: &GeneratedLevel) -> Option<GroundCells> {
                         )
                     }
                     Some(g) => Some(g.3),
-                    None => town_layer(l, water),
+                    None => None,
                 }
             })
             .collect();
@@ -862,15 +866,24 @@ pub fn ground_layer(level: &GeneratedLevel) -> Option<GroundCells> {
             .collect();
         return Some((p.width, p.height, p.cell_size_m, cells));
     }
+    if level.config.kind == crate::model::MapKind::Town
+        && let Some(split) = &level.regions
+        && let Some(cells) = town_layer(level, None)
+    {
+        return Some((split.map.width, split.map.height, split.map.cell_size_m, cells));
+    }
     None
 }
 
-/// A town region's layer ground (mixed maps): district floor, roads,
-/// walls; the mixed map's water where the town did not build.
+/// A town's layer ground (a town map, or a mixed map's town region):
+/// district floor, roads, walls (hidden-room walls too); a mixed map's
+/// water where the town did not build. Outside the town stays empty.
 fn town_layer(level: &GeneratedLevel, water: Option<&crate::level::WaterLayout>) -> Option<Vec<Option<[u8; 3]>>> {
     use crate::level::ForestGround as G;
     let split = level.regions.as_ref()?;
-    let wall = |c: usize| level.walls.as_ref().is_some_and(|wl| wl.mask.cells[c]);
+    let wall = |c: usize| {
+        level.walls.as_ref().is_some_and(|wl| wl.mask.cells[c]) || level.hidden_rooms.as_ref().is_some_and(|h| h.wall_mask.cells.get(c).copied().unwrap_or(false))
+    };
     let rwall = |c: usize| level.region_walls.as_ref().is_some_and(|wl| wl.mask.cells[c]);
     let road = |c: usize| level.roads.as_ref().is_some_and(|r| r.mask.cells[c]);
     Some(
@@ -1157,6 +1170,20 @@ mod tests {
         for want in ["forest_open", "forest_floor", "forest_thicket"] {
             assert!(kinds.contains(want), "{kinds:?}");
         }
+    }
+
+    #[test]
+    fn town_map_writes_its_ground_on_layer() {
+        let level = crate::generator::generate(&crate::model::LevelConfig::test_64(), 3);
+        let r = rasterize(&level, 2.0);
+        let ids: std::collections::HashSet<u8> = r.layer.pixels().map(|p| p.0[0]).collect();
+        for (id, name) in TOWN_GROUND_IDS {
+            assert!(ids.contains(&id), "no {name} on layer.png: {ids:?}");
+        }
+        // Outside the town stays empty; walkable ground says so in B.
+        assert!(ids.contains(&0));
+        assert!(r.layer.pixels().filter(|p| p.0[0] == TOWN_GROUND_IDS[1].0).all(|p| p.0[2] == 1));
+        assert!(r.layer.pixels().filter(|p| p.0[0] == TOWN_GROUND_IDS[2].0).all(|p| p.0[2] == 0));
     }
 
     #[test]

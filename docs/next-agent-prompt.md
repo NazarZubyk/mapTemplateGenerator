@@ -26,15 +26,18 @@ a time.
   ready** (keep that until the user says otherwise). Developer detail goes
   into docs/development.md.
 
-## State at the end of the last session (2026-11-01)
+## State at the end of the last session (2026-11-04)
 
-- Branch `main` holds everything (the `mixed-regions` branch was
-  fast-forwarded into it). **`main` was 12 commits ahead of `origin/main`
-  and NOT pushed**: the agent's shell has no GitHub login (HTTPS asks for a
+- Branch `main` holds everything. **`main` is ahead of `origin/main` and
+  NOT pushed**: the agent's shell has no GitHub login (HTTPS asks for a
   username, the SSH key is refused). First thing: run `git status -sb`; if
   it is still ahead, ask the user to run `git push origin main` in their
   own terminal (or `! git push origin main` here).
-- 264 tests pass, `cargo clippy --all-targets` is clean.
+- 269 tests pass, `cargo clippy --all-targets` is clean.
+- 2026-11-04: the unused `map.walkable_pct` setting was dropped (town
+  step 7); town step 13 is done (town ground on layer.png, spec.json
+  `town` + `notes`, blocking duplicate colors, node warnings, feasibility
+  pre-check — workflow.md "Step 13 notes").
 - **Every kind works**: Town (ready), Swamp, Forest, Cave (complete, being
   tuned), **Mixed** (M1–M9 done, being tuned). The app and the MCP server
   start on a Mixed map (`LevelConfig::starting()` / `of_kind(Mixed)`);
@@ -74,8 +77,7 @@ note); mob buttons only record `app.mobs_request`.
 2. **Tuning** of Swamp, Forest, Cave and Mixed with the user (spawn amounts
    on 200 m maps, looks).
 3. Mountain passes have no props / mobs yet (only the caves do).
-4. Town step 13
-   (validation & export polish, duplicate colors), cleanup (`reference/`).
+4. Cleanup (`reference/`, docs/plan.md, workflow.md history notes).
 
 ## How the user wants to work
 

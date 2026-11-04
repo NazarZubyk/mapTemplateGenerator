@@ -6,8 +6,8 @@ generator is now rebuilt **incrementally**: one section at a time, each one
 built straight into its own node of the left panel and tested in the app.
 
 **Status:** steps 0–6 and 8–12 are done (12 nodes), plus the `mapgen-mcp`
-server for Claude. Open: step 13 (validation & export polish), cleanup
-(step 7, the walkable budget, was dropped). Every map kind now has its full chain: Town (this
+server for Claude. Step 13 (validation & export polish) is done, step 7 (the
+walkable budget) was dropped. Open: cleanup. Every map kind now has its full chain: Town (this
 file), Swamp ([swamp-plan.md](swamp-plan.md)), Cave
 ([cave-plan.md](cave-plan.md)) and Forest ([forest-plan.md](forest-plan.md));
 Swamp, Cave and Forest are complete and being tuned with the user.
@@ -290,10 +290,11 @@ Rules that carried over from the old build (keep them in every section):
       each (0° east, 90° north), wall opening width, gate road toggle +
       width, color. Node 7 — runs right after the region walls. (done — see
       "Step 12 notes")
-- [ ] **Step 13 — validation & export polish**: feasibility pre-check,
+- [x] **Step 13 — validation & export polish**: feasibility pre-check,
       duplicate colors (blocking), warnings for the newer nodes (ranges,
-      empty mob types with a budget, gates with overlapping angles), full
-      spec.json details (reference `validate.rs`, `export.rs`).
+      empty mob types with a budget, gates with overlapping angles), town
+      ground on layer.png, spec.json `town` + `notes`. (done — see "Step 13
+      notes")
 - [x] **MCP server** (`mapgen-mcp`): Claude configures gates, mobs and any
       node, generates and exports; the app live-syncs the config file.
       (done — see "MCP server")
@@ -835,6 +836,65 @@ spec.json gets `gates`. Tests: angle system, default gates open the wall
 on town ground (north top half, south bottom half), gate roads join a
 connected network, later objects keep off gate roads, mobs and hidden rooms
 keep clear, 8 directions all find the wall, island maps, determinism.
+
+## Step 13 notes — validation & export polish
+
+Planned and built 2026-11-04, in this order:
+
+1. **Town ground on layer.png.** A whole Town map left its ground empty
+   (R = 0 for district floor, roads, walls and the outside alike), so a
+   tool could not tell a road from a wall. It now writes the same town
+   ground ids as a mixed map's town region: R = 32 district floor, 33
+   road, 34 town wall (outer wall and hidden-room walls), 35 district
+   wall; G = district id; B = 1 walkable / 0 blocked. Outside the town
+   stays 0.
+2. **spec.json details.** `notes` (the generation compromises the app
+   shows) and a `town` section: coverage, outer wall thickness, house
+   counts (street / yard / compound) and house coverage vs the target.
+3. **Duplicate colors (blocking).** Two different things drawn in one
+   color make map.png ambiguous. Generate is disabled until they differ.
+   Checked per kind: the object types (houses, props, each interactive
+   type, hidden room + path, each mob type, gates), the kind's own
+   colors (swamp water and paths, cave rock and hazards, forest trees,
+   mountain passes) and the fixed town colors (road, walls). On a mixed
+   map each region is checked on its own.
+4. **Warnings for the newer nodes** (non-blocking): min above max
+   (swapped at generation), sizes and prices that must be positive, a mob
+   budget with no mob types or no balance, interactive groups larger than
+   the quantity, gates closer than their openings.
+5. **Feasibility pre-check** (non-blocking): the area the props,
+   interactive objects and hidden rooms ask for, against the map.
+
+What was built and what came up:
+
+- Town ground: `render::town_layer` (the mixed town-region one) now also
+  serves a whole Town map, with hidden-room walls as town wall (they were
+  district floor or empty before; mixed town regions get that fix too).
+  map.png and the other kinds' layer.png stay byte-identical (checked at
+  two seeds per kind). The swamp, cave and forest hidden-room walls are
+  already their kind's blocked ground.
+- spec.json `town`: `area_pct`, `outer_wall` {`thickness_m` on the grid,
+  `closed`}, `houses` {`street`, `yard`, `compound`, `coverage_pct`,
+  `target_pct`}; `notes` on every kind (left out when empty).
+- Colors: `validate::color_uses` lists what the kind draws (object types;
+  swamp water / paths / trees; cave rock, floors, wall, hazards; forest
+  trunks and the fixed forest ground colors; the fixed town road / wall /
+  district wall; the fixed hidden-passage / cracked-wall marker). Only a
+  pair where at least one side is a setting is reported; the warning
+  points at the setting. House color is not checked on other kinds.
+- The new duplicate check would have blocked a second interactive type
+  added in the UI (it copied the default color): "Add type" now picks
+  `validate::distinct_color` (moved from the MCP server, which uses it for
+  mob types).
+- Gate overlap: gates sit about 0.4 × the shorter map side from the
+  center; two gates warn when the arc between them is under two openings
+  (or road widths). Swamps keep their own 15° gate-island check.
+- Feasibility: free ground = the town's coverage target × (1 − house
+  density) on a town, half the map otherwise; the warning names the
+  biggest asker.
+- Tests: duplicate colors block (setting vs setting, setting vs fixed;
+  only the kind's own colors), mixed regions check their own colors, node
+  warnings, an overstuffed map warns, a town map writes its ground ids.
 
 ## MCP server (mapgen-mcp)
 

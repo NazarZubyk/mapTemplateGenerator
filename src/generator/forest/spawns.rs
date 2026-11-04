@@ -37,7 +37,7 @@ use crate::model::LevelConfig;
 /// Spawns keep this far from a gate point, meters.
 pub const GATE_CLEAR_M: f32 = 6.0;
 pub const HIDDEN_PASSAGE_NAME: &str = "hidden passage";
-const HIDDEN_PASSAGE_COLOR: [u8; 3] = [230, 150, 60];
+pub(crate) const HIDDEN_PASSAGE_COLOR: [u8; 3] = [230, 150, 60];
 
 /// The forest after the layout nodes: what every spawn node starts from.
 pub struct ForestSpawnGround<'a> {

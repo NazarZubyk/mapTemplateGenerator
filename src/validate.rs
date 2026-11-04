@@ -133,6 +133,8 @@ pub fn validate(config: &LevelConfig) -> Vec<Warning> {
             blocking: false,
         });
     }
+    colors(config, &mut warnings);
+    nodes(config, &mut warnings);
     if config.kind == MapKind::Swamp {
         swamp(config, &mut warnings);
     }
@@ -143,6 +145,293 @@ pub fn validate(config: &LevelConfig) -> Vec<Warning> {
         forest(config, &mut warnings);
     }
     warnings
+}
+
+/// Everything drawn in its own color on map.png for a map of this kind:
+/// (what it is, the setting, the color). Fixed colors have no setting.
+fn color_uses(config: &LevelConfig) -> Vec<(String, Option<String>, [u8; 3])> {
+    let mut uses: Vec<(String, Option<String>, [u8; 3])> = Vec::new();
+    let mut set = |what: &str, field: &str, color: [u8; 3]| uses.push((what.to_owned(), Some(field.to_owned()), color));
+    match config.kind {
+        MapKind::Town => set("houses", "houses.color", config.houses.color),
+        MapKind::Swamp => {
+            let d = &config.swamp.depth;
+            set("shallow water", "swamp.depth.shallow_color", d.shallow_color);
+            set("deep mud", "swamp.depth.mud_color", d.mud_color);
+            set("deep water", "swamp.depth.deep_color", d.deep_color);
+            set("thicket", "swamp.depth.thicket_color", d.thicket_color);
+            set("islands", "swamp.islands.color", config.swamp.islands.color);
+            set("mud paths", "swamp.paths.mud_color", config.swamp.paths.mud_color);
+            set("boardwalks", "swamp.paths.boardwalk_color", config.swamp.paths.boardwalk_color);
+            set("trees", "swamp.trees.color", config.swamp.trees.color);
+            set("trees in water", "swamp.trees.water_color", config.swamp.trees.water_color);
+        }
+        MapKind::Cave => {
+            let c = &config.cave;
+            set("rock", "cave.chambers.rock_color", c.chambers.rock_color);
+            set("natural floor", "cave.style.natural_color", c.style.natural_color);
+            set("hand-made floor", "cave.style.handmade_color", c.style.handmade_color);
+            set("cave wall", "cave.carve.wall_color", c.carve.wall_color);
+            set("chasms", "cave.hazards.chasm_color", c.hazards.chasm_color);
+            set("rope bridges", "cave.hazards.bridge_color", c.hazards.bridge_color);
+            set("shallow pools", "cave.hazards.shallow_color", c.hazards.shallow_color);
+            set("deep pools", "cave.hazards.deep_color", c.hazards.deep_color);
+        }
+        MapKind::Forest => set("tree trunks", "forest.trees.color", config.forest.trees.color),
+        MapKind::Mixed => {}
+    }
+    set("props", "props.color", config.props.color);
+    for (i, it) in config.interactive.iter().enumerate() {
+        set(&format!("interactive type \"{}\"", it.name), &format!("interactive[{i}].color"), it.color);
+    }
+    if config.hidden_rooms.count > 0 {
+        set("hidden rooms", "hidden_rooms.color_room", config.hidden_rooms.color_room);
+        set("hidden room paths", "hidden_rooms.color_path", config.hidden_rooms.color_path);
+    }
+    for (i, m) in config.mobs.types.iter().enumerate() {
+        set(&format!("mob type \"{}\"", m.name), &format!("mobs.types[{i}].color"), m.color);
+    }
+    if !config.gates.gates.is_empty() {
+        set("gates", "gates.color", config.gates.color);
+    }
+    let mut fixed = |what: &str, color: [u8; 3]| uses.push((what.to_owned(), None, color));
+    match config.kind {
+        MapKind::Town => {
+            fixed("roads", crate::render::ROAD);
+            fixed("walls", crate::render::WALL);
+            fixed("district walls", crate::render::REGION_WALL);
+        }
+        MapKind::Forest => {
+            for g in crate::level::ForestGround::ALL {
+                fixed(g.label(), g.color());
+            }
+            if config.hidden_rooms.count > 0 {
+                fixed("hidden passages", crate::generator::forest::spawns::HIDDEN_PASSAGE_COLOR);
+            }
+        }
+        MapKind::Cave if config.hidden_rooms.count > 0 => fixed("cracked walls", crate::generator::cave::spawns::CRACKED_WALL_COLOR),
+        _ => {}
+    }
+    uses
+}
+
+/// Every color already in use for a map of this kind (its settings and
+/// its fixed colors, plus the plain ground), for picking a new one.
+pub fn used_colors(config: &LevelConfig) -> Vec<[u8; 3]> {
+    let mut v: Vec<[u8; 3]> = color_uses(config).into_iter().map(|u| u.2).collect();
+    v.push(crate::render::GROUND);
+    v
+}
+
+/// A saturated color far from every used one (golden-angle hues, the
+/// candidate with the largest distance to its nearest used color wins).
+pub fn distinct_color(used: &[[u8; 3]]) -> [u8; 3] {
+    let dist = |a: [u8; 3], b: [u8; 3]| (0..3).map(|k| (a[k] as i32 - b[k] as i32).pow(2)).sum::<i32>();
+    (0..36)
+        .map(|k| hsv((k as f32 * 137.508) % 360.0, if k % 2 == 0 { 0.75 } else { 0.55 }, if k % 3 == 0 { 0.6 } else { 0.85 }))
+        .max_by_key(|&c| used.iter().map(|&u| dist(c, u)).min().unwrap_or(i32::MAX))
+        .unwrap_or([200, 60, 50])
+}
+
+fn hsv(h: f32, s: f32, v: f32) -> [u8; 3] {
+    let c = v * s;
+    let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
+    let (r, g, b) = match (h / 60.0) as u32 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    let m = v - c;
+    [((r + m) * 255.0) as u8, ((g + m) * 255.0) as u8, ((b + m) * 255.0) as u8]
+}
+
+/// Two different things in one color make map.png ambiguous: blocking
+/// until one of them changes (docs/goals.md "Color conflicts").
+fn colors(config: &LevelConfig, out: &mut Vec<Warning>) {
+    let uses = color_uses(config);
+    for (i, a) in uses.iter().enumerate() {
+        for b in &uses[i + 1..] {
+            if a.2 != b.2 || (a.1.is_none() && b.1.is_none()) {
+                continue;
+            }
+            let [r, g, bl] = a.2;
+            out.push(Warning {
+                // Point at a setting the user can change.
+                field: b.1.clone().or_else(|| a.1.clone()),
+                message: format!("Duplicate color #{r:02X}{g:02X}{bl:02X}: {} and {} — pick another color for one of them", a.0, b.0),
+                blocking: true,
+            });
+        }
+    }
+}
+
+/// A min / max pair the generator swaps when min is the bigger one.
+fn range(out: &mut Vec<Warning>, f: &str, what: &str, min: f32, max: f32) {
+    if min > max {
+        out.push(field(f, format!("{what}: max ({max}) is smaller than min ({min}) — the two are swapped at generation time")));
+    }
+}
+
+/// The town's own nodes after the regions (roads, district walls, houses)
+/// and the nodes every kind shares (props, interactive objects, hidden
+/// rooms, mobs, gates): settings that cannot work as asked.
+fn nodes(config: &LevelConfig, out: &mut Vec<Warning>) {
+    if config.kind == MapKind::Town {
+        let r = &config.roads;
+        if r.width_m <= 0.0 {
+            out.push(field("roads.width_m", "Road width must be positive".to_owned()));
+        }
+        if r.min_width_m > r.width_m {
+            out.push(field("roads.min_width_m", format!("Quietest road width ({} m) is wider than the main road width ({} m) — every road gets the main width", r.min_width_m, r.width_m)));
+        }
+        let rw = &config.region_walls;
+        if config.regions.count > 1 {
+            if rw.thickness_m <= 0.0 {
+                out.push(field("region_walls.thickness_m", "District wall thickness must be positive".to_owned()));
+            }
+            range(out, "region_walls.segment_max_m", "District wall segments", rw.segment_min_m, rw.segment_max_m);
+        }
+        let h = &config.houses;
+        if h.density_pct > 0.0 {
+            if h.size_min_m <= 0.0 {
+                out.push(field("houses.size_min_m", "House size min must be positive".to_owned()));
+            }
+            range(out, "houses.size_max_m", "House size", h.size_min_m, h.size_max_m);
+            range(out, "houses.wing_max_pct", "House wing size", h.wing_min_pct, h.wing_max_pct);
+        }
+    }
+    let p = &config.props;
+    if p.quantity > 0 {
+        if p.size_min_m <= 0.0 {
+            out.push(field("props.size_min_m", "Prop size min must be positive".to_owned()));
+        }
+        range(out, "props.size_max_m", "Prop size", p.size_min_m, p.size_max_m);
+    }
+    for (i, it) in config.interactive.iter().enumerate() {
+        if it.quantity == 0 {
+            continue;
+        }
+        let what = format!("Interactive type \"{}\"", it.name);
+        if it.size_min_m <= 0.0 {
+            out.push(field(&format!("interactive[{i}].size_min_m"), format!("{what}: size min must be positive")));
+        }
+        range(out, &format!("interactive[{i}].size_max_m"), &format!("{what} size"), it.size_min_m, it.size_max_m);
+        range(out, &format!("interactive[{i}].group_max"), &format!("{what} group size"), it.group_min as f32, it.group_max as f32);
+        if it.group_min.min(it.group_max) > it.quantity {
+            out.push(field(
+                &format!("interactive[{i}].group_min"),
+                format!("{what}: the smallest group ({}) is bigger than the quantity ({}) — one smaller group is placed", it.group_min.min(it.group_max), it.quantity),
+            ));
+        }
+    }
+    let hr = &config.hidden_rooms;
+    if hr.count > 0 {
+        if hr.size_min_m <= 0.0 {
+            out.push(field("hidden_rooms.size_min_m", "Hidden room size min must be positive".to_owned()));
+        }
+        range(out, "hidden_rooms.size_max_m", "Hidden room size", hr.size_min_m, hr.size_max_m);
+        if hr.path_width_m <= 0.0 {
+            out.push(field("hidden_rooms.path_width_m", "Hidden room path width must be positive".to_owned()));
+        }
+    }
+    let m = &config.mobs;
+    let wants_mobs = m.budget > 0.0 || m.min_entities > 0 || m.min_per_100m2 > 0.0;
+    if wants_mobs && m.types.is_empty() {
+        out.push(field("mobs.types", "Mobs have a budget but no mob types — add a mob type or set the budget to 0".to_owned()));
+    }
+    if wants_mobs && !m.types.is_empty() {
+        if m.types.iter().all(|t| t.balance_pct <= 0.0) {
+            out.push(field("mobs.types", "Every mob type has a 0 % balance share — no mobs are placed".to_owned()));
+        }
+        if m.max_entities == 0 {
+            out.push(field("mobs.max_entities", "Mob entity cap is 0 — no mobs are placed".to_owned()));
+        }
+        if m.min_amount == crate::model::NodeAmount::Count && m.min_entities > m.max_entities {
+            out.push(field("mobs.min_entities", format!("Mob minimum ({}) is above the entity cap ({}) — the cap wins", m.min_entities, m.max_entities)));
+        }
+        range(out, "mobs.pack_max", "Mob pack size", m.pack_min as f32, m.pack_max as f32);
+        for (i, t) in m.types.iter().enumerate() {
+            if t.price <= 0.0 {
+                out.push(field(&format!("mobs.types[{i}].price"), format!("Mob type \"{}\": price must be positive", t.name)));
+            }
+            if t.size_m <= 0.0 {
+                out.push(field(&format!("mobs.types[{i}].size_m"), format!("Mob type \"{}\": size must be positive", t.name)));
+            }
+        }
+    }
+    gates(config, out);
+    feasibility(config, out);
+}
+
+/// Share of the free ground the props, interactive objects and hidden
+/// rooms may ask for before a warning: they need room around them too.
+const FEASIBLE_SHARE: f32 = 0.4;
+
+/// A rough pre-check before generating: the ground the props, interactive
+/// objects and hidden rooms ask for, against the free ground of the map
+/// (a town: its area minus the houses' share; other kinds: half the map).
+fn feasibility(config: &LevelConfig, out: &mut Vec<Warning>) {
+    let area = config.map.width_m.max(0.0) * config.map.height_m.max(0.0);
+    if area <= 0.0 {
+        return;
+    }
+    let free = if config.kind == MapKind::Town {
+        area * (config.shape.coverage_target_pct / 100.0).clamp(0.0, 1.0) * (1.0 - config.houses.density_pct / 100.0).clamp(0.0, 1.0)
+    } else {
+        area * 0.5
+    };
+    let mean_sq = |a: f32, b: f32| {
+        let m = (a.max(0.0) + b.max(0.0)) / 2.0;
+        m * m
+    };
+    let p = &config.props;
+    let props = p.quantity as f32 * mean_sq(p.size_min_m, p.size_max_m);
+    let interactive: f32 = config.interactive.iter().map(|t| t.quantity as f32 * mean_sq(t.size_min_m, t.size_max_m)).sum();
+    let hr = &config.hidden_rooms;
+    let rooms = hr.count as f32 * mean_sq(hr.size_min_m, hr.size_max_m);
+    let asked = props + interactive + rooms;
+    if asked > free * FEASIBLE_SHARE {
+        let biggest = [(props, "props.quantity"), (interactive, "interactive"), (rooms, "hidden_rooms.count")]
+            .into_iter()
+            .max_by(|a, b| a.0.total_cmp(&b.0))
+            .map_or("props.quantity", |b| b.1);
+        out.push(field(
+            biggest,
+            format!(
+                "Props, interactive objects and hidden rooms ask for about {asked:.0} m², {:.0} % of the free ground (about {free:.0} m²) — expect fewer than asked; lower the amounts or sizes, or use a bigger map",
+                asked / free.max(1.0) * 100.0
+            ),
+        ));
+    }
+}
+
+/// Gates whose openings would overlap: their rays from the map center
+/// meet the edge (or the town wall) closer than two openings apart.
+/// Swamps have their own check (gate islands, see `swamp`).
+fn gates(config: &LevelConfig, out: &mut Vec<Warning>) {
+    let g = &config.gates;
+    if config.kind == MapKind::Swamp || config.map.width_m <= 0.0 || config.map.height_m <= 0.0 {
+        return;
+    }
+    // About where the gates sit: most of the way out from the center.
+    let r = 0.4 * config.map.width_m.min(config.map.height_m);
+    let need = 2.0 * g.opening_m.max(g.road_width_m).max(1.0);
+    for (a, x) in g.gates.iter().enumerate() {
+        for (b, y) in g.gates.iter().enumerate().skip(a + 1) {
+            let d = (x.direction_deg - y.direction_deg).rem_euclid(360.0);
+            let gap = d.min(360.0 - d);
+            let apart = r * gap.to_radians();
+            if apart < need {
+                out.push(field(
+                    &format!("gates.gates[{b}].direction_deg"),
+                    format!("Gates #{} and #{} are only {gap:.0}° apart — about {apart:.0} m on this map, so their openings ({} m) run into each other", a + 1, b + 1, g.opening_m),
+                ));
+            }
+        }
+    }
 }
 
 fn field(field: &str, message: String) -> Warning {
@@ -452,8 +741,9 @@ fn mixed(config: &LevelConfig, warnings: &mut Vec<Warning>) {
             });
         }
         for mut w in validate(&r.resolved(config)) {
-            // The map size is checked once, for the whole map.
-            if w.field.as_deref() == Some("map.width_m") {
+            // The map size is checked once, for the whole map; a region's
+            // gates are its portals and map gates, not its gate list.
+            if w.field.as_deref() == Some("map.width_m") || w.field.as_deref().is_some_and(|f| f.starts_with("gates.")) {
                 continue;
             }
             w.message = format!("{label}: {}", w.message);
@@ -609,5 +899,61 @@ mod tests {
             Some("outer_wall.segment_max_m")
         );
         assert!(!warnings[0].blocking);
+    }
+
+    #[test]
+    fn duplicate_colors_block() {
+        let mut c = LevelConfig::test_64();
+        c.mobs.types[1].color = c.mobs.types[0].color;
+        let w = validate(&c);
+        assert!(w.iter().any(|w| w.blocking && w.field.as_deref() == Some("mobs.types[1].color")), "{w:?}");
+        // A fixed color (the roads) against a setting.
+        let mut c = LevelConfig::test_64();
+        c.props.color = crate::render::ROAD;
+        assert!(validate(&c).iter().any(|w| w.blocking && w.field.as_deref() == Some("props.color")));
+        // Only what the kind draws: house color is not a forest color.
+        let mut f = LevelConfig::of_kind(MapKind::Forest);
+        f.houses.color = f.props.color;
+        assert!(validate(&f).iter().all(|w| !w.blocking), "{:?}", validate(&f));
+    }
+
+    #[test]
+    fn mixed_regions_check_their_own_colors() {
+        let mut c = LevelConfig::of_kind(MapKind::Mixed);
+        let r = &mut c.mixed.regions[0];
+        r.config.props.color = r.config.mobs.types[0].color;
+        assert!(validate(&c).iter().any(|w| w.blocking && w.field.as_deref().is_some_and(|f| f.starts_with("mixed.regions[0]"))));
+    }
+
+    #[test]
+    fn node_warnings_fire() {
+        let mut c = LevelConfig::test_64();
+        c.houses.size_min_m = 10.0;
+        c.houses.size_max_m = 5.0;
+        c.interactive[0].group_min = 50;
+        c.interactive[0].group_max = 60;
+        c.mobs.types[0].price = 0.0;
+        c.mobs.pack_min = 6;
+        c.mobs.pack_max = 2;
+        c.gates.gates = vec![crate::model::GateSpec::at(10.0), crate::model::GateSpec::at(358.0)];
+        let w = validate(&c);
+        assert!(w.iter().all(|w| !w.blocking), "{w:?}");
+        let fields: Vec<String> = w.into_iter().filter_map(|w| w.field).collect();
+        for want in ["houses.size_max_m", "interactive[0].group_min", "mobs.types[0].price", "mobs.pack_max", "gates.gates[1].direction_deg"] {
+            assert!(fields.iter().any(|f| f == want), "missing {want}: {fields:?}");
+        }
+        let mut c = LevelConfig::test_64();
+        c.mobs.types.clear();
+        c.mobs.combinations.clear();
+        assert!(validate(&c).iter().any(|w| w.field.as_deref() == Some("mobs.types")));
+    }
+
+    #[test]
+    fn overstuffed_map_warns() {
+        let mut c = LevelConfig::test_64();
+        c.props.quantity = 2000;
+        c.props.size_max_m = 3.0;
+        let w = validate(&c);
+        assert!(w.iter().any(|w| !w.blocking && w.field.as_deref() == Some("props.quantity")), "{w:?}");
     }
 }

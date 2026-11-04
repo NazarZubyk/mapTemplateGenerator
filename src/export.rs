@@ -231,8 +231,47 @@ pub struct ExportSpec {
     /// pools (walkable shallow edge, impassable deep core), per chamber.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hazards: Option<Vec<crate::level::Hazard>>,
+    /// Town maps (and a mixed map's town regions): the town's share of
+    /// the map, the outer wall, the houses.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub town: Option<ExportTown>,
+    /// What the generator had to compromise on (the notes the app shows
+    /// under the map): fewer objects than asked, settings that could not
+    /// work as asked, and so on.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
     /// Every placed object with position and size in meters.
     pub objects: Vec<crate::level::PlacedObject>,
+}
+
+/// The town summary in spec.json.
+#[derive(Debug, Serialize)]
+pub struct ExportTown {
+    /// The town area's share of the map, %.
+    pub area_pct: f32,
+    /// Outer wall thickness, meters (on the grid), and whether it closes
+    /// around the town.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outer_wall: Option<ExportOuterWall>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub houses: Option<ExportHouses>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ExportOuterWall {
+    pub thickness_m: f32,
+    pub closed: bool,
+}
+
+/// House counts: street-front, yard, compound (more than one part; still
+/// one object each), and the share of the town they cover vs the target.
+#[derive(Debug, Serialize)]
+pub struct ExportHouses {
+    pub street: u32,
+    pub yard: u32,
+    pub compound: u32,
+    pub coverage_pct: f32,
+    pub target_pct: f32,
 }
 
 /// The meaning of layer.png's channels (written into spec.json so a reader
@@ -258,7 +297,9 @@ deep_pool; walkable = floors, tunnel, rope_bridge, shallow_pool); G = style zone
 matches `cave_zones[].id`); B = chamber id (low byte, matches `chambers[].id`) on chamber cells, \
 else 0; A = 255. Forest maps, pixels under no object: R = ground id (24-31, see layer_categories \
 and `forest_ground`); G = area id (low byte, matches `forest_areas[].id`); B = 1 walkable, 0 \
-blocked; A = 255. Mixed maps: each pixel takes its map region's ground (see regions.png and \
+blocked; A = 255. Town maps, pixels under no object: R = 32 town_district, 33 road, 34 town_wall \
+(the outer wall and hidden-room walls), 35 district_wall; G = district id (matches `regions[].id`; \
+0 on town walls); B = 1 walkable, 0 blocked; A = 255. Mixed maps: each pixel takes its map region's ground (see regions.png and \
 `mixed_regions`): swamp / cave / forest regions as above (mountains are cave regions; their rock is \
 `rock`); town regions R = 32 town_district, 33 road, 34 town_wall, 35 district_wall, their rivers \
 as the forest water ids (shallow 28, deep 29, bridge 31), G = district id, B = 1 walkable / 0 \
@@ -266,7 +307,7 @@ blocked; mountain passes R = 36; a joined opening (`mixed_seams`) takes its regi
 (forest trail 30, road 33, mud path 9, pass 36). regions.png: R = map region id, G = kind (1 town, \
 2 swamp, 3 forest, 4 mountains), B = 255 walkable / 0 blocked (the whole map's walkable ground, \
 objects not counted), A = 255",
-            empty: "R = G = B = A = 0: no object and no ground data (town maps outside the region)",
+            empty: "R = G = B = A = 0: no object and no ground data (town maps: outside the town)",
         }
     }
 }
@@ -665,6 +706,24 @@ impl ExportSpec {
                     thicket_pct: d.thicket_pct,
                 }
             }),
+            town: level.shape.as_ref().filter(|_| level.config.kind == crate::model::MapKind::Town).map(|shape| {
+                let cs = level.config.cell_size_m.max(0.01);
+                ExportTown {
+                    area_pct: shape.stats.coverage_pct,
+                    outer_wall: level.walls.as_ref().filter(|w| w.stats.wall_cells > 0).map(|w| ExportOuterWall {
+                        thickness_m: (level.config.outer_wall.thickness_m / cs).round().max(1.0) * cs,
+                        closed: w.stats.closed,
+                    }),
+                    houses: level.houses.as_ref().map(|h| ExportHouses {
+                        street: h.street_houses,
+                        yard: h.yard_houses,
+                        compound: h.complex_houses,
+                        coverage_pct: h.coverage_pct,
+                        target_pct: h.target_pct,
+                    }),
+                }
+            }),
+            notes: level.notes.clone(),
             objects: level.objects.clone(),
         }
     }

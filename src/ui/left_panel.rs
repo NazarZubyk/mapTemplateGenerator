@@ -3341,8 +3341,10 @@ dry ground, meters. NO EFFECT without Shallow water ticked.";
         ui.horizontal(|ui| {
             if ui.button("➕ Add type").clicked() {
                 let n = app.config.interactive.len() + 1;
+                let color = crate::validate::distinct_color(&crate::validate::used_colors(&app.config));
                 app.config.interactive.push(InteractiveType {
                     name: format!("Interactive #{n}"),
+                    color,
                     ..InteractiveType::default()
                 });
             }

@@ -46,7 +46,7 @@ const NEAR_WALL_M: f32 = 2.5;
 /// "Pool edge" for props: dry floor within this of water, meters.
 const NEAR_POOL_M: f32 = 2.0;
 pub const CRACKED_WALL_NAME: &str = "cracked wall";
-const CRACKED_WALL_COLOR: [u8; 3] = [230, 150, 60];
+pub(crate) const CRACKED_WALL_COLOR: [u8; 3] = [230, 150, 60];
 /// Feature size of the hidden pockets' wall noise, meters.
 const POCKET_NOISE_M: f32 = 2.4;
 

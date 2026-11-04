@@ -638,10 +638,10 @@ fn set_mob_types(c: &mut LevelConfig, args: &Value) -> Result<String, String> {
     c.mobs.types = types;
     c.mobs.combinations.clear();
     c.mobs.fit_matrix();
-    let mut used = used_colors(c);
+    let mut used = crate::validate::used_colors(c);
     for (i, given) in given_color.iter().enumerate() {
         if !given {
-            let col = distinct_color(&used);
+            let col = crate::validate::distinct_color(&used);
             c.mobs.types[i].color = col;
             used.push(col);
         }
@@ -664,7 +664,7 @@ fn upsert_mob_type(c: &mut LevelConfig, args: &Value) -> Result<String, String> 
         Some(i) => i,
         None => {
             let n = c.mobs.types.len();
-            let color = distinct_color(&used_colors(c));
+            let color = crate::validate::distinct_color(&crate::validate::used_colors(c));
             let name = if name.is_empty() { format!("Mob #{}", n + 1) } else { name.to_owned() };
             // A new type gets an equal share unless one is given.
             let share = 100.0 / (n + 1) as f32;
@@ -725,48 +725,6 @@ fn describe_mobs(c: &LevelConfig) -> String {
     out
 }
 
-/// Every color the config already uses for an object type.
-fn used_colors(c: &LevelConfig) -> Vec<[u8; 3]> {
-    let mut v = vec![
-        c.houses.color,
-        c.props.color,
-        c.hidden_rooms.color_room,
-        c.hidden_rooms.color_path,
-        c.gates.color,
-        crate::render::GROUND,
-        crate::render::ROAD,
-        crate::render::WALL,
-        crate::render::REGION_WALL,
-    ];
-    v.extend(c.interactive.iter().map(|t| t.color));
-    v.extend(c.mobs.types.iter().map(|t| t.color));
-    v
-}
-
-/// A saturated color far from every used one (golden-angle hues, the
-/// candidate with the largest distance to its nearest used color wins).
-fn distinct_color(used: &[[u8; 3]]) -> [u8; 3] {
-    let dist = |a: [u8; 3], b: [u8; 3]| (0..3).map(|k| (a[k] as i32 - b[k] as i32).pow(2)).sum::<i32>();
-    (0..36)
-        .map(|k| hsv((k as f32 * 137.508) % 360.0, if k % 2 == 0 { 0.75 } else { 0.55 }, if k % 3 == 0 { 0.6 } else { 0.85 }))
-        .max_by_key(|&c| used.iter().map(|&u| dist(c, u)).min().unwrap_or(i32::MAX))
-        .unwrap_or([200, 60, 50])
-}
-
-fn hsv(h: f32, s: f32, v: f32) -> [u8; 3] {
-    let c = v * s;
-    let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
-    let (r, g, b) = match (h / 60.0) as u32 {
-        0 => (c, x, 0.0),
-        1 => (x, c, 0.0),
-        2 => (0.0, c, x),
-        3 => (0.0, x, c),
-        4 => (x, 0.0, c),
-        _ => (c, 0.0, x),
-    };
-    let m = v - c;
-    [((r + m) * 255.0) as u8, ((g + m) * 255.0) as u8, ((b + m) * 255.0) as u8]
-}
 
 /// RFC 7396 JSON merge patch.
 fn merge_patch(target: &mut Value, patch: &Value) {
