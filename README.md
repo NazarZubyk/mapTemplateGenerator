@@ -8,13 +8,13 @@ Make 2D map blueprints for ARPG levels in a few clicks. Hand the result to
 an AI agent (or a level designer) to build a playable prototype fast.
 
 <p align="center">
-  <img src="docs/media/mixed-build.gif" width="520" alt="A mixed map built step by step: map regions, land, rivers, connections, then a forest, a town, a swamp and a mountain region, joined into one map">
+  <img src="docs/media/mixed-build.gif" width="520" alt="A mixed map built step by step: map regions, land, rivers, connections, then a forest, a town, a swamp and a mountain region, each blending into its neighbours, joined into one map">
 </p>
 
 One map, several kinds of land. The map is split into regions (a town, a
 forest, a swamp, mountains with caves), each with its own settings. The
-land, the rivers and the ways between the regions are shared, so they fit
-together into one walkable map.
+land, the rivers and the ways between the regions are shared, and the
+regions blend where they meet, so they fit together into one walkable map.
 
 > **⚠ Beta.** This is an early version. Settings and file formats may still
 > change between releases. **Only the Town map kind is ready**; the others
@@ -26,13 +26,12 @@ together into one walkable map.
 | **Swamp** | islands, mud paths, boardwalks, water by depth, trees | 🧪 being tuned |
 | **Forest** | wild and managed areas, rock ridges, streams, thickets, trails, trees | 🧪 being tuned |
 | **Cave** | natural caverns and hand-dug mines, tunnels, chasms, pools | 🧪 being tuned |
-| **Mixed** | regions of the kinds above on one map; mountains are a massif with caves inside and passes over it | 🧪 new, being tuned |
+| **Mixed** | regions of the kinds above on one map, blending where they meet; mountains are a massif with caves inside and passes over it | 🧪 new, being tuned |
 
 Every kind also places props, interactive objects, hidden rooms and mobs.
 The app opens on a Mixed map; switch the kind in **1 · Template**.
 
-On a Mixed map the regions blend where they meet, each change with a
-cause: trees seed into a town's yards and the forest outside the wall is
+Where two regions meet, every change has a cause: trees seed into a town's yards and the forest outside the wall is
 cut back, a forest gets wet by a swamp, the swamp is drained and reedy by
 a town, rocks fall from the mountains, and towns wall their river banks.
 Set how deep each transition reaches in **5b · Blending** (0 = a hard
@@ -90,9 +89,9 @@ the details.
 2. Go down the panel on the left. Each block is one step of the map. Hover
    any setting to see what it does.
    - **Mixed**: list the regions in **Map regions** (kind, share of the
-     map, placement), then set the land, rivers and connections. Pick a
-     region under them to change its own settings: they are the same
-     blocks as a map of that kind.
+     map, placement), then set the land, rivers, connections and how the
+     regions blend (**5b · Blending**). Pick a region under them to change
+     its own settings: they are the same blocks as a map of that kind.
    - **Town** and the other kinds: from the outline to walls, districts,
      roads, gates, houses, props, interactive objects, hidden rooms and
      mobs.
@@ -119,6 +118,9 @@ Just describe what you want:
 > *"A walled town in the middle of a big forest, a swamp to the south and
 > mountains on the east edge; wolves in the forest, trolls in the caves."*
 
+> *"Let the forest grow deep into the town, more rocks below the
+> mountains, and no quay walls on the river."*
+
 The open app picks up each change and regenerates. Setup takes one command;
 see `QUICKSTART.md`.
 
@@ -140,5 +142,6 @@ Found a bug or have an idea? Open an
 Building from source, project layout, the MCP tools and how to make a
 release are in [docs/development.md](docs/development.md). How the
 generator works, step by step, is in [docs/workflow.md](docs/workflow.md);
-mixed maps in [docs/mixed-plan.md](docs/mixed-plan.md).
+mixed maps in [docs/mixed-plan.md](docs/mixed-plan.md), and how their
+regions blend in [docs/blending-plan.md](docs/blending-plan.md).
 The requirements are in [docs/goals.md](docs/goals.md).

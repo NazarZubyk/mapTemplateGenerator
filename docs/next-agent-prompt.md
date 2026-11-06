@@ -28,12 +28,13 @@ a time.
 
 ## State at the end of the last session (2026-11-06)
 
-- Work goes on branch **`blending`** (on GitHub as `origin/blending`): it
-  holds the mixed maps (M1–M10, blending complete), town steps 7 and 13.
-  `origin/main` stops before the mixed maps (at the docs refresh): merging
-  `blending` into `main` is the user's call. First thing: run
-  `git status -sb`. Push only when the user asks — the agent's shell may
-  have no GitHub login; then ask the user to push from their own terminal.
+- **`main`** holds everything: the mixed maps (M1–M10, blending
+  complete) and town steps 7 and 13, fast-forwarded from branch
+  `blending` on 2026-11-06 (README, QUICKSTART and mixed-build.gif
+  updated for blending). First thing: run `git status -sb` — if `main` is
+  ahead of `origin/main`, it was not pushed yet. Push only when the user
+  asks — the agent's shell may have no GitHub login; then ask the user to
+  push from their own terminal.
 - 278 tests pass, `cargo clippy --all-targets` is clean.
 - 2026-11-04: the unused `map.walkable_pct` setting was dropped (town
   step 7); town step 13 is done (town ground on layer.png, spec.json
@@ -78,8 +79,8 @@ note); mob buttons only record `app.mobs_request`.
 1. **Tuning** of Swamp, Forest, Cave and Mixed with the user (spawn amounts
    on 200 m maps, looks), the blending amounts included (constants in
    `blend.rs`, `forest/thickets.rs`, `swamp/depth.rs`).
-2. **Merge `blending` into `main`** when the user wants it, and rebuild
-   the release `mapgen-mcp`.
+2. A release with the mixed maps (version in `Cargo.toml`, tag; see
+   development.md "Making a release") when the user wants one.
 3. Same-kind neighbours on a mixed map (two forests back to back:
    blending-plan.md problem 9).
 4. Mountain passes have no props / mobs yet (only the caves do).

@@ -86,6 +86,7 @@ docs/                    # goals, workflow + step notes, this file, next-agent p
 docs/media/              # README GIFs (see "README media" below)
 packaging/QUICKSTART.md  # user guide shipped inside the release zips
 scripts/package.sh       # build + zip for this machine (dist/)
+scripts/make_gif.py      # README GIFs from BMP frames (stdlib Python, see "README media")
 .github/workflows/release.yml  # tag v* → Linux + Windows zips on a GitHub Release
 .mcp.json                # registers mapgen-mcp for Claude Code in this repo
 ```
@@ -334,10 +335,21 @@ put together with ImageMagick + gifsicle (Noto Sans captions on a dark bar,
 600 × 600 + 56 px, 1.1 s per step, the last held 3.8 s):
 
 - **mixed-build.gif** (the README's first picture): the default mixed map
-  (`LevelConfig::of_kind(MapKind::Mixed)`, 200 m) at seed 5, 3 px/m, nine
-  steps from the finished level: map regions only, + land, + rivers, +
-  connections and gate markers, then the forest, town, swamp and mountain
-  regions one by one (each with its objects), then the joined map.
+  (`LevelConfig::of_kind(MapKind::Mixed)`, 200 m, blending on) at seed 5,
+  nine steps from the finished level: map regions only (`mixed.land`,
+  `water`, `connections`, `corridors` = None, no region levels, no
+  objects), + land, + rivers, + connections and the gate markers, then
+  the forest, town, swamp and mountain region levels one by one (each with
+  its objects, `object_ranges`), then the joined map (the full level, with
+  the corridors). Rebuilt 2026-11-06 for blending on Windows: rendered at
+  2.8 px/m (560 px) into a 20 px cream frame (239, 233, 220), a 56 px bar
+  (43, 38, 34) with "Step n / 9" and the step name in Segoe UI 22 px
+  (220, 213, 200), saved as 24-bit BMPs with System.Drawing and encoded by
+  `scripts/make_gif.py` (stdlib Python, no Pillow: one 255-color median-cut
+  palette, each frame only its changed rectangle with unchanged pixels
+  transparent — like gifsicle -O3): `python -I scripts/make_gif.py out.gif
+  110 380 frame1.bmp … frame9.bmp` (delays in 1/100 s, the last frame's
+  second).
 
 - **town-build.gif**: a 120 × 120 m town, seed 21, 4 regions (15/20/25/40 %),
   region walls 1 m, gates at 0° / 120° / 240°, two interactive types

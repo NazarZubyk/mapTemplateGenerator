@@ -30,8 +30,9 @@ the folder you start it in (`configs/config.json`, `exports/`).
 
 1. In node 1 pick the kind (the app opens on a **Mixed** map) and the map
    size, then adjust the nodes below it. On a Mixed map, list the regions
-   in **Map regions**, then pick a region under the shared nodes to change
-   its own settings.
+   in **Map regions**, set how they blend where they meet in **5b ·
+   Blending** (0 = a hard border), then pick a region under the shared
+   nodes to change its own settings.
 2. Press **⚙ Generate** (🎲 **Re-roll** tries another seed).
 3. **Export** writes the files into `exports/`.
 4. **Config file → Save** keeps your settings; **Load** brings them back.
@@ -49,6 +50,7 @@ claude mcp add mapgen -- C:\full\path\to\mapgen-mcp.exe --config C:\full\path\to
 ```
 
 Then ask Claude things like *"3 gates, rats, bandits and a bandit chief, the
-chief never with rats, crowded"*. With **🔄 Live sync** on (Config file
+chief never with rats, crowded"* or *"a town in a forest, mountains to the
+east, more rocks below them"*. With **🔄 Live sync** on (Config file
 section, on by default), the open app reloads every change and regenerates.
 The app's Config file path must point at the same `config.json`.
