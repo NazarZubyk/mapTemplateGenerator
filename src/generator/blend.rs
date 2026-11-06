@@ -197,6 +197,147 @@ pub fn yard_trees(t: &[f32], trees: &ForestTreeSettings, free: &CellMask, gates:
     YardTrees { objects, mask }
 }
 
+/// Scree: boulders per m² of free ground right at the massif's foot.
+const SCREE_PER_M2: f32 = 1.0 / 35.0;
+/// Boulder sizes, meters: the smallest far out, the biggest at the face.
+const SCREE_MIN_M: f32 = 0.6;
+const SCREE_MAX_M: f32 = 2.6;
+/// Share of the boulders that are round (the rest rotated blocks).
+const SCREE_ROUND: f32 = 0.6;
+/// Forest: share of the ground under rock patches at the massif's foot.
+const SCREE_ROCK_SHARE: f32 = 0.3;
+/// Size of the rock patches, meters.
+const SCREE_ROCK_SCALE_M: f32 = 7.0;
+
+/// Where a region's scree may go: every slice is one value per cell of
+/// the map grid.
+pub struct ScreeGround<'a> {
+    pub w: usize,
+    pub h: usize,
+    pub cell: f32,
+    /// Cells a boulder may cover.
+    pub place: &'a [bool],
+    /// Walkable ground (what must stay one piece), objects not counted.
+    pub walkable: &'a [bool],
+    /// Cells a boulder and the ring around it keep off: objects, and
+    /// whatever must stay clear (paths, boardwalks).
+    pub taken: &'a [bool],
+    /// Openings (portals, map gates): nothing within the gate clearance.
+    pub gates: &'a [[f32; 2]],
+}
+
+/// The scree: the boulders and the cells they cover.
+pub struct Scree {
+    pub objects: Vec<PlacedObject>,
+    pub mask: CellMask,
+}
+
+/// Boulders fallen from a neighbouring massif (`t`: the zone toward the
+/// mountains, 1 at the foot of the face): plain blocked props in `color`,
+/// denser and bigger nearer the face, none past the zone or near an
+/// opening. A boulder covers only `place` cells and keeps a one-cell ring
+/// off `taken` and off other boulders; one that covers walkable ground has
+/// walkable ground all around it, so the ground stays one piece. A
+/// boulder may stand in deep water (a rock in the water) — it takes no
+/// walkable ground there. Hashes of `seed` only: no chain stream moves.
+pub fn scree(t: &[f32], g: &ScreeGround, color: [u8; 3], seed: u64) -> Scree {
+    let (w, h, cell) = (g.w, g.h, g.cell);
+    let mut mask = CellMask::new(w, h, cell);
+    let mut objects = Vec::new();
+    let open = |c: usize| t[c] > 0.0 && g.place[c] && !g.taken[c];
+    let want = (SCREE_PER_M2 * (0..w * h).filter(|&c| open(c)).map(|c| t[c] * t[c]).sum::<f32>() * cell * cell).round() as usize;
+    if want == 0 {
+        return Scree { objects, mask };
+    }
+    // A weighted random order (key = u^(1/weight)): the foot comes first.
+    let mut picks: Vec<(f32, usize)> = (0..w * h).filter(|&c| open(c)).map(|c| (unit(seed, c, 21).max(1e-6).powf(1.0 / (t[c] * t[c]).max(1e-3)), c)).collect();
+    picks.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let tries = want * 40;
+    for (k, (_, c)) in picks.into_iter().enumerate() {
+        if objects.len() >= want || k >= tries {
+            break;
+        }
+        let jitter = |salt| (unit(seed, c, salt) - 0.5) * cell;
+        let p = [((c % w) as f32 + 0.5) * cell + jitter(22), ((c / w) as f32 + 0.5) * cell + jitter(23)];
+        let d = (SCREE_MIN_M + (SCREE_MAX_M - SCREE_MIN_M) * (0.55 * t[c] + 0.45 * unit(seed, c, 24)).powf(1.3)).max(cell);
+        if g.gates.iter().any(|q| (q[0] - p[0]).hypot(q[1] - p[1]) < GATE_CLEAR_M + d / 2.0) {
+            continue;
+        }
+        let round = unit(seed, c, 25) < SCREE_ROUND;
+        let (ow, oh, angle) = if round { (d, d, 0.0) } else { (d, d * (0.6 + 0.4 * unit(seed, c, 26)), 180.0 * unit(seed, c, 27)) };
+        let o = PlacedObject {
+            category: Category::Prop,
+            type_name: crate::generator::props::PROP_NAME.to_owned(),
+            color,
+            x_m: p[0] - ow / 2.0,
+            y_m: p[1] - oh / 2.0,
+            w_m: ow,
+            h_m: oh,
+            angle_deg: angle,
+            parts: Vec::new(),
+            round,
+        };
+        // The footprint as the objects masks count it: covered cells plus
+        // the center cell.
+        let r = ow.max(oh);
+        let (x0, x1) = (((p[0] - r) / cell).floor() as i64, ((p[0] + r) / cell).ceil() as i64);
+        let (y0, y1) = (((p[1] - r) / cell).floor() as i64, ((p[1] + r) / cell).ceil() as i64);
+        if x0 < 1 || y0 < 1 || x1 >= w as i64 || y1 >= h as i64 {
+            continue;
+        }
+        let center = ((p[1] / cell) as usize) * w + (p[0] / cell) as usize;
+        let foot: Vec<usize> = (y0..y1)
+            .flat_map(|y| (x0..x1).map(move |x| y as usize * w + x as usize))
+            .filter(|&q| q == center || o.contains(((q % w) as f32 + 0.5) * cell, ((q / w) as f32 + 0.5) * cell))
+            .collect();
+        if !foot.iter().all(|&q| g.place[q] && !g.taken[q] && !mask.cells[q]) {
+            continue;
+        }
+        let walks = foot.iter().any(|&q| g.walkable[q]);
+        let ring_ok = foot.iter().all(|&q| {
+            let (x, y) = (q % w, q / w);
+            (y - 1..=y + 1).all(|ny| {
+                (x - 1..=x + 1).all(|nx| {
+                    let n = ny * w + nx;
+                    foot.contains(&n) || (!g.taken[n] && !mask.cells[n] && (!walks || g.walkable[n]))
+                })
+            })
+        });
+        if !ring_ok {
+            continue;
+        }
+        for &q in &foot {
+            mask.cells[q] = true;
+        }
+        objects.push(o);
+    }
+    Scree { objects, mask }
+}
+
+/// Forest rock patches at the massif's foot (`t`: the zone toward the
+/// mountains): blobs of a noise of the blending seed turn dry ground into
+/// rock, more of it nearer the face, none near an opening. The forest's
+/// passages node joins the ground up again afterwards. Returns the cells
+/// turned.
+pub fn scree_rock(t: &[f32], rock: &mut CellMask, dry: impl Fn(usize) -> bool, gates: &[[f32; 2]], seed: u64) -> usize {
+    let (w, cell) = (rock.width, rock.cell_size_m);
+    let noise = NoiseField::new(seed ^ 0x5C2E_E000);
+    let mut turned = 0;
+    for (c, &tc) in t.iter().enumerate().take(rock.cells.len()) {
+        if tc <= 0.0 || rock.cells[c] || !dry(c) {
+            continue;
+        }
+        let (x, y) = (((c % w) as f32 + 0.5) * cell, ((c / w) as f32 + 0.5) * cell);
+        // fBm sits mostly in 0.3..0.7: stretch it to 0..1.
+        let v = ((noise.fbm(x / SCREE_ROCK_SCALE_M, y / SCREE_ROCK_SCALE_M, 3) - 0.3) / 0.4).clamp(0.0, 1.0);
+        if v > 1.0 - SCREE_ROCK_SHARE * tc && !gates.iter().any(|g| (g[0] - x).hypot(g[1] - y) < GATE_CLEAR_M) {
+            rock.cells[c] = true;
+            turned += 1;
+        }
+    }
+    turned
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -290,6 +431,85 @@ mod tests {
             }
         }
         assert!(total > 0, "no yard trees on four maps");
+    }
+
+    /// Boulders a region's level counts (forest props / town and swamp props).
+    fn scree_of(l: &crate::level::GeneratedLevel) -> u32 {
+        l.forest.as_ref().and_then(|f| f.props.as_ref()).map(|p| p.scree).or(l.props.as_ref().map(|p| p.scree)).unwrap_or(0)
+    }
+
+    #[test]
+    fn scree_lies_at_the_foot_of_the_massif_on_free_ground() {
+        let width = 14.0;
+        // Boulders per receiving kind: forest, town, swamp.
+        const BELOW: [MapKind; 3] = [MapKind::Forest, MapKind::Town, MapKind::Swamp];
+        let mut per_kind = [0u32; 3];
+        for seed in 1..=4 {
+            let mut c = LevelConfig::of_kind(MapKind::Mixed);
+            c.mixed.blending.scree_m = width;
+            let lvl = crate::generator::generate(&c, seed);
+            let m = lvl.mixed.as_ref().unwrap();
+            let (w, h, cell) = (m.map.width, m.map.height, m.map.cell_size_m);
+            let (to_massif, _) = distance_field(w, h, cell, |c| m.map.ids[c] != 0 && m.regions[m.map.ids[c] as usize - 1].kind == MapKind::Cave, width * 2.0);
+            for (r, l) in m.regions.iter().zip(&m.levels) {
+                let Some(l) = l.as_ref() else { continue };
+                let n = scree_of(l);
+                if r.kind == MapKind::Cave {
+                    assert_eq!(n, 0, "seed {seed}: scree inside the massif");
+                    continue;
+                }
+                per_kind[BELOW.iter().position(|&k| k == r.kind).expect("a kind below a massif")] += n;
+                // The boulders: the last props before the gate markers and
+                // the mobs, in this region, near the massif, on nothing else.
+                let last = l.objects.iter().rposition(|o| o.category == Category::Prop).map_or(0, |i| i + 1);
+                for o in &l.objects[last - n as usize..last] {
+                    assert_eq!(o.category, Category::Prop);
+                    let p = [o.x_m + o.w_m / 2.0, o.y_m + o.h_m / 2.0];
+                    let c = (p[1] / cell) as usize * w + (p[0] / cell) as usize;
+                    assert_eq!(m.map.ids[c], r.id, "seed {seed}: a boulder outside its {:?}", r.kind);
+                    assert!(to_massif[c] <= width * (1.0 + WIDTH_WAVER) + 2.0 * cell, "seed {seed}: a boulder {:.1} m from the massif", to_massif[c]);
+                    for q in &l.objects {
+                        if !std::ptr::eq(q, o) && q.category != Category::MobSpawn {
+                            assert!(!q.contains(p[0], p[1]), "seed {seed}: a boulder under a {}", q.type_name);
+                        }
+                    }
+                    if let Some(roads) = l.roads.as_ref() {
+                        assert!(!roads.mask.cells[c], "seed {seed}: a boulder on a road");
+                    }
+                    if let Some(f) = l.forest.as_ref() {
+                        let g = crate::level::ForestGround::from_code(f.ground().unwrap()[c]);
+                        assert!(matches!(g, crate::level::ForestGround::Open | crate::level::ForestGround::Floor), "seed {seed}: a forest boulder on {g:?}");
+                    }
+                    if let Some(s) = l.swamp.as_ref() {
+                        let paths = s.paths.as_ref().unwrap();
+                        assert!(!paths.mud.cells[c] && !paths.boardwalk.cells[c], "seed {seed}: a boulder on a swamp path");
+                    }
+                }
+            }
+        }
+        for (kind, n) in BELOW.iter().zip(per_kind) {
+            assert!(n > 0, "no scree in any {kind:?} on four maps: {per_kind:?}");
+        }
+    }
+
+    #[test]
+    fn scree_off_adds_no_boulders_and_no_rock() {
+        for seed in 1..=2 {
+            let mut c = LevelConfig::of_kind(MapKind::Mixed);
+            c.mixed.blending.scree_m = 0.0;
+            let off = crate::generator::generate(&c, seed);
+            c.mixed.blending.scree_m = 14.0;
+            let on = crate::generator::generate(&c, seed);
+            let (mo, mn) = (off.mixed.as_ref().unwrap(), on.mixed.as_ref().unwrap());
+            assert!(mo.levels.iter().flatten().all(|l| scree_of(l) == 0), "seed {seed}");
+            // The forest's rock never shrinks with scree on.
+            for (a, b) in mo.levels.iter().zip(&mn.levels) {
+                if let (Some(a), Some(b)) = (a.as_ref().and_then(|l| l.forest.as_ref()), b.as_ref().and_then(|l| l.forest.as_ref())) {
+                    let (ra, rb) = (a.terrain.as_ref().unwrap().rock.count_true(), b.terrain.as_ref().unwrap().rock.count_true());
+                    assert!(rb >= ra, "seed {seed}: forest rock {ra} → {rb}");
+                }
+            }
+        }
     }
 
     #[test]

@@ -262,6 +262,7 @@ pub fn props(config: &LevelConfig, rng: &mut ChaCha8Rng, g: &CaveGround) -> Prop
             near_walls: counts[Mode::NearWalls as usize],
             in_tunnels: counts[Mode::InTunnels as usize],
             pool_edge: counts[Mode::PoolEdge as usize],
+            scree: 0,
             requested: s.quantity,
             density_cap,
         },

@@ -180,7 +180,11 @@ from the region map only, and its chain uses them: Forest ↔ Town = trees
 in the town's yards on the ground left after the hidden rooms, the
 forest's thicket belt cut back along the town; Forest ↔ Swamp = puddles
 and damp undergrowth in the forest, the swamp's edge band thicket and its
-groves on the forest side) → 6
+groves on the forest side; Mountains → anything = scree: boulders as
+plain blocked props (`blend::scree`, placed last in each chain on the
+ground left over; `PropLayout.scree` / `ForestPropLayout.scree`), forest
+rock patches (`blend::scree_rock`) and the forest belt opened at the
+massif's foot, rocks standing in a swamp's water) → 6
 **Region chains** (`mixed/chains.rs` + `generator/region.rs`: each built
 region runs its own chain inside its ground — `RegionCtx` with the domain,
 edge distance, fixed gates, shared land and water, blend zones; own seed; counts scaled

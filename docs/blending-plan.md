@@ -111,8 +111,9 @@ already guarantee them do the work.
       forest's thinned belt near a town. (done — see "Step B1 notes")
 - [x] **B2 — Forest ↔ Swamp**: the forest's wet belt (puddles, damp
       undergrowth), the swamp's wooded edge. (done — see "Step B2 notes")
-- [ ] **B3 — Scree**: boulders at the foot of a massif in forests, towns
-      and swamps; forest rock patches; swamp rocky islets.
+- [x] **B3 — Scree**: boulders at the foot of a massif in forests, towns
+      and swamps; forest rock patches; swamp rocky islets. (done — see
+      "Step B3 notes")
 - [ ] **B4 — Town ↔ Swamp and rivers in towns**: the drained swamp margin,
       reed patches; embankments along a town's river.
 - [ ] **B5 — Export, MCP, docs**: `mixed_blending`, the MCP summary,
@@ -194,3 +195,54 @@ already guarantee them do the work.
   has more shallow water within 10 m of the swamp and the swamp more
   thicket within 4 m of the forest with blending on. The mixed invariants
   pass; the starting map's notes do not change.
+
+## Step B3 notes — Scree
+
+- **Setting**: `BlendSettings.scree_m` (default 14 m), row "Scree
+  (Mountains →)" in 5b · Blending. `width_m(own, other)` is now read from
+  the receiving side: forest / town / swamp toward a mountain region get
+  the depth, a mountain region gets no zone (the massif keeps its face).
+  Validation: not negative; past the middle of the smallest forest / town
+  / swamp region warns (only when a mountain region exists).
+- **Boulders** (`blend::scree`, shared by the three kinds): plain props
+  (`Category::Prop`, "prop", the receiving region's props color), round
+  (60 %) or rotated blocks, 0.6–2.6 m — bigger nearer the face (55 % by
+  the zone, 45 % random); `1 / 35 m² × Σ t²` of the free ground, in a
+  weighted random order (`u^(1/t²)`) like the yard trees; none within 8 m
+  (+ the boulder's half size) of an opening. A boulder covers only free
+  cells and keeps a one-cell ring off every object and other boulder; if
+  it covers walkable ground, its whole ring is walkable — so the ground
+  stays one piece. Hashes of the blending seed only.
+- **Placed last** in each chain, on the ground everything else left (like
+  the yard trees, after the hidden rooms and interactive objects), so
+  blending never takes a spot something asked for; they join the mask the
+  mobs avoid (forest `objects_mask`, town / swamp `props.mask`). Counted
+  in `ForestPropLayout.scree` (part of `total()`) / `PropLayout.scree`.
+  - Forest: on open ground and forest floor off the trails
+    (`trail_clear_m`).
+  - Town: on the yard ground left after the yard trees, never on a road
+    (a ring may touch one); the wall stays, the rocks lie inside it.
+  - Swamp: on the islands, in shallow water / deep mud and in **deep
+    water** — a rock standing in open water is the plan's "rocky islet"
+    (no new ground: an islet you cannot walk onto is a blocked object);
+    off paths, boardwalks, trees and the thicket band.
+- **Forest ground**: rock patches (`blend::scree_rock`, before the
+  thickets): 7 m noise blobs turn dry ground to rock where they pass
+  `1 − 0.3 × t`, none near an opening; the passages node joins the ground
+  up as usual. First run: almost no boulders landed in the forest — its
+  edge belt (and the areas' belt, which also runs along the region edge)
+  made the whole zone thicket. Real scree slopes are stony open ground, so
+  toward a massif both belts are cut like the town edge (`CUT_BELT`) and
+  the density drops by `0.3 × t` (`SCREE_DENSITY`): open ground at the
+  foot, where the boulders and the near-rock props lie.
+- **Checks**: with the depth at 0 every kind and the mixed map are
+  byte-identical to B2 (objects + map.png / layer.png fingerprints, two
+  seeds each). Tests: on four maps every forest, town and swamp gets
+  boulders; each one is in its region, within the zone of the massif, on
+  no other object, never on a road / swamp path, on forest open ground or
+  floor; the massif gets none; scree 0 adds no boulders and never shrinks
+  the forest's rock. The mixed invariants pass with scree on. Default
+  map, seeds 1–10: town 5–20, swamp 0–14, forest 0–13 boulders (a forest
+  touches the massif on 6 of the 10).
+- Tuning left for later: the amounts (1 / 35 m²) and sizes are constants,
+  not settings.

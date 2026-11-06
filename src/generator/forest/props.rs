@@ -90,7 +90,7 @@ pub fn build(
     let floor_of = |id: u16| -> Vec<usize> { (0..n).filter(|&c| ids[c] == id && ground[c] == ForestGround::Floor).collect() };
     let ha = |cells: usize| cells as f32 * cell * cell / 10_000.0;
     let direction_deg = rng.random_range(0.0..180.0f32);
-    let mut layout = ForestPropLayout { direction_deg, groups: Vec::new(), singles: 0, near_rock: 0, managed: 0 };
+    let mut layout = ForestPropLayout { direction_deg, groups: Vec::new(), singles: 0, near_rock: 0, managed: 0, scree: 0 };
     let mut objects: Vec<PlacedObject> = Vec::new();
 
     // Group spots first, then clear the trunks under them.

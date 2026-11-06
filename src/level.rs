@@ -355,6 +355,10 @@ pub struct PropLayout {
     pub in_tunnels: u32,
     #[serde(default)]
     pub pool_edge: u32,
+    /// Mixed maps (blending): boulders fallen from a neighbouring massif
+    /// (town and swamp regions); their cells are in `mask`.
+    #[serde(default)]
+    pub scree: u32,
     /// The quantity asked for, and the cap the density allowed.
     pub requested: u32,
     pub density_cap: u32,
@@ -1314,11 +1318,14 @@ pub struct ForestPropLayout {
     pub singles: u32,
     pub near_rock: u32,
     pub managed: u32,
+    /// Mixed maps (blending): boulders fallen from a neighbouring massif.
+    #[serde(default)]
+    pub scree: u32,
 }
 
 impl ForestPropLayout {
     pub fn total(&self) -> u32 {
-        self.groups.iter().map(|g| g.objects.len() as u32).sum::<u32>() + self.singles + self.near_rock + self.managed
+        self.groups.iter().map(|g| g.objects.len() as u32).sum::<u32>() + self.singles + self.near_rock + self.managed + self.scree
     }
 }
 

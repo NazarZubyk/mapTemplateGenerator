@@ -70,9 +70,9 @@ pub fn generate_in(config: &LevelConfig, seed: u64, region: Option<&RegionCtx>, 
     ground.inside = region.map(|r| r.domain.cells.clone());
 
     progress("Placing props", 0.9);
-    let props = spawns::props(config, &mut rng, &ground);
-    notes.extend(props.notes);
-    objects.extend(props.objects);
+    let mut props = spawns::props(config, &mut rng, &ground);
+    notes.extend(std::mem::take(&mut props.notes));
+    objects.append(&mut props.objects);
 
     // Hidden rooms before the interactive objects, so objects can go
     // inside them.
@@ -95,6 +95,35 @@ pub fn generate_in(config: &LevelConfig, seed: u64, region: Option<&RegionCtx>, 
         }
     }
     objects.extend(inter.objects);
+
+    // Blending: rocks fallen from a neighbouring massif (scree,
+    // docs/blending-plan.md B3) on the islands and standing in the water —
+    // in deep water a rocky islet — on what everything else left, off the
+    // paths and boardwalks. They join the props mask, so the mobs keep off
+    // them. Hashes of the blending seed only.
+    if let Some((r, t)) = region.and_then(|r| r.blend_toward(crate::model::MapKind::Cave).map(|t| (r, t))) {
+        let (w, h, cell) = (ground.w, ground.h, ground.cell);
+        let d = &depth.layout;
+        let place: Vec<bool> = (0..w * h).map(|c| r.inside(c) && !d.thicket.cells[c] && (ground.land[c] || d.shallow.cells[c] || d.mud.cells[c] || d.deep.cells[c])).collect();
+        let taken: Vec<bool> = (0..w * h)
+            .map(|c| {
+                ground.path[c]
+                    || trees.layout.mask.cells[c]
+                    || props.layout.mask.cells[c]
+                    || inter.layout.mask.cells[c]
+                    || rooms.layout.floor_mask.cells[c]
+                    || rooms.layout.wall_mask.cells[c]
+            })
+            .collect();
+        let gates: Vec<[f32; 2]> = ground.gates.iter().copied().chain(r.gates.iter().map(|g| g.point_m)).collect();
+        let sg = crate::generator::blend::ScreeGround { w, h, cell, place: &place, walkable: &ground.walkable, taken: &taken, gates: &gates };
+        let built = crate::generator::blend::scree(t, &sg, config.props.color, r.blend_seed ^ r.id as u64 ^ 0x5C);
+        for (m, &b) in props.layout.mask.cells.iter_mut().zip(&built.mask.cells) {
+            *m |= b;
+        }
+        props.layout.scree = built.objects.len() as u32;
+        objects.extend(built.objects);
+    }
 
     // Gate markers last, so they draw on top.
     let mut gate_anchors = anchors.anchors;

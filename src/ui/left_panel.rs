@@ -446,24 +446,40 @@ puddles of shallow water (walkable) and damper, denser undergrowth, more of both
 swamp. In the swamp: its border band toward the forest is thicket instead of open deep water, \
 and its tree groves gather on the forest side. 0 = a hard border. NO EFFECT unless a forest \
 region and a swamp region touch.";
+    const TIP_SCREE: &str = "How far the scree reaches out from the foot of a mountain region \
+into the regions below it, meters (wavering along the border): rocks fallen from the massif. \
+Boulders (plain blocked props, shape and place only, in the receiving region's props color), bigger \
+and denser near the face; in a forest also rock ground patches, and its thicket belt gives way to \
+stony open ground; in a swamp rocks also stand in the water. They take only the ground everything \
+else left (never a road, trail, path or boardwalk, never near an opening), so they move nothing \
+else. The massif itself keeps its rock face, and a town keeps its wall. 0 = no scree. NO EFFECT \
+unless a mountain region touches a forest, town or swamp region.";
     node(ui, "5b · Blending", |ui| {
         ui.weak("input: map regions · output: a transition zone per border pair, used by the region chains");
         let s = &mut app.config.mixed.blending;
         egui::Grid::new("mixed_blending_grid").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
             param_row(ui, "Forest ↔ Town", TIP_FOREST_TOWN, |ui| ui.add(meters(&mut s.forest_town_m, 60.0)));
             param_row(ui, "Forest ↔ Swamp", TIP_FOREST_SWAMP, |ui| ui.add(meters(&mut s.forest_swamp_m, 60.0)));
+            param_row(ui, "Scree (Mountains →)", TIP_SCREE, |ui| ui.add(meters(&mut s.scree_m, 60.0)));
         });
         ui.horizontal(|ui| {
             if ui.button("🎲 Random params").on_hover_text("Rolls each transition depth independently inside its reasonable range. Set values only; press Generate.").clicked() {
                 let mut rng = rand::rng();
                 s.forest_town_m = rng.random_range(8.0..=30.0);
                 s.forest_swamp_m = rng.random_range(8.0..=28.0);
+                s.scree_m = rng.random_range(6.0..=26.0);
             }
         });
         ui.weak("Changes apply on ⚙ Generate");
         if let Some(m) = app.generated.as_ref().and_then(|l| l.mixed.as_ref()) {
             let trees: u32 = m.levels.iter().flatten().filter_map(|l| l.houses.as_ref().map(|h| h.yard_trees)).sum();
-            ui.weak(format!("generated: {trees} yard trees in the towns"));
+            let scree: u32 = m
+                .levels
+                .iter()
+                .flatten()
+                .map(|l| l.forest.as_ref().and_then(|f| f.props.as_ref()).map(|p| p.scree).or(l.props.as_ref().map(|p| p.scree)).unwrap_or(0))
+                .sum();
+            ui.weak(format!("generated: {trees} yard trees in the towns, {scree} scree boulders"));
         }
     });
 }

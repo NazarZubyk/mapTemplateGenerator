@@ -49,6 +49,9 @@ const WET_DENSITY: f32 = 0.08;
 const PUDDLE_SHARE: f32 = 0.4;
 /// Size of the puddle blobs, meters.
 const PUDDLE_SCALE_M: f32 = 9.0;
+/// Blending toward a massif (scree): thicket density taken off at the
+/// foot — stony open ground, where the boulders and rock patches lie.
+const SCREE_DENSITY: f32 = 0.3;
 
 pub fn base_density(c: ForestCharacter) -> f32 {
     match c {
@@ -80,6 +83,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, ter
 
     let town_cut = region.and_then(|r| r.blend_toward(crate::model::MapKind::Town));
     let swamp_wet = region.and_then(|r| r.blend_toward(crate::model::MapKind::Swamp));
+    let scree = region.and_then(|r| r.blend_toward(crate::model::MapKind::Cave));
     // Puddles in the wet belt: blobs of a noise of the blending seed (no
     // draws from the chain's stream), more of them nearer the swamp.
     let puddle_noise = region.map(|r| NoiseField::new(r.blend_seed ^ 0x9D1E ^ r.id as u64));
@@ -101,7 +105,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, ter
         // Two scales: big lobes and bays, and a ragged fringe.
         let wobble = (edge_warp.fbm(x / EDGE_WARP_SCALE_M, y / EDGE_WARP_SCALE_M, 3) - 0.5) * 2.0 * 0.75
             + (edge_warp.fbm(x / FRINGE_SCALE_M + 31.7, y / FRINGE_SCALE_M, 2) - 0.5) * 2.0 * 0.35;
-        let belt = border * fade((to_border[c] + wobble * bw * 1.3) / bw);
+        let mut belt = border * fade((to_border[c] + wobble * bw * 1.3) / bw);
         // The map edge — or, in a map region, its own edge (the border to
         // the neighbouring regions counts as the map edge).
         let edge_d = match region {
@@ -112,7 +116,13 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, ter
         // hedge outside the wall and the woods behind it are thinned,
         // most at the border (docs/blending-plan.md, B1).
         let cut = town_cut.map_or(0.0, |t| t[c]);
-        let ew = ew * (1.0 - CUT_BELT * (cut * 3.0).min(1.0));
+        // Blending: at the foot of a massif the belt gives way to the
+        // stony scree slope the same way (B3).
+        let stony = scree.map_or(0.0, |t| t[c]);
+        let ew = ew * (1.0 - CUT_BELT * (cut.max(stony) * 3.0).min(1.0));
+        // (The areas' own belt also runs along the region's edge: thinned
+        // there too, at the foot only — a town keeps it as B1 built it.)
+        belt *= 1.0 - CUT_BELT * (stony * 3.0).min(1.0);
         let edge = if ew > 0.0 { 0.9 * fade((edge_d + wobble * ew * 0.5) / ew) } else { 0.0 };
         let amp = if managed { 0.5 } else { 1.0 } * patchy * 0.5;
         let inner = amp * (patch.fbm(x / PATCH_SCALE_M, y / PATCH_SCALE_M, 4) - 0.5) * 2.0 + 0.08 * (fine.fbm(x / FINE_SCALE_M, y / FINE_SCALE_M, 2) - 0.5) * 2.0;
@@ -123,7 +133,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, ter
         if managed {
             d = d.min(DENSE_FROM - 0.02);
         }
-        d += belt + edge - CUT_DENSITY * cut;
+        d += belt + edge - CUT_DENSITY * cut - SCREE_DENSITY * stony;
         density[c] = d;
         class[c] = if d >= DENSE_FROM {
             ForestGround::Thicket

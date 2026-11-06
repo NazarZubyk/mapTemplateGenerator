@@ -281,6 +281,7 @@ pub fn props(config: &LevelConfig, rng: &mut ChaCha8Rng, g: &SwampGround) -> Pro
             near_walls: 0,
             in_tunnels: 0,
             pool_edge: 0,
+            scree: 0,
         },
         objects,
         notes,

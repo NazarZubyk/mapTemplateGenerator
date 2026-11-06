@@ -376,11 +376,14 @@ pub fn town_in(config: &LevelConfig, seed: u64, region: Option<&region::RegionCt
     // trunks join the house mask). No draws from the chain's stream:
     // hashes of the blending seed.
     let mut houses = houses;
-    if let (Some(r), Some(split)) = (region, regions.as_ref())
-        && let (Some(t), Some(trees)) = (r.blend_toward(crate::model::MapKind::Forest), r.neighbour_trees.as_ref())
-    {
+    let mut props = props;
+    // The yard ground nothing took, for the blending's trees and boulders.
+    // (Called only with the regions built; houses and props passed in, as
+    // the blending adds to them.)
+    let yard_ground = |houses: Option<&CellMask>, props: Option<&CellMask>| {
+        let split = regions.as_ref().expect("regions built");
         let n = split.map.ids.len();
-        let free = CellMask {
+        CellMask {
             width: split.map.width,
             height: split.map.height,
             cell_size_m: split.map.cell_size_m,
@@ -390,13 +393,18 @@ pub fn town_in(config: &LevelConfig, seed: u64, region: Option<&region::RegionCt
                         && !walls.as_ref().is_some_and(|w| w.mask.cells[c])
                         && !region_walls.as_ref().is_some_and(|w| w.mask.cells[c])
                         && !roads.as_ref().is_some_and(|w| w.mask.cells[c])
-                        && !houses.as_ref().is_some_and(|w| w.mask.cells[c])
-                        && !props.as_ref().is_some_and(|w| w.mask.cells[c])
+                        && !houses.is_some_and(|m| m.cells[c])
+                        && !props.is_some_and(|m| m.cells[c])
                         && !interactive.as_ref().is_some_and(|w| w.mask.cells[c])
                         && !hidden_rooms.as_ref().is_some_and(|w| w.floor_mask.cells[c] || w.wall_mask.cells[c])
                 })
                 .collect(),
-        };
+        }
+    };
+    if let (Some(r), Some(_)) = (region, regions.as_ref())
+        && let (Some(t), Some(trees)) = (r.blend_toward(crate::model::MapKind::Forest), r.neighbour_trees.as_ref())
+    {
+        let free = yard_ground(houses.as_ref().map(|l| &l.mask), props.as_ref().map(|l| &l.mask));
         let built = blend::yard_trees(t, trees, &free, &r.gates, r.blend_seed ^ r.id as u64);
         if !built.objects.is_empty() {
             let layout = houses.get_or_insert_with(|| crate::level::HouseLayout {
@@ -412,6 +420,46 @@ pub fn town_in(config: &LevelConfig, seed: u64, region: Option<&region::RegionCt
                 *m |= tr;
             }
             layout.yard_trees = built.objects.len() as u32;
+            objects.extend(built.objects);
+        }
+    }
+    // Blending: boulders fallen from a neighbouring massif (scree, B3) on
+    // the yard ground left after the trees (the town wall stands; the
+    // rocks lie inside it). Never on a road; a boulder's ring may touch
+    // one. They join the props mask, so the mobs keep off them.
+    if let (Some(r), Some(_)) = (region, regions.as_ref())
+        && let Some(t) = r.blend_toward(crate::model::MapKind::Cave)
+    {
+        let free = yard_ground(houses.as_ref().map(|l| &l.mask), props.as_ref().map(|l| &l.mask));
+        let n = free.cells.len();
+        let road = |c: usize| roads.as_ref().is_some_and(|w| w.mask.cells[c]);
+        let place: Vec<bool> = free.cells.clone();
+        let walkable: Vec<bool> = (0..n).map(|c| free.cells[c] || road(c)).collect();
+        let taken: Vec<bool> = (0..n).map(|c| !walkable[c] || houses.as_ref().is_some_and(|h| h.mask.cells[c])).collect();
+        let gates: Vec<[f32; 2]> = r.gates.iter().map(|g| g.point_m).collect();
+        let sg = blend::ScreeGround { w: free.width, h: free.height, cell: free.cell_size_m, place: &place, walkable: &walkable, taken: &taken, gates: &gates };
+        let built = blend::scree(t, &sg, config.props.color, r.blend_seed ^ r.id as u64 ^ 0x5C);
+        if !built.objects.is_empty() {
+            let layout = props.get_or_insert_with(|| crate::level::PropLayout {
+                mask: CellMask::new(free.width, free.height, free.cell_size_m),
+                near_houses: 0,
+                roadside: 0,
+                scattered: 0,
+                near_trees: 0,
+                shore: 0,
+                in_water: 0,
+                path_edge: 0,
+                near_walls: 0,
+                in_tunnels: 0,
+                pool_edge: 0,
+                scree: 0,
+                requested: 0,
+                density_cap: 0,
+            });
+            for (m, &b) in layout.mask.cells.iter_mut().zip(&built.mask.cells) {
+                *m |= b;
+            }
+            layout.scree = built.objects.len() as u32;
             objects.extend(built.objects);
         }
     }

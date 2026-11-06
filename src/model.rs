@@ -306,20 +306,29 @@ pub struct BlendSettings {
     /// undergrowth), and the swamp's edge toward the forest wooded (thicket
     /// along the border, its tree groves on that side).
     pub forest_swamp_m: f32,
+    /// Mountains → forest / town / swamp (scree): rocks fallen from the
+    /// massif's face lie at its foot — boulders (plain blocked props),
+    /// bigger and denser near the face, rock ground patches in a forest,
+    /// rocks standing in a swamp's water. The massif keeps its face.
+    pub scree_m: f32,
 }
 
 impl Default for BlendSettings {
     fn default() -> Self {
-        Self { forest_town_m: 18.0, forest_swamp_m: 16.0 }
+        Self { forest_town_m: 18.0, forest_swamp_m: 16.0, scree_m: 14.0 }
     }
 }
 
 impl BlendSettings {
-    /// The transition width between kinds `a` and `b` (either order), m.
-    pub fn width_m(&self, a: MapKind, b: MapKind) -> f32 {
-        match (a, b) {
+    /// How deep the transition zone of a region of kind `own` reaches
+    /// toward a neighbouring region of kind `other`, meters. The pairs
+    /// that change both sides give the same depth either way; scree only
+    /// lands below a massif (a mountain region gets no zone).
+    pub fn width_m(&self, own: MapKind, other: MapKind) -> f32 {
+        match (own, other) {
             (MapKind::Forest, MapKind::Town) | (MapKind::Town, MapKind::Forest) => self.forest_town_m.max(0.0),
             (MapKind::Forest, MapKind::Swamp) | (MapKind::Swamp, MapKind::Forest) => self.forest_swamp_m.max(0.0),
+            (MapKind::Forest | MapKind::Town | MapKind::Swamp, MapKind::Cave) => self.scree_m.max(0.0),
             _ => 0.0,
         }
     }

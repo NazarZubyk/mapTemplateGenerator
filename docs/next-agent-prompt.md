@@ -26,14 +26,15 @@ a time.
   ready** (keep that until the user says otherwise). Developer detail goes
   into docs/development.md.
 
-## State at the end of the last session (2026-11-04)
+## State at the end of the last session (2026-11-06)
 
-- Branch `main` holds everything. **`main` is ahead of `origin/main` and
-  NOT pushed**: the agent's shell has no GitHub login (HTTPS asks for a
-  username, the SSH key is refused). First thing: run `git status -sb`; if
-  it is still ahead, ask the user to run `git push origin main` in their
-  own terminal (or `! git push origin main` here).
-- 273 tests pass, `cargo clippy --all-targets` is clean.
+- Work goes on branch **`blending`** (on GitHub as `origin/blending`): it
+  holds the mixed maps (M1–M9), town steps 7 and 13 and blending B1–B3.
+  `origin/main` stops before the mixed maps (at the docs refresh). First
+  thing: run `git status -sb`. Push only when the user asks — the agent's
+  shell may have no GitHub login; then ask the user to push from their
+  own terminal.
+- 275 tests pass, `cargo clippy --all-targets` is clean.
 - 2026-11-04: the unused `map.walkable_pct` setting was dropped (town
   step 7); town step 13 is done (town ground on layer.png, spec.json
   `town` + `notes`, blocking duplicate colors, node warnings, feasibility
@@ -69,8 +70,8 @@ note); mob buttons only record `app.mobs_request`.
 ### Open work (the user picks)
 
 1. **M10 — Blending** (in progress on branch `blending`; the plan is
-   `docs/blending-plan.md`, steps B1–B5; B1 Forest ↔ Town and B2 Forest ↔
-   Swamp done, next B3 scree): nature
+   `docs/blending-plan.md`, steps B1–B5; B1 Forest ↔ Town, B2 Forest ↔
+   Swamp and B3 scree done, next B4 Town ↔ Swamp and rivers in towns): nature
    crossing region borders — trees in the yards of a town district next to
    a forest, a wet forest belt beside a swamp, boulders from a massif in the
    forest, embankments where a river crosses a town. Needs its own small

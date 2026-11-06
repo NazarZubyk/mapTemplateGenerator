@@ -699,21 +699,27 @@ fn forest(config: &LevelConfig, out: &mut Vec<Warning>) {
 /// the zone covers the whole of the smaller region of the pair.
 fn blending(config: &LevelConfig, rows: &[crate::model::MixedRegion], total: f32, area: f32, out: &mut Vec<Warning>) {
     let b = &config.mixed.blending;
-    for (f, label, width, pair) in [
-        ("mixed.blending.forest_town_m", "Forest ↔ Town", b.forest_town_m, (MapKind::Forest, MapKind::Town)),
-        ("mixed.blending.forest_swamp_m", "Forest ↔ Swamp", b.forest_swamp_m, (MapKind::Forest, MapKind::Swamp)),
+    // (field, label, depth, one side's kinds, the other side's kinds, the
+    // sides whose regions the zone covers).
+    const FT: &[MapKind] = &[MapKind::Forest, MapKind::Town];
+    const FS: &[MapKind] = &[MapKind::Forest, MapKind::Swamp];
+    const BELOW: &[MapKind] = &[MapKind::Forest, MapKind::Town, MapKind::Swamp];
+    for (f, label, width, side_a, side_b, covered) in [
+        ("mixed.blending.forest_town_m", "Forest ↔ Town", b.forest_town_m, &[MapKind::Forest][..], &[MapKind::Town][..], FT),
+        ("mixed.blending.forest_swamp_m", "Forest ↔ Swamp", b.forest_swamp_m, &[MapKind::Forest][..], &[MapKind::Swamp][..], FS),
+        ("mixed.blending.scree_m", "Scree", b.scree_m, BELOW, &[MapKind::Cave][..], BELOW),
     ] {
         if width < 0.0 {
             out.push(field(f, format!("Blending {label}: the depth cannot be negative")));
             continue;
         }
-        // The smaller region of the pair, about this many meters across.
+        // The smallest region the zone covers, about this many meters across.
         let across = rows
             .iter()
-            .filter(|r| r.kind == pair.0 || r.kind == pair.1)
+            .filter(|r| covered.contains(&r.kind))
             .map(|r| (area * r.share_pct.max(0.1) / total).sqrt())
             .fold(f32::INFINITY, f32::min);
-        let both = rows.iter().any(|r| r.kind == pair.0) && rows.iter().any(|r| r.kind == pair.1);
+        let both = rows.iter().any(|r| side_a.contains(&r.kind)) && rows.iter().any(|r| side_b.contains(&r.kind));
         if both && width > across / 2.0 {
             out.push(field(f, format!("Blending {label}: {width:.0} m reaches past the middle of a {across:.0} m region — the transition covers all of it")));
         }

@@ -220,6 +220,7 @@ pub(crate) fn build_with_progress(
             near_walls: 0,
             in_tunnels: 0,
             pool_edge: 0,
+            scree: 0,
         },
         objects,
         notes,

@@ -70,6 +70,13 @@ pub fn generate_in(config: &LevelConfig, seed: u64, region: Option<&RegionCtx>, 
         for (c, rock) in terrain.rock.cells.iter_mut().enumerate() {
             *rock &= r.inside(c) && !r.water.deep.cells[c] && !r.water.shallow.cells[c];
         }
+        // Blending: rock patches at the foot of a massif (scree,
+        // docs/blending-plan.md B3); the passages join the ground up again.
+        if let Some(t) = r.blend_toward(crate::model::MapKind::Cave) {
+            let gates: Vec<[f32; 2]> = r.gates.iter().map(|g| g.point_m).collect();
+            let dry = |c: usize| r.inside(c) && !r.water.deep.cells[c] && !r.water.shallow.cells[c];
+            crate::generator::blend::scree_rock(t, &mut terrain.rock, dry, &gates, r.blend_seed ^ r.id as u64);
+        }
         let inside = r.domain.count_true().max(1);
         terrain.rock_pct = terrain.rock.count_true() as f32 / inside as f32 * 100.0;
     }
@@ -155,6 +162,32 @@ pub fn generate_in(config: &LevelConfig, seed: u64, region: Option<&RegionCtx>, 
         }
     }
     objects.extend(inter.objects);
+
+    // Blending: boulders fallen from a neighbouring massif (scree, B3), on
+    // the forest ground everything else left; they join the objects mask,
+    // so the mobs keep off them. Hashes of the blending seed only.
+    if let Some((r, t)) = region.and_then(|r| r.blend_toward(crate::model::MapKind::Cave).map(|t| (r, t))) {
+        let ground: Vec<crate::level::ForestGround> = forest.clearings.as_ref().map(|c| c.ground.iter().map(|&g| crate::level::ForestGround::from_code(g)).collect()).unwrap_or_default();
+        let clear = config.forest.props.trail_clear_m.max(0.0);
+        let (to_trail, _) = distance_field(w, h, cell, |c| matches!(ground[c], crate::level::ForestGround::Trail | crate::level::ForestGround::Bridge), clear + cell * 2.0);
+        let place: Vec<bool> = (0..w * h).map(|c| matches!(ground[c], crate::level::ForestGround::Open | crate::level::ForestGround::Floor) && to_trail[c] > clear).collect();
+        let walkable: Vec<bool> = ground.iter().map(|g| g.walkable()).collect();
+        let solid = forest.objects_mask.as_ref().map(|m| m.cells.clone()).unwrap_or_else(|| vec![false; w * h]);
+        let taken: Vec<bool> = (0..w * h).map(|c| solid[c] || rooms.layout.floor_mask.cells[c] || rooms.layout.wall_mask.cells[c] || inter.layout.mask.cells[c]).collect();
+        let gates: Vec<[f32; 2]> = forest.passages.as_ref().map(|p| p.gates.iter().map(|g| g.point_m).collect()).unwrap_or_default();
+        let sg = crate::generator::blend::ScreeGround { w, h, cell, place: &place, walkable: &walkable, taken: &taken, gates: &gates };
+        let built = crate::generator::blend::scree(t, &sg, config.props.color, r.blend_seed ^ r.id as u64 ^ 0x5C);
+        if let Some(m) = forest.objects_mask.as_mut() {
+            for (a, &b) in m.cells.iter_mut().zip(&built.mask.cells) {
+                *a |= b;
+            }
+        }
+        if let Some(p) = forest.props.as_mut() {
+            p.scree = built.objects.len() as u32;
+        }
+        objects.extend(built.objects);
+    }
+
     let offset = objects.len();
     if let Some(p) = forest.passages.as_mut() {
         // (A map region's gates have no marker of their own.)
