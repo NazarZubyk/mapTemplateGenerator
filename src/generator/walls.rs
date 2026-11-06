@@ -225,6 +225,7 @@ pub fn build(
                 wall_cells,
                 area_cut_cells: cut,
                 area_filled_cells: filled,
+                embankment_cells: 0,
             },
         },
         region: new_region,

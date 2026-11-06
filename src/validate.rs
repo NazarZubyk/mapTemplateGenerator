@@ -708,6 +708,7 @@ fn blending(config: &LevelConfig, rows: &[crate::model::MixedRegion], total: f32
         ("mixed.blending.forest_town_m", "Forest ↔ Town", b.forest_town_m, &[MapKind::Forest][..], &[MapKind::Town][..], FT),
         ("mixed.blending.forest_swamp_m", "Forest ↔ Swamp", b.forest_swamp_m, &[MapKind::Forest][..], &[MapKind::Swamp][..], FS),
         ("mixed.blending.scree_m", "Scree", b.scree_m, BELOW, &[MapKind::Cave][..], BELOW),
+        ("mixed.blending.town_swamp_m", "Town → Swamp", b.town_swamp_m, &[MapKind::Town][..], &[MapKind::Swamp][..], &[MapKind::Swamp][..]),
     ] {
         if width < 0.0 {
             out.push(field(f, format!("Blending {label}: the depth cannot be negative")));
@@ -723,6 +724,11 @@ fn blending(config: &LevelConfig, rows: &[crate::model::MixedRegion], total: f32
         if both && width > across / 2.0 {
             out.push(field(f, format!("Blending {label}: {width:.0} m reaches past the middle of a {across:.0} m region — the transition covers all of it")));
         }
+    }
+    if b.embankment_m < 0.0 {
+        out.push(field("mixed.blending.embankment_m", "Blending embankments: the thickness cannot be negative".to_owned()));
+    } else if b.embankment_m > 4.0 {
+        out.push(field("mixed.blending.embankment_m", format!("Blending embankments: {:.1} m is a thick quay — it eats the town floor along the river", b.embankment_m)));
     }
 }
 

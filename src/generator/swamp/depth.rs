@@ -58,6 +58,11 @@ const WOBBLE_SCALE_M: f32 = 10.0;
 const BORDER_SCALE_M: f32 = 25.0;
 /// Most hummocks one generation adds.
 const MAX_HUMMOCKS: u32 = 500;
+/// Blending toward a town (B4): share of the distance to the shore the
+/// drained margin takes off at the town — shallow water and mud there.
+const DRAIN: f32 = 0.85;
+/// Size of the reed beds, meters.
+const REED_SCALE_M: f32 = 6.0;
 
 pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, islands: &mut IslandLayout, paths: &mut PathLayout, region: Option<&RegionCtx>) -> DepthBuild {
     let s = &config.swamp.depth;
@@ -88,9 +93,13 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, islands: &mut IslandLay
     let mut dist = vec![f32::INFINITY; w * h];
     spread(w, h, cell, &mut dist, &sources, |_| Some(1.0));
     let (shallow, mud) = (s.shallow_m.max(0.0), s.shallow_m.max(0.0) + s.mud_m.max(0.0));
+    // Blending: the town drains its edge — near it the water is shallower,
+    // as if the shore were closer (docs/blending-plan.md, B4).
+    let drained = region.and_then(|r| r.blend_toward(crate::model::MapKind::Town));
+    let drain = |c: usize| drained.map_or(0.0, |z| z[c]);
     for c in 0..w * h {
         if t[c] == Terrain::Deep {
-            let d = dist[c] + wobble(c, 0.0);
+            let d = (dist[c] + wobble(c, 0.0)) * (1.0 - DRAIN * drain(c));
             t[c] = if d < shallow {
                 Terrain::Shallow
             } else if d < mud {
@@ -113,7 +122,8 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, islands: &mut IslandLay
             None => (x.min(y).min(w - 1 - x).min(h - 1 - y) as f32 + 0.5) * cell,
         };
         let swing = noise.fbm(x as f32 * cell / BORDER_SCALE_M + 41.0, y as f32 * cell / BORDER_SCALE_M - 41.0, 3) - 0.5;
-        let line = s.border_m.max(0.0) * (1.0 + 2.0 * swing);
+        // (Toward a town the deep band gives way to the drained margin.)
+        let line = s.border_m.max(0.0) * (1.0 + 2.0 * swing) * (1.0 - (drain(c) * 3.0).min(1.0));
         // A map region: never less than two cells (another region's ground
         // is right behind it).
         let line = if region.is_some() { line.max(cell * 2.0) } else { line };
@@ -229,10 +239,28 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, islands: &mut IslandLay
             }
             let (x, y) = (((c % w) as f32 + 0.5) * cell, ((c / w) as f32 + 0.5) * cell);
             let v = noise.fbm(x / scale + 91.0, y / scale - 17.0, 2);
-            // fBm sits mostly in 0.3..0.7: stretch it to 0..1.
-            let want = want + (1.0 - want) * wooded.map_or(0.0, |t| (t[c] * 3.0).min(1.0));
+            // fBm sits mostly in 0.3..0.7: stretch it to 0..1. Toward a
+            // forest the band is wooded, toward a town reed (B2, B4).
+            let near = wooded.map_or(0.0, |t| t[c]).max(drain(c));
+            let want = want + (1.0 - want) * (near * 3.0).min(1.0);
             if ((v - 0.3) / 0.4).clamp(0.0, 1.0) < want && !mouth(c) {
                 t[c] = Terrain::Thicket;
+            }
+        }
+        // Blending: the drained margin's water still too deep to wade grows
+        // reed beds (deep → thicket, so the walkable ground is untouched),
+        // more of it nearer the town; a river's channel stays open water.
+        if let Some(z) = drained {
+            let reeds = NoiseField::new(r.blend_seed ^ 0x2EED ^ r.id as u64);
+            for c in 0..w * h {
+                if z[c] <= 0.0 || t[c] != Terrain::Deep || !r.inside(c) || r.water.deep.cells[c] || r.water.shallow.cells[c] || mouth(c) {
+                    continue;
+                }
+                let (x, y) = (((c % w) as f32 + 0.5) * cell, ((c / w) as f32 + 0.5) * cell);
+                let v = ((reeds.fbm(x / REED_SCALE_M, y / REED_SCALE_M, 3) - 0.3) / 0.4).clamp(0.0, 1.0);
+                if v > 1.0 - (z[c] * 1.3).min(1.0) {
+                    t[c] = Terrain::Thicket;
+                }
             }
         }
         cuts.clear();

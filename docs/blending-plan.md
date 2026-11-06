@@ -114,8 +114,9 @@ already guarantee them do the work.
 - [x] **B3 — Scree**: boulders at the foot of a massif in forests, towns
       and swamps; forest rock patches; swamp rocky islets. (done — see
       "Step B3 notes")
-- [ ] **B4 — Town ↔ Swamp and rivers in towns**: the drained swamp margin,
-      reed patches; embankments along a town's river.
+- [x] **B4 — Town ↔ Swamp and rivers in towns**: the drained swamp margin,
+      reed patches; embankments along a town's river. (done — see "Step
+      B4 notes")
 - [ ] **B5 — Export, MCP, docs**: `mixed_blending`, the MCP summary,
       README picture of a blended border.
 
@@ -246,3 +247,47 @@ already guarantee them do the work.
   touches the massif on 6 of the 10).
 - Tuning left for later: the amounts (1 / 35 m²) and sizes are constants,
   not settings.
+
+## Step B4 notes — Town → Swamp, embankments
+
+- **Settings**: `BlendSettings.town_swamp_m` (default 16 m; only the
+  swamp gets a zone — `width_m(Swamp, Town)`, the town keeps its wall) and
+  `embankment_m` (quay wall thickness, default 1 m, 0 = open banks; it
+  reaches the town chain as `RegionCtx.embankment_m`, since a region's
+  chain only sees its own kind's config). Rows "Town → Swamp" and
+  "Embankments" in 5b · Blending. Validation: no negative values; a
+  Town → Swamp depth past the middle of the smallest swamp warns; a quay
+  over 4 m warns (it eats the town floor).
+- **Swamp: drained margin** (`swamp::depth`): in the zone the distance to
+  the shore that decides shallow / mud / deep shrinks by `0.85 × t`
+  (`DRAIN`), and the deep border band gives way (its width × (1 − 3t),
+  still the two-cell minimum against the region edge). The swamp's own
+  wading rule still holds: water the breath cannot reach is cut to deep
+  as before. Then **reed beds**: in the zone, deep water where a 6 m noise
+  blob of the blending seed passes `1 − 1.3 t` turns thicket (the swamp's
+  thicket id) — deep → thicket only, so the walkable ground is untouched;
+  never on a river's channel (`r.water`) or at a river mouth. The edge
+  band toward a town is reed like the wooded band toward a forest (B2).
+  No draws from the chain's stream.
+- **Town: embankments** (`blend::embankments`, in `town_in` right after
+  the gates, before the houses, so everything after keeps off them like
+  off the wall): town floor within `embankment_m` of open water (a river
+  or brook inside the region, not a bridge), never a road, nothing within
+  3 m of a bridge (`BRIDGE_OPEN_M`) or 8 m of an opening. Written into the
+  outer wall's mask (drawn and exported as town wall);
+  `OuterWallStats.embankment_cells`. Where a quay would cut town floor
+  off (a neck beside the river), the quay opens next to the cut-off
+  piece, round by round, until the floor is in as many pieces as before
+  (else no quay at all).
+- Unlike the yard trees and the scree, the quays come before the houses:
+  they are part of the town's structure, so the houses and hidden rooms
+  after them land differently with them on (seed 2 of the default map
+  loses its town hidden room, seed 1 gains it).
+- **Checks**: with both at 0 every kind and the mixed map are
+  byte-identical to B3 (fingerprints). Default map, seeds 1–6: swamp deep
+  water within 6 cells of the town 560–1 028 → 16–232 cells, shallow and
+  mud 0–20 → 400–1 160, quays 490–1 330 cells per town. Tests: a synthetic
+  town (quay only on the banks, never on the road, open at the bridge
+  head, a neck beside the river left open, the floor one piece); on two
+  maps less than half the deep water and more wadeable water by the town,
+  quays only with blending on. The mixed invariants pass.

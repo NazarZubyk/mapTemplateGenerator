@@ -217,6 +217,10 @@ pub struct OuterWallStats {
     pub area_cut_cells: u32,
     /// Non-region cells filled because they ended up inside the wall.
     pub area_filled_cells: u32,
+    /// Mixed maps (blending): embankment (quay wall) cells along the rivers
+    /// inside the town, in `OuterWall::mask` too.
+    #[serde(default)]
+    pub embankment_cells: u32,
 }
 
 /// The outer wall ring around the region.

@@ -184,7 +184,10 @@ groves on the forest side; Mountains → anything = scree: boulders as
 plain blocked props (`blend::scree`, placed last in each chain on the
 ground left over; `PropLayout.scree` / `ForestPropLayout.scree`), forest
 rock patches (`blend::scree_rock`) and the forest belt opened at the
-massif's foot, rocks standing in a swamp's water) → 6
+massif's foot, rocks standing in a swamp's water; Town → Swamp = the
+swamp drained near the town, shallow water and mud, reed beds where it
+stays deep; rivers in a town = embankments, quay walls along the banks
+in the outer wall's mask, open at the bridges, `blend::embankments`) → 6
 **Region chains** (`mixed/chains.rs` + `generator/region.rs`: each built
 region runs its own chain inside its ground — `RegionCtx` with the domain,
 edge distance, fixed gates, shared land and water, blend zones; own seed; counts scaled

@@ -90,7 +90,8 @@ pub fn context(config: &LevelConfig, seed: u64, m: &MixedLayout, id: u8, land: &
     let blend_seed = crate::generator::blend::seed(seed);
     let blend = crate::generator::blend::zones(m, id, &config.mixed.blending, blend_seed);
     let neighbour_trees = crate::generator::blend::neighbour_trees(config, m, id);
-    RegionCtx { id, domain, edge_dist, gates, land: land.clone(), water, bridges, blend, neighbour_trees, blend_seed }
+    let embankment_m = config.mixed.blending.embankment_m.max(0.0);
+    RegionCtx { id, domain, edge_dist, gates, land: land.clone(), water, bridges, blend, neighbour_trees, blend_seed, embankment_m }
 }
 
 /// Node 6: every region whose kind is built runs its chain. Returns the

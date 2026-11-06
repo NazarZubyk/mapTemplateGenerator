@@ -311,11 +311,18 @@ pub struct BlendSettings {
     /// bigger and denser near the face, rock ground patches in a forest,
     /// rocks standing in a swamp's water. The massif keeps its face.
     pub scree_m: f32,
+    /// Town → swamp: the town drains its edge — the swamp's water near the
+    /// town is shallow water and mud instead of deep water, what stays too
+    /// deep to wade grows reed beds (thicket). The town keeps its wall.
+    pub town_swamp_m: f32,
+    /// Rivers in a town: embankment (quay wall) thickness along the water
+    /// inside the town, meters, open at the bridges. 0 = open banks.
+    pub embankment_m: f32,
 }
 
 impl Default for BlendSettings {
     fn default() -> Self {
-        Self { forest_town_m: 18.0, forest_swamp_m: 16.0, scree_m: 14.0 }
+        Self { forest_town_m: 18.0, forest_swamp_m: 16.0, scree_m: 14.0, town_swamp_m: 16.0, embankment_m: 1.0 }
     }
 }
 
@@ -329,6 +336,8 @@ impl BlendSettings {
             (MapKind::Forest, MapKind::Town) | (MapKind::Town, MapKind::Forest) => self.forest_town_m.max(0.0),
             (MapKind::Forest, MapKind::Swamp) | (MapKind::Swamp, MapKind::Forest) => self.forest_swamp_m.max(0.0),
             (MapKind::Forest | MapKind::Town | MapKind::Swamp, MapKind::Cave) => self.scree_m.max(0.0),
+            // Only the swamp changes (the town keeps its wall).
+            (MapKind::Swamp, MapKind::Town) => self.town_swamp_m.max(0.0),
             _ => 0.0,
         }
     }

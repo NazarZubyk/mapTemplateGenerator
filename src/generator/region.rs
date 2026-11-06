@@ -72,6 +72,9 @@ pub struct RegionCtx {
     pub neighbour_trees: Option<crate::model::ForestTreeSettings>,
     /// Seed of the blending's own noise and hashes (never a chain's stream).
     pub blend_seed: u64,
+    /// Blending: embankment (quay wall) thickness along the rivers inside
+    /// a town, meters; 0 = open banks.
+    pub embankment_m: f32,
 }
 
 impl RegionCtx {
