@@ -258,26 +258,6 @@ pub fn town_in(config: &LevelConfig, seed: u64, region: Option<&region::RegionCt
             }
         }
     }
-    // Blending: embankments (quay walls) along the rivers inside the town,
-    // open at the bridges (docs/blending-plan.md, B4) — before the houses,
-    // so everything after keeps off them like off the wall.
-    if let (Some(r), Some(split), Some(wall)) = (region, regions.as_ref(), walls.as_mut())
-        && r.embankment_m > 0.0
-    {
-        let n = split.map.ids.len();
-        let water: Vec<bool> = (0..n).map(|c| r.inside(c) && !r.bridges.cells[c] && (r.water.deep.cells[c] || r.water.shallow.cells[c])).collect();
-        let gates: Vec<[f32; 2]> = r.gates.iter().map(|g| g.point_m).collect();
-        let ground = blend::EmbankmentGround {
-            ids: &split.map.ids,
-            water: &water,
-            roads: roads.as_ref().map(|n| &n.mask),
-            region_walls: region_walls.as_ref().map(|w| &w.mask),
-            bridges: &r.bridges,
-            gates: &gates,
-        };
-        wall.stats.embankment_cells = blend::embankments(&ground, &mut wall.mask, r.embankment_m);
-    }
-
     let (gates, gate_objects) = match gates {
         Some(built) => {
             notes.extend(built.notes);

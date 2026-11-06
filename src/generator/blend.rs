@@ -344,15 +344,14 @@ pub fn scree_rock(t: &[f32], rock: &mut CellMask, dry: impl Fn(usize) -> bool, g
 /// and what the region chains added for it (counts, m²).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BlendPair {
-    /// `forest_town`, `forest_swamp`, `scree`, `town_swamp`, `embankments`.
+    /// `forest_town`, `forest_swamp`, `scree`, `town_swamp`.
     pub pair: String,
     pub label: String,
     /// The config field (`mixed.blending.…`).
     pub setting: String,
-    /// The transition depth, meters (embankments: the quay thickness);
-    /// 0 = off.
+    /// The transition depth, meters; 0 = off.
     pub depth_m: f32,
-    /// The map has such a border (embankments: a river or brook in a town).
+    /// The map has such a border.
     pub present: bool,
     /// What was added: counts and areas (keys ending in `_m2`, m²).
     pub added: std::collections::BTreeMap<String, f32>,
@@ -377,7 +376,6 @@ pub fn report(config: &LevelConfig, m: &MixedLayout) -> Vec<BlendPair> {
         }
     }
     let touches = |a: MapKind, b: MapKind| touch.contains(&(kind_salt(a).min(kind_salt(b)), kind_salt(a).max(kind_salt(b))));
-    let town_river = m.water.as_ref().is_some_and(|wl| (0..w * h).any(|c| kind_of(c) == Some(MapKind::Town) && (wl.deep.cells[c] || wl.shallow.cells[c])));
     // Sums over the regions' levels of one kind.
     let sum = |kind: MapKind, f: &dyn Fn(&crate::level::GeneratedLevel) -> u32| -> u32 {
         m.regions.iter().zip(&m.levels).filter(|(r, _)| r.kind == kind).filter_map(|(_, l)| l.as_ref()).map(f).sum()
@@ -426,97 +424,9 @@ pub fn report(config: &LevelConfig, m: &MixedLayout) -> Vec<BlendPair> {
             touches(MapKind::Town, MapKind::Swamp),
             &[("swamp_drained_m2", depth(&|d| d.drained_cells) as f32 * a), ("swamp_reeds_m2", depth(&|d| d.reed_cells) as f32 * a)],
         ),
-        row("embankments", "Embankments", "embankment_m", b.embankment_m, town_river, &[("quay_m2", sum(MapKind::Town, &|l| l.walls.as_ref().map_or(0, |w| w.stats.embankment_cells)) as f32 * a)]),
     ]
 }
 
-/// Embankments stay open this far around a bridge, meters.
-const BRIDGE_OPEN_M: f32 = 3.0;
-
-/// The ground a town's embankments are built on.
-pub struct EmbankmentGround<'a> {
-    /// Town floor per cell (district ids; 0 = no town ground: water,
-    /// outside, the wall).
-    pub ids: &'a [u8],
-    /// Open water next to the town (a river, a brook; not a bridge).
-    pub water: &'a [bool],
-    pub roads: Option<&'a CellMask>,
-    pub region_walls: Option<&'a CellMask>,
-    pub bridges: &'a CellMask,
-    pub gates: &'a [[f32; 2]],
-}
-
-/// Embankments along the rivers inside a town (towns wall their banks): a
-/// quay wall `thickness_m` deep on the town floor along open water, never
-/// on a road, open around the bridges and the openings. Written into
-/// `wall` (the town's outer wall mask: it is drawn as wall). Where a quay
-/// would cut town floor off, it opens next to the cut-off piece until the
-/// floor is in as many pieces as before. Returns the cells built.
-pub fn embankments(g: &EmbankmentGround, wall: &mut CellMask, thickness_m: f32) -> u32 {
-    let (w, h, cell) = (wall.width, wall.height, wall.cell_size_m);
-    let n = w * h;
-    let floor = |c: usize, wall: &CellMask| g.ids[c] != 0 && !wall.cells[c] && !g.region_walls.is_some_and(|m| m.cells[c]);
-    let reach = thickness_m.max(cell);
-    let (to_water, _) = distance_field(w, h, cell, |c| g.water[c] && g.ids[c] == 0, reach + cell);
-    let (to_bridge, _) = distance_field(w, h, cell, |c| g.bridges.cells[c], BRIDGE_OPEN_M + cell);
-    let mut quay: Vec<bool> = (0..n)
-        .map(|c| {
-            let (x, y) = (((c % w) as f32 + 0.5) * cell, ((c / w) as f32 + 0.5) * cell);
-            floor(c, wall)
-                && !g.roads.is_some_and(|m| m.cells[c])
-                && to_water[c] > 0.0
-                && to_water[c] <= reach + 1e-3
-                && to_bridge[c] > BRIDGE_OPEN_M
-                && !g.gates.iter().any(|q| (q[0] - x).hypot(q[1] - y) < GATE_CLEAR_M)
-        })
-        .collect();
-    let pieces = |quay: &[bool]| {
-        let m = CellMask { width: w, height: h, cell_size_m: cell, cells: (0..n).map(|c| floor(c, wall) && !quay[c]).collect() };
-        crate::generator::grid::components(&m)
-    };
-    let (_, before) = pieces(&vec![false; n]);
-    for _ in 0..32 {
-        let (labels, count) = pieces(&quay);
-        if count <= before {
-            break;
-        }
-        let mut size = vec![0usize; count as usize + 1];
-        for &l in &labels {
-            size[l as usize] += 1;
-        }
-        let main = (1..=count as usize).max_by_key(|&l| (size[l], std::cmp::Reverse(l))).unwrap_or(1) as u32;
-        // Open the quay beside every piece but the main one.
-        let mut opened = false;
-        for (c, q) in quay.iter_mut().enumerate() {
-            if !*q {
-                continue;
-            }
-            let (x, y) = (c % w, c / w);
-            let cut_off = [(x.wrapping_sub(1), y), (x + 1, y), (x, y.wrapping_sub(1)), (x, y + 1)]
-                .into_iter()
-                .any(|(nx, ny)| nx < w && ny < h && labels[ny * w + nx] != 0 && labels[ny * w + nx] != main);
-            if cut_off {
-                *q = false;
-                opened = true;
-            }
-        }
-        if !opened {
-            break;
-        }
-    }
-    let (_, after) = pieces(&quay);
-    if after > before {
-        return 0;
-    }
-    let mut built = 0;
-    for (m, &q) in wall.cells.iter_mut().zip(&quay) {
-        if q {
-            *m = true;
-            built += 1;
-        }
-    }
-    built
-}
 
 #[cfg(test)]
 mod tests {
@@ -693,56 +603,56 @@ mod tests {
     }
 
     #[test]
-    fn embankments_line_the_water_open_at_the_bridge_and_never_cut_the_town() {
-        // A 40 × 30 m town, a river in x 18..=21 crossed by a bridge in rows
-        // 14..=16 that carries the road (row 15). A district wall in row 10
-        // (x 0..=16) leaves the top-left block one way out: the cell x 17
-        // beside the river.
-        let (w, h) = (40usize, 30usize);
-        let at = |x: usize, y: usize| y * w + x;
-        let mut ids = vec![1u8; w * h];
-        let mut water = vec![false; w * h];
-        let mut bridges = CellMask::new(w, h, 1.0);
-        let mut roads = CellMask::new(w, h, 1.0);
-        let mut rw = CellMask::new(w, h, 1.0);
-        for y in 0..h {
-            for x in 18..=21 {
-                if (14..=16).contains(&y) {
-                    bridges.cells[at(x, y)] = true;
-                } else {
-                    ids[at(x, y)] = 0;
-                    water[at(x, y)] = true;
+    fn rivers_run_open_through_a_town_and_under_its_wall_at_the_edge() {
+        // Towns do not wall their banks: inside, the river runs open; the
+        // outer wall stands over the water only where the river comes in or
+        // goes out (a water gate, drawn as wall).
+        let mut crossed = 0;
+        for seed in 1..=2 {
+            let lvl = crate::generator::generate(&LevelConfig::of_kind(MapKind::Mixed), seed);
+            let m = lvl.mixed.as_ref().unwrap();
+            let (w, h, cell) = (m.map.width, m.map.height, m.map.cell_size_m);
+            let water = m.water.as_ref().unwrap();
+            let wet = |c: usize| water.deep.cells[c] || water.shallow.cells[c];
+            for (r, l) in m.regions.iter().zip(&m.levels) {
+                let Some(l) = l.as_ref().filter(|_| r.kind == MapKind::Town) else { continue };
+                let wall = &l.walls.as_ref().unwrap().mask;
+                // Meters from the town region's edge.
+                let (edge, _) = distance_field(w, h, cell, |c| m.map.ids[c] != r.id, 20.0);
+                // The wall ring: its thickness, and the chords of its
+                // straight segments cutting a little inside the edge.
+                let ring = l.config.outer_wall.thickness_m.max(cell) + 4.0;
+                for (c, &from_edge) in edge.iter().enumerate() {
+                    if m.map.ids[c] != r.id || !wall.cells[c] {
+                        continue;
+                    }
+                    let (x, y) = (c % w, c / w);
+                    let by_water = (y.saturating_sub(1)..=(y + 1).min(h - 1)).any(|ny| (x.saturating_sub(1)..=(x + 1).min(w - 1)).any(|nx| wet(ny * w + nx)));
+                    assert!(!by_water || from_edge <= ring, "seed {seed}: town wall on a river bank {from_edge:.1} m inside the town");
+                    if wet(c) {
+                        crossed += 1;
+                    }
                 }
             }
         }
-        for x in 0..w {
-            roads.cells[at(x, 15)] = true;
-        }
-        for x in 0..=16 {
-            rw.cells[at(x, 10)] = true;
-        }
-        let g = EmbankmentGround { ids: &ids, water: &water, roads: Some(&roads), region_walls: Some(&rw), bridges: &bridges, gates: &[] };
-        let mut wall = CellMask::new(w, h, 1.0);
-        let built = embankments(&g, &mut wall, 1.0);
-        assert!(built > 20, "{built} quay cells");
-        for c in (0..w * h).filter(|&c| wall.cells[c]) {
-            let (x, y) = (c % w, c / w);
-            assert!(x == 17 || x == 22, "quay at ({x}, {y}) is not on the bank");
-            assert!(!roads.cells[c], "quay on the road at ({x}, {y})");
-            assert!(!(13..=17).contains(&y), "quay at ({x}, {y}) closes the bridge head");
-        }
-        // The neck beside the river stays open: the town floor is one piece.
-        assert!(!wall.cells[at(17, 10)], "the only way out of the top-left block was walled");
-        let floor = CellMask { width: w, height: h, cell_size_m: 1.0, cells: (0..w * h).map(|c| ids[c] != 0 && !rw.cells[c] && !wall.cells[c]).collect() };
-        assert_eq!(crate::generator::grid::components(&floor).1, 1);
+        assert!(crossed > 0, "the town wall never stands over a river where it comes in");
     }
 
     #[test]
-    fn town_drains_the_swamp_and_walls_its_rivers() {
+    fn configs_saved_with_embankments_still_load() {
+        // `mixed.blending.embankment_m` was dropped (towns no longer wall
+        // their river banks): a config that has it loads, the field ignored.
+        let v = serde_json::json!({"kind": "mixed", "mixed": {"blending": {"embankment_m": 1.0, "scree_m": 9.0}}});
+        let c: LevelConfig = serde_json::from_value(v).unwrap();
+        assert_eq!(c.mixed.blending.scree_m, 9.0);
+        assert_eq!(c.mixed.blending.town_swamp_m, BlendSettings::default().town_swamp_m);
+    }
+
+    #[test]
+    fn town_drains_the_swamp() {
         for seed in 1..=2 {
             let mut c = LevelConfig::of_kind(MapKind::Mixed);
             c.mixed.blending.town_swamp_m = 0.0;
-            c.mixed.blending.embankment_m = 0.0;
             let off = crate::generator::generate(&c, seed);
             let on = crate::generator::generate(&LevelConfig::of_kind(MapKind::Mixed), seed);
             let (mo, mn) = (off.mixed.as_ref().unwrap(), on.mixed.as_ref().unwrap());
@@ -756,9 +666,6 @@ mod tests {
             assert!(b * 2 < a, "seed {seed}: deep water by the town {a} → {b}");
             let (a, b) = (count_by(mo, MapKind::Swamp, MapKind::Town, 6.0, wade), count_by(mn, MapKind::Swamp, MapKind::Town, 6.0, wade));
             assert!(b > a, "seed {seed}: shallow water and mud by the town {a} → {b}");
-            let quay = |m: &MixedLayout| m.levels.iter().flatten().filter_map(|l| l.walls.as_ref()).map(|w| w.stats.embankment_cells).sum::<u32>();
-            assert_eq!(quay(mo), 0, "seed {seed}");
-            assert!(quay(mn) > 0, "seed {seed}: no embankments along the town's river");
         }
     }
 

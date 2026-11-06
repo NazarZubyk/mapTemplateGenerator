@@ -725,11 +725,6 @@ fn blending(config: &LevelConfig, rows: &[crate::model::MixedRegion], total: f32
             out.push(field(f, format!("Blending {label}: {width:.0} m reaches past the middle of a {across:.0} m region — the transition covers all of it")));
         }
     }
-    if b.embankment_m < 0.0 {
-        out.push(field("mixed.blending.embankment_m", "Blending embankments: the thickness cannot be negative".to_owned()));
-    } else if b.embankment_m > 4.0 {
-        out.push(field("mixed.blending.embankment_m", format!("Blending embankments: {:.1} m is a thick quay — it eats the town floor along the river", b.embankment_m)));
-    }
 }
 
 /// Mixed maps (docs/mixed-plan.md): the region list, then every region's

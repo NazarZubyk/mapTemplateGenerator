@@ -20,7 +20,7 @@ literal):
 | Forest ↔ Town | people cut the forest edge for wood and grazing; seeds blow over the wall | **town**: trees in the yards and along the district edges near the forest, fewer the farther in | **forest**: the thicket belt near the town is thinned (an open, cut edge) |
 | Forest ↔ Swamp | the ground gets wetter toward the swamp | **forest**: a wet belt: puddles of shallow water, water-loving trees | **swamp**: its border near the forest is thicket and trees (a wooded swamp edge) instead of open deep water |
 | Mountains ↔ anything | rocks fall from the face and roll down the slope (scree) | **forest / town / swamp**: boulders at the foot of the face, bigger and denser near it; rock ground patches in the forest; rocky islets in the swamp | — (the massif keeps its rock face) |
-| River through a town | towns wall their river banks | **town**: embankments (quay walls) along the water inside the wall, open at the bridges | — |
+| River through a town | the river comes in under the town wall | **town**: the river runs open inside the town; the outer wall stands over it only where it comes in and goes out (a water gate, drawn as wall) — no walls along the banks (quay walls were built in B4 and dropped at the user's call) | — |
 | Town ↔ Swamp | the town drains its edge | **swamp**: near the town wall shallow water and mud instead of deep water, reed (thicket) patches | **town**: — (the wall stands) |
 
 Same-kind neighbours (two forests, two towns) are left as they are in
@@ -44,7 +44,8 @@ meters, from the region map alone) and the blending settings. Each node
 that makes a transition uses it at the right moment:
 
 - town: the yard trees are placed by the houses node (after houses, before
-  props), the embankments by the roads/bridges step;
+  props); a river keeps its open banks (the outer wall, built over the
+  whole region, already stands over it where it comes in);
 - forest: the thicket node thins the belt near a town; the water node adds
   the wet belt near a swamp; the trees node uses wet trees there; the
   rocks (forest rock ground and props) come from the terrain/props nodes;
@@ -93,8 +94,8 @@ already guarantee them do the work.
    belts back to back). Merging them is a different problem (one region
    in two parts); left for later.
 10. **Export.** No new ground ids: puddles use the forest shallow-water id,
-    rock patches the forest rock id, reeds the swamp thicket id, the
-    embankments the town wall id; yard trees and boulders are ordinary
+    rock patches the forest rock id, reeds the swamp thicket id; yard
+    trees and boulders are ordinary
     objects (structure / prop). spec.json `mixed_blending`: per pair the
     width and what was added (counts, m²).
 11. **UI and MCP.** Node 5b "Blending": one row per border pair that exists
@@ -115,8 +116,9 @@ already guarantee them do the work.
       and swamps; forest rock patches; swamp rocky islets. (done — see
       "Step B3 notes")
 - [x] **B4 — Town ↔ Swamp and rivers in towns**: the drained swamp margin,
-      reed patches; embankments along a town's river. (done — see "Step
-      B4 notes")
+      reed patches; rivers in towns (embankments built, then dropped: the
+      river runs open, the wall crosses it where it comes in). (done — see
+      "Step B4 notes")
 - [x] **B5 — Export, MCP, docs**: `mixed_blending`, the MCP summary,
       README picture of a blended border. (done — see "Step B5 notes";
       the blending plan is complete)
@@ -249,16 +251,12 @@ already guarantee them do the work.
 - Tuning left for later: the amounts (1 / 35 m²) and sizes are constants,
   not settings.
 
-## Step B4 notes — Town → Swamp, embankments
+## Step B4 notes — Town → Swamp, rivers in towns
 
-- **Settings**: `BlendSettings.town_swamp_m` (default 16 m; only the
-  swamp gets a zone — `width_m(Swamp, Town)`, the town keeps its wall) and
-  `embankment_m` (quay wall thickness, default 1 m, 0 = open banks; it
-  reaches the town chain as `RegionCtx.embankment_m`, since a region's
-  chain only sees its own kind's config). Rows "Town → Swamp" and
-  "Embankments" in 5b · Blending. Validation: no negative values; a
-  Town → Swamp depth past the middle of the smallest swamp warns; a quay
-  over 4 m warns (it eats the town floor).
+- **Setting**: `BlendSettings.town_swamp_m` (default 16 m; only the
+  swamp gets a zone — `width_m(Swamp, Town)`, the town keeps its wall),
+  row "Town → Swamp" in 5b · Blending. Validation: not negative; past the
+  middle of the smallest swamp warns.
 - **Swamp: drained margin** (`swamp::depth`): in the zone the distance to
   the shore that decides shallow / mud / deep shrinks by `0.85 × t`
   (`DRAIN`), and the deep border band gives way (its width × (1 − 3t),
@@ -270,28 +268,27 @@ already guarantee them do the work.
   never on a river's channel (`r.water`) or at a river mouth. The edge
   band toward a town is reed like the wooded band toward a forest (B2).
   No draws from the chain's stream.
-- **Town: embankments** (`blend::embankments`, in `town_in` right after
-  the gates, before the houses, so everything after keeps off them like
-  off the wall): town floor within `embankment_m` of open water (a river
-  or brook inside the region, not a bridge), never a road, nothing within
-  3 m of a bridge (`BRIDGE_OPEN_M`) or 8 m of an opening. Written into the
-  outer wall's mask (drawn and exported as town wall);
-  `OuterWallStats.embankment_cells`. Where a quay would cut town floor
-  off (a neck beside the river), the quay opens next to the cut-off
-  piece, round by round, until the floor is in as many pieces as before
-  (else no quay at all).
-- Unlike the yard trees and the scree, the quays come before the houses:
-  they are part of the town's structure, so the houses and hidden rooms
-  after them land differently with them on (seed 2 of the default map
-  loses its town hidden room, seed 1 gains it).
-- **Checks**: with both at 0 every kind and the mixed map are
+- **Rivers in towns — open banks, a water gate** (2026-11-06, the user's
+  call). B4 first built embankments: quay walls on the town floor along
+  the water (`blend::embankments`, `mixed.blending.embankment_m`, default
+  1 m, before the houses). On the map they read as walls all around the
+  river inside the town, so they were **dropped**: the river runs open
+  through the town and the town wall crosses it only where it comes in and
+  goes out — the outer wall is built over the whole region, water
+  included, and drawn over the river there (an underwater gate in the
+  designer's terms; nothing extra is placed). The setting, the
+  `RegionCtx` field, the UI row, the validation, `OuterWallStats.
+  embankment_cells` and the report row are gone; configs that still have
+  `embankment_m` load (unknown fields are ignored; test). The town chain
+  is back to B3's (the houses and hidden rooms land as before).
+- **Checks**: with Town → Swamp at 0 every kind and the mixed map are
   byte-identical to B3 (fingerprints). Default map, seeds 1–6: swamp deep
   water within 6 cells of the town 560–1 028 → 16–232 cells, shallow and
-  mud 0–20 → 400–1 160, quays 490–1 330 cells per town. Tests: a synthetic
-  town (quay only on the banks, never on the road, open at the bridge
-  head, a neck beside the river left open, the floor one piece); on two
-  maps less than half the deep water and more wadeable water by the town,
-  quays only with blending on. The mixed invariants pass.
+  mud 0–20 → 400–1 160. Tests: on two maps less than half the deep water
+  and more wadeable water by the town; no town wall on a river bank
+  inside a town (every wall cell next to the water within the wall ring
+  at the region's edge: thickness + 4 m) and the wall standing over the
+  water where a river comes in. The mixed invariants pass.
 
 ## Step B5 notes — export, MCP, README
 
@@ -300,25 +297,25 @@ already guarantee them do the work.
   `DepthLayout.wooded_cells` (band cells only the forest turned thicket),
   `DepthLayout.reed_cells` / `drained_cells` (B4),
   `TerrainLayout.scree_rock_cells` (B3), next to the earlier
-  `HouseLayout.yard_trees`, `…PropLayout.scree` and
-  `OuterWallStats.embankment_cells`. All `#[serde(default)]`; counting
-  changes no map (fingerprints).
-- **`blend::report`** → `BlendPair` per transition, always five rows in a
-  fixed order: `forest_town` (yard_trees), `forest_swamp`
-  (forest_puddles_m2, swamp_wooded_edge_m2), `scree` (boulders,
-  forest_rock_m2), `town_swamp` (swamp_drained_m2, swamp_reeds_m2),
-  `embankments` (quay_m2); each with its `setting` path, `depth_m` and
-  `present` (the map has such a border; embankments: a river or brook in
-  a town region).
+  `HouseLayout.yard_trees` and `…PropLayout.scree`. All
+  `#[serde(default)]`; counting changes no map (fingerprints).
+- **`blend::report`** → `BlendPair` per transition, always four rows in a
+  fixed order (five until the embankments were dropped): `forest_town`
+  (yard_trees), `forest_swamp` (forest_puddles_m2, swamp_wooded_edge_m2),
+  `scree` (boulders, forest_rock_m2), `town_swamp` (swamp_drained_m2,
+  swamp_reeds_m2); each with its `setting` path, `depth_m` and `present`
+  (the map has such a border).
 - **spec.json** `mixed_blending` = the report (left out on single-kind
-  maps); the layer description lists the embankments under town_wall.
+  maps); the layer description says the town wall also stands over a
+  river where it comes in.
 - **MCP**: `generate`'s `mixed_blending` lists only the transitions the
   map has, with the non-zero results rounded; the server instructions
-  name the five `mixed.blending` fields.
+  name the four `mixed.blending` fields and that a river runs open
+  through a town.
 - **README**: a paragraph on blending and `docs/media/blending.png`
   (hard borders / blending, same crop, recipe in development.md); the
   known limitation now names only same-kind neighbours (problem 9).
-- **Tests**: the mixed export test checks the five rows, their fields and
+- **Tests**: the mixed export test checks the four rows, their fields and
   that the boulders match the regions'; a single-kind spec has no
   `mixed_blending`; the MCP test patches `mixed.blending.scree_m` and
   reads the pairs back (no swamp pairs on a map without a swamp).

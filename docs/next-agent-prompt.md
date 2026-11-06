@@ -35,7 +35,7 @@ a time.
   ahead of `origin/main`, it was not pushed yet. Push only when the user
   asks — the agent's shell may have no GitHub login; then ask the user to
   push from their own terminal.
-- 278 tests pass, `cargo clippy --all-targets` is clean.
+- 279 tests pass, `cargo clippy --all-targets` is clean.
 - 2026-11-04: the unused `map.walkable_pct` setting was dropped (town
   step 7); town step 13 is done (town ground on layer.png, spec.json
   `town` + `notes`, blocking duplicate colors, node warnings, feasibility
@@ -68,7 +68,8 @@ region's `RegionCtx.blend` holds its transition zones toward every
 neighbouring kind (from the region map only, hashes / noise of
 `blend_seed`, never a chain's stream); its own nodes use them — yard trees
 and scree last on free ground, the forest belt cut or wet, the swamp
-wooded or drained, quays before the houses. MCP: `set_mixed_regions`,
+wooded or drained (no quays: a river runs open through a town, the wall
+only over it where it comes in — the user's call). MCP: `set_mixed_regions`,
 `patch_region`, `region` on the mob tools. UI: the picked region's nodes
 are the kind's normal nodes with its config swapped into `app.config`
 (`app.in_map_region` true meanwhile; nodes the mixed map sets show a

@@ -33,12 +33,13 @@ The app opens on a Mixed map; switch the kind in **1 · Template**.
 
 Where two regions meet, every change has a cause: trees seed into a town's yards and the forest outside the wall is
 cut back, a forest gets wet by a swamp, the swamp is drained and reedy by
-a town, rocks fall from the mountains, and towns wall their river banks.
+a town, and rocks fall from the mountains. A river runs open through a
+town; the town wall only crosses it where it comes in.
 Set how deep each transition reaches in **5b · Blending** (0 = a hard
 border).
 
 <p align="center">
-  <img src="docs/media/blending.png" width="560" alt="The same corner of a mixed map with hard borders and with blending: a drained, reedy swamp by the town wall, quay walls along the town's river, a cut forest edge, and boulders at the foot of the mountains">
+  <img src="docs/media/blending.png" width="560" alt="The same corner of a mixed map with hard borders and with blending: a drained, reedy swamp by the town wall, a cut forest edge, and boulders at the foot of the mountains">
 </p>
 
 <p align="center">
@@ -119,7 +120,7 @@ Just describe what you want:
 > mountains on the east edge; wolves in the forest, trolls in the caves."*
 
 > *"Let the forest grow deep into the town, more rocks below the
-> mountains, and no quay walls on the river."*
+> mountains, and keep the swamp by the town deep."*
 
 The open app picks up each change and regenerates. Setup takes one command;
 see `QUICKSTART.md`.

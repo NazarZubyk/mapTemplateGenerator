@@ -245,7 +245,8 @@ connections) cannot disagree; and a single-kind map does not change at all
 - [x] **M10 — Blending**: nature crossing borders —
       trees in the yards of a district next to a forest, a wet forest belt
       by a swamp, boulders from the massif in the forest, a river crossing
-      a town with its embankments. Planned and built in
+      a town (built as embankments, then dropped: the river runs open,
+      the wall crosses it only where it comes in). Planned and built in
       [blending-plan.md](blending-plan.md) (branch `blending`, steps
       B1–B5, all done).
 

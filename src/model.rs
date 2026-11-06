@@ -315,14 +315,11 @@ pub struct BlendSettings {
     /// town is shallow water and mud instead of deep water, what stays too
     /// deep to wade grows reed beds (thicket). The town keeps its wall.
     pub town_swamp_m: f32,
-    /// Rivers in a town: embankment (quay wall) thickness along the water
-    /// inside the town, meters, open at the bridges. 0 = open banks.
-    pub embankment_m: f32,
 }
 
 impl Default for BlendSettings {
     fn default() -> Self {
-        Self { forest_town_m: 18.0, forest_swamp_m: 16.0, scree_m: 14.0, town_swamp_m: 16.0, embankment_m: 1.0 }
+        Self { forest_town_m: 18.0, forest_swamp_m: 16.0, scree_m: 14.0, town_swamp_m: 16.0 }
     }
 }
 

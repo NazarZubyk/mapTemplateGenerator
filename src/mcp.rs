@@ -223,8 +223,8 @@ the map gates, land, rivers and connections are the mixed map's (`set_gates`, pa
 `mixed.land` / `mixed.water` / `mixed.connections`). The transitions between neighbouring regions \
 are patch_config `mixed.blending` (meters, 0 = off): forest_town_m (yard trees in the town, the \
 forest edge cut), forest_swamp_m (forest puddles, wooded swamp edge), scree_m (boulders below a \
-massif), town_swamp_m (the swamp drained by a town, reeds), embankment_m (quay walls along rivers \
-in a town); `generate` reports each one the map has in `mixed_blending`.";
+massif), town_swamp_m (the swamp drained by a town, reeds); `generate` reports each one the map \
+has in `mixed_blending`. A river runs open through a town, under its wall where it comes in.";
 
 /// Run `f` on the config the tool means: a map region's own (`region`,
 /// 1-based) on a mixed map, else the whole config.

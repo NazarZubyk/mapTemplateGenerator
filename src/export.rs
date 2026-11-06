@@ -311,7 +311,7 @@ matches `cave_zones[].id`); B = chamber id (low byte, matches `chambers[].id`) o
 else 0; A = 255. Forest maps, pixels under no object: R = ground id (24-31, see layer_categories \
 and `forest_ground`); G = area id (low byte, matches `forest_areas[].id`); B = 1 walkable, 0 \
 blocked; A = 255. Town maps, pixels under no object: R = 32 town_district, 33 road, 34 town_wall \
-(the outer wall, hidden-room walls and, on mixed maps, the river embankments), 35 district_wall; G = district id (matches `regions[].id`; \
+(the outer wall — on mixed maps also where it stands over a river coming in — and hidden-room walls), 35 district_wall; G = district id (matches `regions[].id`; \
 0 on town walls); B = 1 walkable, 0 blocked; A = 255. Mixed maps: each pixel takes its map region's ground (see regions.png and \
 `mixed_regions`): swamp / cave / forest regions as above (mountains are cave regions; their rock is \
 `rock`); town regions R = 32 town_district, 33 road, 34 town_wall, 35 district_wall, their rivers \
@@ -862,7 +862,7 @@ mod tests {
         // depth and what was added; the scree boulders match the regions'.
         let blending = spec["mixed_blending"].as_array().expect("mixed_blending");
         let pairs: Vec<&str> = blending.iter().map(|p| p["pair"].as_str().unwrap()).collect();
-        assert_eq!(pairs, ["forest_town", "forest_swamp", "scree", "town_swamp", "embankments"]);
+        assert_eq!(pairs, ["forest_town", "forest_swamp", "scree", "town_swamp"]);
         for p in blending {
             assert!(p["setting"].as_str().unwrap().starts_with("mixed.blending."));
             assert!(p["depth_m"].is_number() && p["present"].is_boolean() && p["added"].is_object(), "{p}");

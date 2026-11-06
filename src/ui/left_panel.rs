@@ -459,10 +459,6 @@ along the border). In the swamp: the water near the town is shallow water and mu
 water, and what stays too deep to wade grows reed beds (thicket, blocked); the deep band along \
 the swamp's edge gives way to reeds there. A river's channel stays open. The town keeps its wall. \
 0 = a hard border. NO EFFECT unless a town region and a swamp region touch.";
-    const TIP_EMBANKMENT: &str = "Thickness of the embankments (quay walls) along the rivers and \
-brooks inside a town, meters: wall on the town floor along the water, drawn as wall, never on a \
-road, open around the bridges and the openings. Where a quay would cut a piece of the town off, it \
-stays open there. 0 = open banks. NO EFFECT unless a river or brook runs through a town region.";
     node(ui, "5b · Blending", |ui| {
         ui.weak("input: map regions · output: a transition zone per border pair, used by the region chains");
         let s = &mut app.config.mixed.blending;
@@ -471,7 +467,6 @@ stays open there. 0 = open banks. NO EFFECT unless a river or brook runs through
             param_row(ui, "Forest ↔ Swamp", TIP_FOREST_SWAMP, |ui| ui.add(meters(&mut s.forest_swamp_m, 60.0)));
             param_row(ui, "Scree (Mountains →)", TIP_SCREE, |ui| ui.add(meters(&mut s.scree_m, 60.0)));
             param_row(ui, "Town → Swamp", TIP_TOWN_SWAMP, |ui| ui.add(meters(&mut s.town_swamp_m, 60.0)));
-            param_row(ui, "Embankments", TIP_EMBANKMENT, |ui| ui.add(meters(&mut s.embankment_m, 4.0)));
         });
         ui.horizontal(|ui| {
             if ui.button("🎲 Random params").on_hover_text("Rolls each transition depth independently inside its reasonable range. Set values only; press Generate.").clicked() {
@@ -480,7 +475,6 @@ stays open there. 0 = open banks. NO EFFECT unless a river or brook runs through
                 s.forest_swamp_m = rng.random_range(8.0..=28.0);
                 s.scree_m = rng.random_range(6.0..=26.0);
                 s.town_swamp_m = rng.random_range(8.0..=28.0);
-                s.embankment_m = rng.random_range(0.5..=2.0);
             }
         });
         ui.weak("Changes apply on ⚙ Generate");
@@ -492,8 +486,7 @@ stays open there. 0 = open banks. NO EFFECT unless a river or brook runs through
                 .flatten()
                 .map(|l| l.forest.as_ref().and_then(|f| f.props.as_ref()).map(|p| p.scree).or(l.props.as_ref().map(|p| p.scree)).unwrap_or(0))
                 .sum();
-            let quay: f32 = m.levels.iter().flatten().filter_map(|l| l.walls.as_ref().map(|w| w.stats.embankment_cells as f32 * w.mask.cell_size_m * w.mask.cell_size_m)).sum();
-            ui.weak(format!("generated: {trees} yard trees in the towns, {scree} scree boulders, {quay:.0} m² of embankments"));
+            ui.weak(format!("generated: {trees} yard trees in the towns, {scree} scree boulders"));
         }
     });
 }
