@@ -198,7 +198,8 @@ water; mountains via `generator::mountains` — passes over the massif, the
 cave chain (`cave::generate_in`) in the rest of its rock) → 7 **Seams**
 (`mixed/seams.rs`: stray contacts sealed on one side, every opening's two
 sides joined by a corridor, one walkable piece checked; Re-roll mobs per
-region) → export and MCP (M9); blending (M10) in progress. The map is shaded by the
+region) → export and MCP (M9); blending (M10, done: spec.json
+`mixed_blending`). The map is shaded by the
 land (light from the north-west). In the app, the picked
 region's nodes are the kind's normal nodes: its config is swapped into
 `app.config` while they draw. spec.json `mixed_regions`, `mixed_water`, `mixed_relief_m`,
@@ -318,8 +319,11 @@ Missing names become "Mob #n", missing colors are picked to differ from
 every color in use, and mob shares are kept at 100%. On a mixed map every
 mob tool takes `region` (1-based) to set that region's mobs; `generate`
 also reports `mixed_regions`, `mixed_water`, `mixed_connections`,
-`mixed_built` (with `yard_trees` per town), `mixed_blending` and
-`mixed_walkable_pieces`.
+`mixed_built` (with `yard_trees` per town), `mixed_blending` (each
+transition the map has: setting, depth, what it added — from
+`blend::report`, like spec.json's `mixed_blending`) and
+`mixed_walkable_pieces`. The blending depths are patch_config
+`mixed.blending`.
 
 ## README media
 
@@ -343,6 +347,12 @@ put together with ImageMagick + gifsicle (Noto Sans captions on a dark bar,
   order with a caption bar.
 - **map-kinds.gif**: each kind's defaults (`ShapeSettings::for_kind`) on the
   200 m map, seeds 1–4, at 3 px/m, in a 2 × 2 grid.
+- **blending.png** (a still): the default mixed map at seed 1, 4 px/m, every
+  `mixed.blending` depth 0 ("Hard borders") and the defaults ("Blending"),
+  the same 420 × 580 px crop (x 340, y 10: the town with its river, the
+  swamp by its wall, the forest edge, the massif's foot) side by side with
+  a 44 px caption bar. Made on Windows with System.Drawing (no
+  ImageMagick there); any image tool does.
 
 Regenerate them when a kind's look changes noticeably.
 

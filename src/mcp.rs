@@ -220,7 +220,11 @@ dedicated tool (map, shape, regions, roads, houses, props, interactive, hidden_r
 massif with caves inside and passes over it) — each with its own whole config: set them with \
 `set_mixed_regions`, change one region with `patch_region` (or give `region` to the mob tools); \
 the map gates, land, rivers and connections are the mixed map's (`set_gates`, patch_config \
-`mixed.land` / `mixed.water` / `mixed.connections`).";
+`mixed.land` / `mixed.water` / `mixed.connections`). The transitions between neighbouring regions \
+are patch_config `mixed.blending` (meters, 0 = off): forest_town_m (yard trees in the town, the \
+forest edge cut), forest_swamp_m (forest puddles, wooded swamp edge), scree_m (boulders below a \
+massif), town_swamp_m (the swamp drained by a town, reeds), embankment_m (quay walls along rivers \
+in a town); `generate` reports each one the map has in `mixed_blending`.";
 
 /// Run `f` on the config the tool means: a map region's own (`region`,
 /// 1-based) on a mixed map, else the whole config.
@@ -825,7 +829,17 @@ fn summary(level: &crate::level::GeneratedLevel) -> Value {
             "yard_trees": l.houses.as_ref().map(|h| h.yard_trees).filter(|&n| n > 0),
             "notes": l.notes.len(),
         }))).collect::<Vec<_>>()),
-        "mixed_blending": level.mixed.as_ref().map(|_| json!(level.config.mixed.blending)),
+        // The transitions this map has: depth (0 = off) and what they added.
+        "mixed_blending": level.mixed.as_ref().map(|m| {
+            crate::generator::blend::report(&level.config, m)
+                .into_iter()
+                .filter(|p| p.present)
+                .map(|p| {
+                    let added: serde_json::Map<String, Value> = p.added.into_iter().filter(|&(_, v)| v > 0.0).map(|(k, v)| (k, json!(v.round()))).collect();
+                    json!({"pair": p.pair, "setting": p.setting, "depth_m": p.depth_m, "added": added})
+                })
+                .collect::<Vec<_>>()
+        }),
         "mixed_water": level.mixed.as_ref().and_then(|m| m.water.as_ref()).map(|w| json!({
             "streams": w.streams.len(),
             "into_swamps": w.streams.iter().filter(|s| s.mouth == crate::level::StreamMouth::Sink).count(),
@@ -1093,5 +1107,16 @@ mod tests {
         s.call("patch_config", &json!({"patch": {"map": {"width_m": 100.0, "height_m": 100.0}, "cell_size_m": 1.0}})).unwrap();
         let out = s.call("generate", &json!({"seed": 2})).unwrap();
         assert!(out.contains("mixed_built") && out.contains("\"mixed_walkable_pieces\": 1"), "{out}");
+        // Blending: patch_config reaches it, generate reports the pairs the
+        // map has (forest, town and mountains here — no swamp).
+        s.call("patch_config", &json!({"patch": {"mixed": {"blending": {"scree_m": 20.0}}}})).unwrap();
+        assert_eq!(s.load().unwrap().mixed.blending.scree_m, 20.0);
+        let out: Value = serde_json::from_str(&s.call("generate", &json!({"seed": 2})).unwrap()).unwrap();
+        let pairs: Vec<&str> = out["mixed_blending"].as_array().unwrap().iter().map(|p| p["pair"].as_str().unwrap()).collect();
+        assert!(!pairs.contains(&"forest_swamp") && !pairs.contains(&"town_swamp"), "{pairs:?}");
+        let scree = out["mixed_blending"].as_array().unwrap().iter().find(|p| p["pair"] == "scree");
+        if let Some(p) = scree {
+            assert_eq!(p["depth_m"].as_f64(), Some(20.0));
+        }
     }
 }

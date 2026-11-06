@@ -147,6 +147,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, ter
     let mut dense = CellMask { width: w, height: h, cell_size_m: cell, cells: class.iter().map(|&g| g == ForestGround::Thicket).collect() };
     grid::remove_small_components(&mut dense, (MIN_DENSE_M2 / (cell * cell)).ceil() as u32);
     let mut counts = [0usize; 3];
+    let mut puddles = 0u32;
     let ground: Vec<u8> = (0..n)
         .map(|c| {
             let g = if region.is_some_and(|r| !r.inside(c)) {
@@ -161,6 +162,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, ter
             } else if terrain.rock.cells[c] {
                 ForestGround::Rock
             } else if !(class[c] == ForestGround::Thicket && dense.cells[c]) && puddle(c) {
+                puddles += 1;
                 ForestGround::Shallow
             } else if class[c] == ForestGround::Thicket && !dense.cells[c] {
                 ForestGround::Floor
@@ -177,7 +179,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout, ter
         })
         .collect();
     let pct = |k: usize| k as f32 / n.max(1) as f32 * 100.0;
-    ThicketLayout { ground, density, open_pct: pct(counts[0]), floor_pct: pct(counts[1]), thicket_pct: pct(counts[2]) }
+    ThicketLayout { ground, density, open_pct: pct(counts[0]), floor_pct: pct(counts[1]), thicket_pct: pct(counts[2]), puddle_cells: puddles }
 }
 
 /// 1 at 0 and below, falling smoothly to 0 at 1.

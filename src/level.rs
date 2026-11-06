@@ -584,6 +584,17 @@ pub struct DepthLayout {
     pub mud_pct: f32,
     pub deep_pct: f32,
     pub thicket_pct: f32,
+    /// Mixed maps (blending): border-band cells turned thicket because a
+    /// forest is near (the wooded edge, B2).
+    #[serde(default)]
+    pub wooded_cells: u32,
+    /// Mixed maps (blending, B4): reed cells near a town (deep water and
+    /// border band turned thicket), and the shallow water and mud cells of
+    /// the drained margin.
+    #[serde(default)]
+    pub reed_cells: u32,
+    #[serde(default)]
+    pub drained_cells: u32,
 }
 
 /// The swamp trees node's output (the trees themselves are objects).
@@ -996,6 +1007,10 @@ pub struct TerrainLayout {
     pub rock: CellMask,
     /// Rock share of the map, %.
     pub rock_pct: f32,
+    /// Mixed maps (blending, B3): rock cells the scree added at the foot of
+    /// a massif (in `rock` too).
+    #[serde(default)]
+    pub scree_rock_cells: u32,
 }
 
 /// Where a stream ends.
@@ -1154,6 +1169,10 @@ pub struct ThicketLayout {
     pub open_pct: f32,
     pub floor_pct: f32,
     pub thicket_pct: f32,
+    /// Mixed maps (blending, B2): puddle cells (shallow water) of the wet
+    /// belt by a swamp.
+    #[serde(default)]
+    pub puddle_cells: u32,
 }
 
 /// How a passage gets from one area into the next.

@@ -204,6 +204,11 @@ pub struct ExportSpec {
     /// ground that had to be opened, m².
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mixed_seams: Option<Vec<crate::level::MixedSeam>>,
+    /// Mixed maps: the transitions between neighbouring kinds
+    /// (docs/blending-plan.md) — per transition its setting and depth,
+    /// whether the map has such a border, and what was added (counts, m²).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mixed_blending: Option<Vec<crate::generator::blend::BlendPair>>,
     /// Mixed maps: every built region's own spec (its kind's sections, as
     /// a map of that kind would export them). Its `objects` are its own;
     /// object `k` of region r is `objects[object_offset + k]` of this spec
@@ -306,7 +311,7 @@ matches `cave_zones[].id`); B = chamber id (low byte, matches `chambers[].id`) o
 else 0; A = 255. Forest maps, pixels under no object: R = ground id (24-31, see layer_categories \
 and `forest_ground`); G = area id (low byte, matches `forest_areas[].id`); B = 1 walkable, 0 \
 blocked; A = 255. Town maps, pixels under no object: R = 32 town_district, 33 road, 34 town_wall \
-(the outer wall and hidden-room walls), 35 district_wall; G = district id (matches `regions[].id`; \
+(the outer wall, hidden-room walls and, on mixed maps, the river embankments), 35 district_wall; G = district id (matches `regions[].id`; \
 0 on town walls); B = 1 walkable, 0 blocked; A = 255. Mixed maps: each pixel takes its map region's ground (see regions.png and \
 `mixed_regions`): swamp / cave / forest regions as above (mountains are cave regions; their rock is \
 `rock`); town regions R = 32 town_district, 33 road, 34 town_wall, 35 district_wall, their rivers \
@@ -669,6 +674,7 @@ impl ExportSpec {
             mixed_relief_m: level.mixed.as_ref().and_then(|m| m.land.as_ref()).map(|l| l.relief_m),
             mixed_connections: level.mixed.as_ref().and_then(|m| m.connections.clone()),
             mixed_seams: level.mixed.as_ref().map(|m| m.seams.clone()),
+            mixed_blending: level.mixed.as_ref().map(|m| crate::generator::blend::report(&level.config, m)),
             mixed_region_specs: level.mixed.as_ref().map(|m| {
                 m.regions
                     .iter()
@@ -852,6 +858,24 @@ mod tests {
             assert_eq!(s["object_offset"].as_u64(), Some(range[0] as u64));
             assert_eq!(s["spec"]["objects"].as_array().unwrap().len(), range[1]);
         }
+        // The blending report: one row per transition, with its setting,
+        // depth and what was added; the scree boulders match the regions'.
+        let blending = spec["mixed_blending"].as_array().expect("mixed_blending");
+        let pairs: Vec<&str> = blending.iter().map(|p| p["pair"].as_str().unwrap()).collect();
+        assert_eq!(pairs, ["forest_town", "forest_swamp", "scree", "town_swamp", "embankments"]);
+        for p in blending {
+            assert!(p["setting"].as_str().unwrap().starts_with("mixed.blending."));
+            assert!(p["depth_m"].is_number() && p["present"].is_boolean() && p["added"].is_object(), "{p}");
+        }
+        let boulders: u32 = m.levels.iter().flatten().map(|l| l.forest.as_ref().and_then(|f| f.props.as_ref()).map(|p| p.scree).or(l.props.as_ref().map(|p| p.scree)).unwrap_or(0)).sum();
+        assert_eq!(blending[2]["added"]["boulders"].as_f64(), Some(boulders as f64));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn single_kind_specs_have_no_blending_section() {
+        let level = crate::generator::generate(&crate::model::LevelConfig::test_64(), 1);
+        let spec = serde_json::to_value(ExportSpec::new(&level, 2.0)).unwrap();
+        assert!(spec.get("mixed_blending").is_none());
     }
 }

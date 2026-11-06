@@ -29,18 +29,18 @@ a time.
 ## State at the end of the last session (2026-11-06)
 
 - Work goes on branch **`blending`** (on GitHub as `origin/blending`): it
-  holds the mixed maps (M1–M9), town steps 7 and 13 and blending B1–B4.
-  `origin/main` stops before the mixed maps (at the docs refresh). First
-  thing: run `git status -sb`. Push only when the user asks — the agent's
-  shell may have no GitHub login; then ask the user to push from their
-  own terminal.
-- 277 tests pass, `cargo clippy --all-targets` is clean.
+  holds the mixed maps (M1–M10, blending complete), town steps 7 and 13.
+  `origin/main` stops before the mixed maps (at the docs refresh): merging
+  `blending` into `main` is the user's call. First thing: run
+  `git status -sb`. Push only when the user asks — the agent's shell may
+  have no GitHub login; then ask the user to push from their own terminal.
+- 278 tests pass, `cargo clippy --all-targets` is clean.
 - 2026-11-04: the unused `map.walkable_pct` setting was dropped (town
   step 7); town step 13 is done (town ground on layer.png, spec.json
   `town` + `notes`, blocking duplicate colors, node warnings, feasibility
   pre-check — workflow.md "Step 13 notes").
 - **Every kind works**: Town (ready), Swamp, Forest, Cave (complete, being
-  tuned), **Mixed** (M1–M9 done, being tuned). The app and the MCP server
+  tuned), **Mixed** (M1–M10 done, being tuned). The app and the MCP server
   start on a Mixed map (`LevelConfig::starting()` / `of_kind(Mixed)`);
   `LevelConfig::default()` stays Town for the tests.
 
@@ -61,7 +61,13 @@ portals, map gates per region, bridges/fords) → 6 Region chains
 7 Seams (`mixed/seams.rs`: stray contacts sealed on one side, every
 opening joined by a corridor, one walkable piece). Export: layer.png per
 region (town ground ids 32–35, pass 36), regions.png, spec.json
-`mixed_*` sections incl. `mixed_region_specs`. MCP: `set_mixed_regions`,
+`mixed_*` sections incl. `mixed_region_specs` and `mixed_blending`.
+Blending (node 5b, `generator/blend.rs`, docs/blending-plan.md): each
+region's `RegionCtx.blend` holds its transition zones toward every
+neighbouring kind (from the region map only, hashes / noise of
+`blend_seed`, never a chain's stream); its own nodes use them — yard trees
+and scree last on free ground, the forest belt cut or wet, the swamp
+wooded or drained, quays before the houses. MCP: `set_mixed_regions`,
 `patch_region`, `region` on the mob tools. UI: the picked region's nodes
 are the kind's normal nodes with its config swapped into `app.config`
 (`app.in_map_region` true meanwhile; nodes the mixed map sets show a
@@ -69,19 +75,15 @@ note); mob buttons only record `app.mobs_request`.
 
 ### Open work (the user picks)
 
-1. **M10 — Blending** (in progress on branch `blending`; the plan is
-   `docs/blending-plan.md`, steps B1–B5; B1 Forest ↔ Town, B2 Forest ↔
-   Swamp, B3 scree and B4 Town → Swamp + embankments done, next B5 export,
-   MCP summary, README picture): nature
-   crossing region borders — trees in the yards of a town district next to
-   a forest, a wet forest belt beside a swamp, boulders from a massif in the
-   forest, embankments where a river crosses a town. Needs its own small
-   plan first (per border pair: transition width, what crosses), built
-   after the region chains and before the seams.
-2. **Tuning** of Swamp, Forest, Cave and Mixed with the user (spawn amounts
-   on 200 m maps, looks).
-3. Mountain passes have no props / mobs yet (only the caves do).
-4. Cleanup (`reference/`, docs/plan.md, workflow.md history notes).
+1. **Tuning** of Swamp, Forest, Cave and Mixed with the user (spawn amounts
+   on 200 m maps, looks), the blending amounts included (constants in
+   `blend.rs`, `forest/thickets.rs`, `swamp/depth.rs`).
+2. **Merge `blending` into `main`** when the user wants it, and rebuild
+   the release `mapgen-mcp`.
+3. Same-kind neighbours on a mixed map (two forests back to back:
+   blending-plan.md problem 9).
+4. Mountain passes have no props / mobs yet (only the caves do).
+5. Cleanup (`reference/`, docs/plan.md, workflow.md history notes).
 
 ## How the user wants to work
 

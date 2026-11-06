@@ -83,7 +83,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, areas: &AreaLayout) -> 
         grid::remove_small_components(&mut rock, (MIN_ROCK_M2 / (cell * cell)).ceil() as u32);
     }
     let rock_pct = rock.count_true() as f32 / n.max(1) as f32 * 100.0;
-    TerrainLayout { width: w, height: h, cell_size_m: cell, height_m: height, relief_m: s.relief_m.max(0.0), rock, rock_pct }
+    TerrainLayout { width: w, height: h, cell_size_m: cell, height_m: height, relief_m: s.relief_m.max(0.0), rock, rock_pct, scree_rock_cells: 0 }
 }
 
 fn smoothstep(a: f32, b: f32, x: f32) -> f32 {

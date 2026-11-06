@@ -75,7 +75,7 @@ pub fn generate_in(config: &LevelConfig, seed: u64, region: Option<&RegionCtx>, 
         if let Some(t) = r.blend_toward(crate::model::MapKind::Cave) {
             let gates: Vec<[f32; 2]> = r.gates.iter().map(|g| g.point_m).collect();
             let dry = |c: usize| r.inside(c) && !r.water.deep.cells[c] && !r.water.shallow.cells[c];
-            crate::generator::blend::scree_rock(t, &mut terrain.rock, dry, &gates, r.blend_seed ^ r.id as u64);
+            terrain.scree_rock_cells = crate::generator::blend::scree_rock(t, &mut terrain.rock, dry, &gates, r.blend_seed ^ r.id as u64) as u32;
         }
         let inside = r.domain.count_true().max(1);
         terrain.rock_pct = terrain.rock.count_true() as f32 / inside as f32 * 100.0;

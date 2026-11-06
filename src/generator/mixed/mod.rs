@@ -294,7 +294,7 @@ fn land(config: &LevelConfig, rng: &mut ChaCha8Rng, m: &MixedLayout) -> TerrainL
     for v in &mut height {
         *v = (*v - lo) / span;
     }
-    TerrainLayout { width: w, height: h, cell_size_m: cell, height_m: height, relief_m: s.relief_m.max(0.0), rock: CellMask::new(w, h, cell), rock_pct: 0.0 }
+    TerrainLayout { width: w, height: h, cell_size_m: cell, height_m: height, relief_m: s.relief_m.max(0.0), rock: CellMask::new(w, h, cell), rock_pct: 0.0, scree_rock_cells: 0 }
 }
 
 /// A box blur of radius `r` cells (rows, then columns), edges clamped.

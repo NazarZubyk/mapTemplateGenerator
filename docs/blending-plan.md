@@ -117,8 +117,9 @@ already guarantee them do the work.
 - [x] **B4 — Town ↔ Swamp and rivers in towns**: the drained swamp margin,
       reed patches; embankments along a town's river. (done — see "Step
       B4 notes")
-- [ ] **B5 — Export, MCP, docs**: `mixed_blending`, the MCP summary,
-      README picture of a blended border.
+- [x] **B5 — Export, MCP, docs**: `mixed_blending`, the MCP summary,
+      README picture of a blended border. (done — see "Step B5 notes";
+      the blending plan is complete)
 
 ## Decisions (user, 2026-11-04)
 
@@ -291,3 +292,39 @@ already guarantee them do the work.
   head, a neck beside the river left open, the floor one piece); on two
   maps less than half the deep water and more wadeable water by the town,
   quays only with blending on. The mixed invariants pass.
+
+## Step B5 notes — export, MCP, README
+
+- **Counted where it is made**, so the report never guesses after the
+  fact: `ThicketLayout.puddle_cells` (B2 puddles),
+  `DepthLayout.wooded_cells` (band cells only the forest turned thicket),
+  `DepthLayout.reed_cells` / `drained_cells` (B4),
+  `TerrainLayout.scree_rock_cells` (B3), next to the earlier
+  `HouseLayout.yard_trees`, `…PropLayout.scree` and
+  `OuterWallStats.embankment_cells`. All `#[serde(default)]`; counting
+  changes no map (fingerprints).
+- **`blend::report`** → `BlendPair` per transition, always five rows in a
+  fixed order: `forest_town` (yard_trees), `forest_swamp`
+  (forest_puddles_m2, swamp_wooded_edge_m2), `scree` (boulders,
+  forest_rock_m2), `town_swamp` (swamp_drained_m2, swamp_reeds_m2),
+  `embankments` (quay_m2); each with its `setting` path, `depth_m` and
+  `present` (the map has such a border; embankments: a river or brook in
+  a town region).
+- **spec.json** `mixed_blending` = the report (left out on single-kind
+  maps); the layer description lists the embankments under town_wall.
+- **MCP**: `generate`'s `mixed_blending` lists only the transitions the
+  map has, with the non-zero results rounded; the server instructions
+  name the five `mixed.blending` fields.
+- **README**: a paragraph on blending and `docs/media/blending.png`
+  (hard borders / blending, same crop, recipe in development.md); the
+  known limitation now names only same-kind neighbours (problem 9).
+- **Tests**: the mixed export test checks the five rows, their fields and
+  that the boulders match the regions'; a single-kind spec has no
+  `mixed_blending`; the MCP test patches `mixed.blending.scree_m` and
+  reads the pairs back (no swamp pairs on a map without a swamp).
+
+## Open
+
+- Tuning the amounts with the user (boulder density and sizes, reed and
+  puddle shares, the drain factor are constants).
+- Same-kind neighbours (problem 9).

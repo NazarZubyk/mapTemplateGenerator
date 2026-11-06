@@ -14,6 +14,7 @@ use crate::generator::forest::distance_field;
 use crate::generator::noise::NoiseField;
 use crate::level::{Category, CellMask, MixedLayout, PlacedObject};
 use crate::model::{BlendSettings, ForestTreeSettings, LevelConfig, MapKind};
+use serde::{Deserialize, Serialize};
 
 /// The zone's width wavers by this share along the border (no stripes).
 const WIDTH_WAVER: f32 = 0.4;
@@ -336,6 +337,97 @@ pub fn scree_rock(t: &[f32], rock: &mut CellMask, dry: impl Fn(usize) -> bool, g
         }
     }
     turned
+}
+
+/// One transition of a mixed map, as spec.json `mixed_blending` and the
+/// MCP summary report it: its setting, whether the map has such a border,
+/// and what the region chains added for it (counts, m²).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BlendPair {
+    /// `forest_town`, `forest_swamp`, `scree`, `town_swamp`, `embankments`.
+    pub pair: String,
+    pub label: String,
+    /// The config field (`mixed.blending.…`).
+    pub setting: String,
+    /// The transition depth, meters (embankments: the quay thickness);
+    /// 0 = off.
+    pub depth_m: f32,
+    /// The map has such a border (embankments: a river or brook in a town).
+    pub present: bool,
+    /// What was added: counts and areas (keys ending in `_m2`, m²).
+    pub added: std::collections::BTreeMap<String, f32>,
+}
+
+/// The blending report of a generated mixed map (one row per transition).
+pub fn report(config: &LevelConfig, m: &MixedLayout) -> Vec<BlendPair> {
+    let (w, h, cell) = (m.map.width, m.map.height, m.map.cell_size_m);
+    let a = cell * cell;
+    let kind_of = |c: usize| (m.map.ids[c] != 0).then(|| m.regions.get(m.map.ids[c] as usize - 1).map(|r| r.kind)).flatten();
+    // Which kinds touch (side by side).
+    let mut touch = std::collections::HashSet::new();
+    for y in 0..h {
+        for x in 0..w {
+            let c = y * w + x;
+            let Some(k) = kind_of(c) else { continue };
+            for nb in [(x + 1 < w).then(|| c + 1), (y + 1 < h).then(|| c + w)].into_iter().flatten() {
+                if let Some(o) = kind_of(nb).filter(|&o| o != k) {
+                    touch.insert((kind_salt(k).min(kind_salt(o)), kind_salt(k).max(kind_salt(o))));
+                }
+            }
+        }
+    }
+    let touches = |a: MapKind, b: MapKind| touch.contains(&(kind_salt(a).min(kind_salt(b)), kind_salt(a).max(kind_salt(b))));
+    let town_river = m.water.as_ref().is_some_and(|wl| (0..w * h).any(|c| kind_of(c) == Some(MapKind::Town) && (wl.deep.cells[c] || wl.shallow.cells[c])));
+    // Sums over the regions' levels of one kind.
+    let sum = |kind: MapKind, f: &dyn Fn(&crate::level::GeneratedLevel) -> u32| -> u32 {
+        m.regions.iter().zip(&m.levels).filter(|(r, _)| r.kind == kind).filter_map(|(_, l)| l.as_ref()).map(f).sum()
+    };
+    let forest = |f: &dyn Fn(&crate::level::ForestLayout) -> u32| sum(MapKind::Forest, &|l| l.forest.as_ref().map_or(0, f));
+    let depth = |f: &dyn Fn(&crate::level::DepthLayout) -> u32| sum(MapKind::Swamp, &|l| l.swamp.as_ref().and_then(|s| s.depth.as_ref()).map_or(0, f));
+    let props_scree = |kind: MapKind| sum(kind, &|l| l.props.as_ref().map_or(0, |p| p.scree));
+    let b = &config.mixed.blending;
+    let row = |pair: &str, label: &str, field: &str, depth_m: f32, present: bool, added: &[(&str, f32)]| BlendPair {
+        pair: pair.to_owned(),
+        label: label.to_owned(),
+        setting: format!("mixed.blending.{field}"),
+        depth_m,
+        present,
+        added: added.iter().map(|&(k, v)| (k.to_owned(), v)).collect(),
+    };
+    vec![
+        row("forest_town", "Forest ↔ Town", "forest_town_m", b.forest_town_m, touches(MapKind::Forest, MapKind::Town), &[("yard_trees", sum(MapKind::Town, &|l| l.houses.as_ref().map_or(0, |h| h.yard_trees)) as f32)]),
+        row(
+            "forest_swamp",
+            "Forest ↔ Swamp",
+            "forest_swamp_m",
+            b.forest_swamp_m,
+            touches(MapKind::Forest, MapKind::Swamp),
+            &[
+                ("forest_puddles_m2", forest(&|f| f.thickets.as_ref().map_or(0, |t| t.puddle_cells)) as f32 * a),
+                ("swamp_wooded_edge_m2", depth(&|d| d.wooded_cells) as f32 * a),
+            ],
+        ),
+        row(
+            "scree",
+            "Scree (Mountains →)",
+            "scree_m",
+            b.scree_m,
+            [MapKind::Forest, MapKind::Town, MapKind::Swamp].iter().any(|&k| touches(k, MapKind::Cave)),
+            &[
+                ("boulders", (forest(&|f| f.props.as_ref().map_or(0, |p| p.scree)) + props_scree(MapKind::Town) + props_scree(MapKind::Swamp)) as f32),
+                ("forest_rock_m2", forest(&|f| f.terrain.as_ref().map_or(0, |t| t.scree_rock_cells)) as f32 * a),
+            ],
+        ),
+        row(
+            "town_swamp",
+            "Town → Swamp",
+            "town_swamp_m",
+            b.town_swamp_m,
+            touches(MapKind::Town, MapKind::Swamp),
+            &[("swamp_drained_m2", depth(&|d| d.drained_cells) as f32 * a), ("swamp_reeds_m2", depth(&|d| d.reed_cells) as f32 * a)],
+        ),
+        row("embankments", "Embankments", "embankment_m", b.embankment_m, town_river, &[("quay_m2", sum(MapKind::Town, &|l| l.walls.as_ref().map_or(0, |w| w.stats.embankment_cells)) as f32 * a)]),
+    ]
 }
 
 /// Embankments stay open this far around a bridge, meters.

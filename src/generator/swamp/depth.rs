@@ -202,6 +202,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, islands: &mut IslandLay
     }
 
     // 6. Thicket stretches of the border band.
+    let (mut wooded_cells, mut reed_cells) = (0u32, 0u32);
     let (wm, hm) = (w as f32 * cell, h as f32 * cell);
     let perimeter = 2.0 * (wm + hm);
     let (lo, hi) = (s.segment_min_m.min(s.segment_max_m).max(cell), s.segment_max_m.max(s.segment_min_m).max(cell));
@@ -241,10 +242,19 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, islands: &mut IslandLay
             let v = noise.fbm(x / scale + 91.0, y / scale - 17.0, 2);
             // fBm sits mostly in 0.3..0.7: stretch it to 0..1. Toward a
             // forest the band is wooded, toward a town reed (B2, B4).
-            let near = wooded.map_or(0.0, |t| t[c]).max(drain(c));
-            let want = want + (1.0 - want) * (near * 3.0).min(1.0);
-            if ((v - 0.3) / 0.4).clamp(0.0, 1.0) < want && !mouth(c) {
+            let (wood, drained_here) = (wooded.map_or(0.0, |t| t[c]), drain(c));
+            let near = wood.max(drained_here);
+            let v = ((v - 0.3) / 0.4).clamp(0.0, 1.0);
+            if v < want + (1.0 - want) * (near * 3.0).min(1.0) && !mouth(c) {
                 t[c] = Terrain::Thicket;
+                // Counted for the blending report when only blending made it.
+                if v >= want {
+                    if wood >= drained_here {
+                        wooded_cells += 1;
+                    } else {
+                        reed_cells += 1;
+                    }
+                }
             }
         }
         // Blending: the drained margin's water still too deep to wade grows
@@ -260,6 +270,7 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, islands: &mut IslandLay
                 let v = ((reeds.fbm(x / REED_SCALE_M, y / REED_SCALE_M, 3) - 0.3) / 0.4).clamp(0.0, 1.0);
                 if v > 1.0 - (z[c] * 1.3).min(1.0) {
                     t[c] = Terrain::Thicket;
+                    reed_cells += 1;
                 }
             }
         }
@@ -329,7 +340,11 @@ pub fn build(config: &LevelConfig, rng: &mut ChaCha8Rng, islands: &mut IslandLay
         notes.push(format!("Depth: the walkable ground is in {pieces} pieces"));
     }
     let (shallow, mud, deep, thicket) = (mask(Terrain::Shallow), mask(Terrain::Mud), mask(Terrain::Deep), mask(Terrain::Thicket));
+    let drained_cells = (0..w * h).filter(|&c| drain(c) > 0.0 && matches!(t[c], Terrain::Shallow | Terrain::Mud)).count() as u32;
     let layout = DepthLayout {
+        wooded_cells,
+        reed_cells,
+        drained_cells,
         reach_m: if s.return_trip { limit / 2.0 } else { limit },
         hummocks,
         walkable_pct: pct(&walkable),

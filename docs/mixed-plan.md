@@ -242,12 +242,12 @@ connections) cannot disagree; and a single-kind map does not change at all
       across regions.
 - [x] **M9 — Export and MCP**: spec.json per-region sections, validation
       (thin regions, cell budget), MCP region tools.
-- [ ] **M10 — Blending** (the next big step): nature crossing borders —
+- [x] **M10 — Blending**: nature crossing borders —
       trees in the yards of a district next to a forest, a wet forest belt
       by a swamp, boulders from the massif in the forest, a river crossing
-      a town with its embankments. Planned in
+      a town with its embankments. Planned and built in
       [blending-plan.md](blending-plan.md) (branch `blending`, steps
-      B1–B5).
+      B1–B5, all done).
 
 ## Step M1 notes — map regions
 

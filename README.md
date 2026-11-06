@@ -31,6 +31,17 @@ together into one walkable map.
 Every kind also places props, interactive objects, hidden rooms and mobs.
 The app opens on a Mixed map; switch the kind in **1 · Template**.
 
+On a Mixed map the regions blend where they meet, each change with a
+cause: trees seed into a town's yards and the forest outside the wall is
+cut back, a forest gets wet by a swamp, the swamp is drained and reedy by
+a town, rocks fall from the mountains, and towns wall their river banks.
+Set how deep each transition reaches in **5b · Blending** (0 = a hard
+border).
+
+<p align="center">
+  <img src="docs/media/blending.png" width="560" alt="The same corner of a mixed map with hard borders and with blending: a drained, reedy swamp by the town wall, quay walls along the town's river, a cut forest edge, and boulders at the foot of the mountains">
+</p>
+
 <p align="center">
   <img src="docs/media/map-kinds.gif" width="520" alt="Town, swamp, forest and cave maps, cycling through four seeds">
 </p>
@@ -115,10 +126,8 @@ see `QUICKSTART.md`.
 
 - Only **Town** is tuned. Swamp, Forest, Cave and Mixed are complete but
   still being tuned; settings that cannot work as asked show a warning.
-- On a Mixed map, forests blend into towns (trees in the town's yards, a
-  cleared forest edge outside the wall) and into swamps (a wet forest edge
-  with puddles, a wooded swamp edge). The other borders are still sharp;
-  rocks fallen from the mountains and river banks in towns are coming.
+- On a Mixed map, two regions of the same kind side by side still meet at
+  a sharp border (two forest edges back to back).
 - Windows builds are not code-signed, so expect the SmartScreen warning.
 - Huge maps export smaller images: map.png and layer.png stay within
   16384 px on a side (spec.json records the scale used).

@@ -14,8 +14,8 @@ Swamp, Cave and Forest are complete and being tuned with the user.
 **Mixed** maps (map regions of several kinds, each with its own settings)
 are done and being tuned: [mixed-plan.md](mixed-plan.md) (M1–M9: map
 regions, land and water, connections, forest / town / swamp / mountain
-regions, seams, export and MCP; next M10 blending). The app starts on
-Mixed.
+regions, seams, export and MCP; M10 blending, in
+[blending-plan.md](blending-plan.md)). The app starts on Mixed.
 Swamp — its own node chain, planned in
 [swamp-plan.md](swamp-plan.md) (step list and notes live there). Done:
 S1 gate anchors, S2 islands, S3 paths, S4 depth & border, S5 trees, S6
